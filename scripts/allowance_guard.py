@@ -71,6 +71,20 @@ three trials per fixture, and its results never land in `routine-results/`
 either) is counted, held and checked exactly as an improve fire
 (`improve_outcomes.charged_fires`, `IMPROVE_MODES`).
 
+Measured improve cost (#577, 2026-11-13): ingest lands each improve run's
+cost record at `improve-costs/<run id>.json` (scripts/improve_cost.py). A
+fire is matched to one by mode, target and a run id stamp from 2 minutes
+before to 30 minutes after its `run_started_at`, one-to-one, oldest first,
+and is charged the record's dollars (agent + judge + guard + proposal) at
+`points_per_usd` in `spent`, like an ingested eval run; in the reading bound
+it is inside the reading when it started `IMPROVE_MAX_RUN` before it and
+charged in full after. When the dollars are only a floor (the trigger loop's
+`claude -p` calls and a failed proposal call report none), the charge is the
+larger of the dollars and the meter delta of a clean bracket (busy/span at
+least `CLEAN_BRACKET`), else `improve_charge`. An unmatched fire, or no
+`points_per_usd`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
+from the records by `allowance_guard.py units --results-tree <tree>`.
+
 That charge is an estimate and was never corrected by measurement: on
 2026-10-27 two improve fires were held at 21 points against a 30-point cap
 while the account meter last read 5% used, and every fire was refused for
@@ -223,8 +237,10 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import budget as budget_file  # noqa: E402
+import improve_cost  # noqa: E402
 import improve_outcomes  # noqa: E402
 import routine_deadlines  # noqa: E402
 
@@ -268,20 +284,34 @@ EPSILON = 1e-9
 #: release room on; one more than PACE_CLOCK_SKEW ahead of `now` is not read.
 PACE_MAX_AGE = timedelta(hours=12)
 PACE_CLOCK_SKEW = timedelta(minutes=5)
-#: An improve run measures baseline and candidate on every fixture of the
-#: skill at three trials each, about 24 agent trials for a four-fixture skill
-#: (thresholds doc), where an eval fire (arms both, one trial) runs two.
-#: It was 12 until 2026-11-02 (#572): eval_fire_cost measured about 0.00497
-#: (268 of 270 runs measured), and the three usable account-meter brackets
-#: around improve fires came to 2.3x, 4.7x and 5.3x that per fire (1.3x to
-#: 7.3x with the meter's +-0.01 reading error), upper bounds since the
-#: owner's own use is inside them. 8 covers every bracket. It is a ceiling,
-#: recomputed from measured cost once #572 part (1) records each improve run.
-IMPROVE_FIRE_UNITS = 8
+#: What one improve fire costs, in eval runs' dollars, for a fire no cost
+#: record matches. Recomputed 2026-11-13 (#577) by `allowance_guard.py units`
+#: from the records on persistent/eval-results: (agent + judge + guard +
+#: proposal dollars of an improve run) / (mean dollars of an ingested eval
+#: run, $0.8574372249019608 over 1122 priced runs). Five of the 18 records
+#: measured anything (the 13 from 2026-11-07 stopped before a trial), so the
+#: largest ratio stands until a sixth does, then the 75th percentile. It
+#: was 8 (a ceiling over three meter brackets, #572) and 12 before that.
+IMPROVE_FIRE_UNITS = 12.20868985621301
 #: The longest an improve fire runs: the routine's improve step gets 90
 #: minutes, plus setup, the push and the ingest. A fire that started this long
 #: before a meter snapshot is finished, so the snapshot already counts it.
 IMPROVE_MAX_RUN = timedelta(hours=2)
+#: A cost record belongs to a fire when its run id's stamp, minted a few
+#: seconds into the fire job, falls this far before and after the fire's
+#: `run_started_at` (#577).
+MATCH_BEFORE = timedelta(minutes=2)
+MATCH_AFTER = timedelta(minutes=30)
+#: The directory ingest lands improve cost records in, and the most one may
+#: weigh (improve_cost.RECORD_CAP).
+IMPROVE_COST_DIR = "improve-costs"
+#: A record's meter bracket is usable only when its trials were busy at
+#: least this share of the bracket; a lower ratio means other use filled it.
+CLEAN_BRACKET = 0.5
+#: From this many measured records the units are their 75th percentile;
+#: before that, the largest.
+UNITS_MIN_RECORDS = 6
+UNITS_PERCENTILE = 0.75
 #: The fire modes charged `improve_charge`, held all week (see above).
 IMPROVE_MODES = ("improve", "guidance-improve")
 #: Adam's improve share of the weekly cap (#572, 2026-11-02): the same 0.20
@@ -505,6 +535,147 @@ def improve_charge(tree: Path, limits: dict) -> float:
     return IMPROVE_FIRE_UNITS * eval_fire_cost(tree, limits)
 
 
+def improve_records(tree: Path) -> list[dict]:
+    """The valid improve cost records under `<tree>/improve-costs/`, oldest
+    run id first. The branch is bot-written and untrusted: a symlink, an
+    oversize file, one that does not parse or meet `improve_cost.check_record`,
+    or one whose name is not its own run id is left out (its fire then keeps
+    the unit charge, the safe direction)."""
+    root = tree / IMPROVE_COST_DIR
+    if not root.is_dir():
+        return []
+    records = []
+    for path in sorted(root.iterdir()):
+        try:
+            if path.is_symlink() or not path.is_file() \
+                    or path.stat().st_size > improve_cost.RECORD_CAP:
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            improve_cost.check_record(doc)
+        except (OSError, ValueError, UnicodeDecodeError, RecursionError,
+                improve_cost.Invalid):
+            continue
+        if path.name == f"{doc['run_id']}.json":
+            records.append(doc)
+    return sorted(records, key=lambda r: (_parse_stamp(r["run_id"][:16]), r["run_id"]))
+
+
+def record_dollars(record: dict) -> tuple[float, bool]:
+    """(dollars, complete) of one cost record: agent + judge + guard +
+    proposal dollars, and whether that is the whole cost. It is not when the
+    proposal call reported no dollars or the trigger loop's `claude -p` calls
+    ran (they report none, #577 notes, 2026-11-02): the dollars are a floor."""
+    proposal = record["proposal"]
+    total = record["agent_usd"] + record["judge_usd"] + record["guard_usd"]
+    complete = not record["trigger_calls"]
+    if proposal is not None:
+        if proposal["usd"] is None:
+            complete = False
+        else:
+            total += proposal["usd"]
+    return total, complete
+
+
+def bracket_clean(record: dict) -> bool:
+    """Whether the record's meter bracket is mostly this run's own use:
+    busy_seconds / span_seconds at least `CLEAN_BRACKET`. A low ratio is
+    contaminated by other use; no bracket is not clean."""
+    busy, span = record["busy_seconds"], record["span_seconds"]
+    return busy is not None and span is not None and span > 0 \
+        and busy / span >= CLEAN_BRACKET
+
+
+def record_charge(record: dict, limits: dict, unit_charge: float) -> float | None:
+    """What a matched fire is charged, or None without a dollar rate. The
+    measured dollars at `points_per_usd`; when they are only a floor, the
+    larger of that and the meter delta of a clean bracket (an account-wide
+    figure, so a ceiling on the run's own use), and with no clean bracket the
+    unit charge, today's rule."""
+    rate = limits.get("points_per_usd")
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
+            or not math.isfinite(rate) or rate <= 0:
+        return None
+    dollars, complete = record_dollars(record)
+    points = dollars * rate
+    if complete:
+        return points
+    if bracket_clean(record) and record["delta"] is not None:
+        return max(points, record["delta"])
+    return max(points, unit_charge)
+
+
+def match_fires(fires: list[dict], records: list[dict]) -> list[tuple]:
+    """[(fire, record or None)], oldest fire first: each fire takes the oldest
+    unclaimed record of its mode and target whose run id stamp is within
+    `MATCH_BEFORE` before to `MATCH_AFTER` after its start; a record serves
+    one fire (#577)."""
+    free = list(records)
+    matches = []
+    for fire in sorted(fires, key=lambda f: f["started"]):
+        found = None
+        for record in free:
+            offset = _parse_stamp(record["run_id"][:16]) - fire["started"]
+            if record["mode"] == fire["mode"] and record["target"] == fire["target"] \
+                    and -MATCH_BEFORE <= offset <= MATCH_AFTER:
+                found = record
+                break
+        if found is not None:
+            free.remove(found)
+        matches.append((fire, found))
+    return matches
+
+
+def eval_run_dollars(tree: Path) -> float | None:
+    """The mean dollars of an ingested eval run, any age: each run_eval
+    invocation's `usage.cost_estimate.usd` summed per run, over the runs whose
+    every invocation carries one; None when there is none."""
+    totals = []
+    for run_dir in all_runs(tree):
+        blocks = {}
+        for path in _summary_paths(run_dir):
+            summary = _load_summary(path)
+            usage = summary.get("usage") if isinstance(summary, dict) else None
+            if not isinstance(usage, dict):
+                blocks = None
+                break
+            level = {key: value for key, value in usage.items() if key != "measured"}
+            blocks[json.dumps(level, sort_keys=True)] = usage
+        if not blocks:
+            continue
+        dollars = [(u.get("cost_estimate") or {}).get("usd") if isinstance(
+            u.get("cost_estimate"), dict) else None for u in blocks.values()]
+        if all(isinstance(d, (int, float)) and not isinstance(d, bool)
+               and math.isfinite(d) and d >= 0 for d in dollars):
+            totals.append(sum(dollars))
+    return sum(totals) / len(totals) if totals else None
+
+
+def recompute_improve_units(records: list[dict], eval_dollars: float) -> dict:
+    """What `IMPROVE_FIRE_UNITS` should be: each measuring record's dollars
+    over `eval_dollars`, the mean dollars of an eval run (a mean on both sides,
+    as `eval_fire_cost` is). A record with no trial measured nothing and is
+    left out (its trigger loop's calls report no dollars, so it is no
+    measurement of zero); `UNITS_MIN_RECORDS` of the rest give the 75th
+    percentile (linear between ranks), fewer the largest. `contaminated` names
+    the measuring records whose bracket is not clean (`bracket_clean`)."""
+    measuring = [r for r in records if r["stage_reached"] != "none"]
+    ratios = sorted(record_dollars(r)[0] / eval_dollars for r in measuring)
+    if not ratios:
+        return {"units": None, "basis": "none", "measured": 0, "records": len(records),
+                "ratios": [], "contaminated": []}
+    if len(ratios) >= UNITS_MIN_RECORDS:
+        rank = UNITS_PERCENTILE * (len(ratios) - 1)
+        low = math.floor(rank)
+        high = min(low + 1, len(ratios) - 1)
+        units = ratios[low] + (ratios[high] - ratios[low]) * (rank - low)
+        basis = "75th percentile"
+    else:
+        units, basis = ratios[-1], "maximum"
+    return {"units": units, "basis": basis, "measured": len(ratios),
+            "records": len(records), "ratios": ratios,
+            "contaminated": [r["run_id"] for r in measuring if not bracket_clean(r)]}
+
+
 def ingested_runs(tree: Path, now: datetime,
                   since: datetime | None = None) -> list[Path]:
     """The run directories under `<tree>/routine-results/` whose run id's
@@ -639,7 +810,8 @@ def account(tree: Path, limits: dict, now: datetime,
             improve_started: list | None = None,
             eval_started: list | None = None,
             improve_by_kind: dict | None = None,
-            improve_in_flight: dict | None = None) -> dict:
+            improve_in_flight: dict | None = None,
+            improve_fires: list | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed, improve_fires, improve_charge,
     improve_covered, eval_inside} for the
@@ -667,7 +839,14 @@ def account(tree: Path, limits: dict, now: datetime,
     (module docstring, 2026-11-01 fires without results).
     `improve_by_kind` and `improve_in_flight`, dicts keyed by improve mode
     (`improve_kind_counts`), are the successful and the not-completed
-    improve fires of each kind, stored for `improve_cap` only (#572)."""
+    improve fires of each kind, stored for `improve_cap` only (#572).
+    `improve_fires`, one {mode, target, started} per successful improve fire
+    of the window (`improve_details`; as many as `improve`'s count), lets each
+    be matched to its cost record (`match_fires`, #577): a matched fire is
+    charged `record_charge` in `spent`, like an ingested eval run, and in the
+    reading bound is inside the reading when it started `IMPROVE_MAX_RUN` or
+    more before it, charged in full after it; the unmatched keep
+    `improve_charge`."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -684,6 +863,13 @@ def account(tree: Path, limits: dict, now: datetime,
             or any(not isinstance(start, datetime) or start.tzinfo is None
                    for start in eval_started)):
         raise GuardError("eval fire start times are not aware datetimes")
+    if improve_fires is not None and (
+            not isinstance(improve_fires, list) or len(improve_fires) != improve_7d
+            or any(not isinstance(f, dict) or f.get("mode") not in IMPROVE_MODES
+                   or not isinstance(f.get("target"), str)
+                   or not isinstance(f.get("started"), datetime)
+                   or f["started"].tzinfo is None for f in improve_fires)):
+        raise GuardError("improve fire details do not match the improve count")
     if improve_started is not None and (
             not isinstance(improve_started, list)
             or any(not isinstance(start, datetime) or start.tzinfo is None
@@ -715,15 +901,37 @@ def account(tree: Path, limits: dict, now: datetime,
     recent = max(0, min(fires_24h - recent_runs, unresulted))
     charge = improve_charge(tree, limits)
     room, used, elapsed = pace(runs, limits, now)
+    # Match each improve fire to its measured cost record (#577).
+    matched = []
+    if improve_fires:
+        for fire_row, found in match_fires(improve_fires, improve_records(tree)):
+            cost = None if found is None else record_charge(found, limits, charge)
+            if cost is not None:
+                matched.append((fire_row["started"], cost))
+        unmatched = sorted(row["started"] for row in improve_fires)
+        for started, _ in matched:
+            unmatched.remove(started)
+        improve_started = unmatched
+        improve_7d -= len(matched)
+    spent += sum(cost for _, cost in matched)
     covered = 0
     eval_inside = 0.0
+    matched_outside = 0.0
+    if used is not None and matched:
+        at = newest_snapshot(runs)[0]
+        for started, cost in matched:
+            if started + IMPROVE_MAX_RUN <= at:
+                # Finished inside the reading, and already charged in `spent`.
+                eval_inside += cost
+            else:
+                matched_outside += cost
     if improve_started and used is not None:
         # `pace` accepted the newest snapshot, so `newest_snapshot` is not None.
         at = newest_snapshot(runs)[0]
         covered = min(improve_7d,
                       sum(1 for start in improve_started if start + IMPROVE_MAX_RUN <= at))
         # Already charged in `spent` (module docstring, 2026-10-28).
-        eval_inside = sum(delta_inside(run_dir, at) for run_dir in runs)
+        eval_inside += sum(delta_inside(run_dir, at) for run_dir in runs)
     improve_held = (improve_7d - covered) * charge + (
         min(covered * charge, max(0.0, used - eval_inside)) if covered else 0.0)
     eval_pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
@@ -752,7 +960,8 @@ def account(tree: Path, limits: dict, now: datetime,
             late_recent = min(recent, late)
             late_pending = min(eval_pending, late_recent * reserve
                                + (late - late_recent) * limits["per_run_overrun"])
-        bound = used + outside + late_pending + (improve_7d - covered) * charge
+        bound = used + outside + late_pending + (improve_7d - covered) * charge \
+            + matched_outside
     committed = spent + pending if bound is None else min(spent + pending, bound)
     # One limit (Adam, 2026-11-01, "Unify the limit"): the in-run stop is
     # also a fire limit, so no fire starts that the stop would end at once.
@@ -770,7 +979,10 @@ def account(tree: Path, limits: dict, now: datetime,
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
-            "improve_fires": improve_7d, "improve_charge": charge,
+            "improve_fires": improve_7d + len(matched), "improve_charge": charge,
+            "improve_matched": len(matched),
+            "improve_matched_cost": sum(cost for _, cost in matched),
+            "improve_started_unmatched": list(improve_started or []),
             "improve_covered": covered, "eval_inside": eval_inside,
             "improve_finished": finished,
             "improve_finished_held": finished * charge,
@@ -898,6 +1110,10 @@ def describe(state: dict) -> str:
     if state.get("improve_fires"):
         line += (f"; {state['improve_fires']} improve fire(s) held at "
                  f"{points(state['improve_charge'])} points each")
+        if state.get("improve_matched"):
+            line += (f", {state['improve_matched']} matched to a cost record and "
+                     f"charged their measured {points(state['improve_matched_cost'])} "
+                     f"points instead")
         if state.get("improve_covered"):
             line += (f"; {state['improve_covered']} of them finished before the "
                      f"account reading, so held at most at its "
@@ -1038,6 +1254,19 @@ def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, in
     return improve_counts(_live_improve_runs(now), now, since)
 
 
+def improve_details(runs: list, now: datetime,
+                    since: datetime | None = None) -> list[dict]:
+    """{mode, target, started} of each successful improve and guidance-improve
+    fire since `since` (default seven days before `now`) among the runs API's
+    rows, oldest first, for matching to cost records (#577)."""
+    since = since or now - WINDOW
+    return [{"mode": "improve" if "skill" in f else "guidance-improve",
+             "target": f["skill"] if "skill" in f else f["section"],
+             "started": f["started"]}
+            for f in improve_outcomes.charged_fires(runs)
+            if f["conclusion"] == "success" and f["started"] >= since]
+
+
 def eval_fire_starts(runs: list, now: datetime,
                      since: datetime | None = None) -> list[datetime]:
     """The start times of the successful fires since `since` (default seven
@@ -1067,24 +1296,55 @@ def _own_run_id() -> int | None:
 
 def _live_improve_both(now: datetime, since: datetime | None = None):
     """(`improve_counts`, `improve_starts`, `eval_fire_starts`,
-    `improve_kind_counts`) of one fetch of the fire runs."""
+    `improve_kind_counts`, `improve_details`) of one fetch of the fire runs."""
     runs = _live_improve_runs(now)
     return (improve_counts(runs, now, since), improve_starts(runs, now, since),
             eval_fire_starts(runs, now, since),
-            improve_kind_counts(runs, now, since, _own_run_id()))
+            improve_kind_counts(runs, now, since, _own_run_id()),
+            improve_details(runs, now, since))
+
+
+def print_units(tree: Path) -> int:
+    """Print how `IMPROVE_FIRE_UNITS` follows from the records under `tree`
+    (#577): the eval-run mean, each measuring record's ratio, the percentile
+    or maximum, and the contaminated brackets. Exit 1 when it cannot be made."""
+    records = improve_records(tree)
+    eval_dollars = eval_run_dollars(tree)
+    if not eval_dollars:
+        print("no priced eval runs: units cannot be computed")
+        return 1
+    result = recompute_improve_units(records, eval_dollars)
+    print(f"mean eval run: ${eval_dollars!r}")
+    print(f"{result['records']} improve cost record(s), {result['measured']} measured "
+          f"(a record with no trial measured nothing)")
+    for record in records:
+        if record["stage_reached"] == "none":
+            continue
+        dollars, complete = record_dollars(record)
+        flag = "" if bracket_clean(record) else " [bracket contaminated: low busy/span]"
+        flag += "" if complete else " [dollars a floor: unpriced calls]"
+        print(f"  {record['run_id']} {record['mode']} {record['target']}: ${dollars!r} = "
+              f"{dollars / eval_dollars!r} units{flag}")
+    if result["units"] is None:
+        print("no measured record: units cannot be computed")
+        return 1
+    print(f"IMPROVE_FIRE_UNITS = {result['units']!r} ({result['basis']} of "
+          f"{result['measured']}); {result['units']:.1f} units")
+    return 0
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
          fire_count=None, improve_count=None, improve_starts=None,
-         eval_starts=None, improve_kinds=None) -> int:
+         eval_starts=None, improve_kinds=None, improve_details=None) -> int:
     """`fire_count` and `improve_count`, functions of `now` returning
     `(fires_7d, fires_24h)` (all fires, and the improve fires among them),
     stand in for the API in tests, and `improve_starts`, a function of `now`
     returning the improve fires' start times (used with `improve_count`), and
     `improve_kinds`, one returning `improve_kind_counts`' pair (none counted
-    when it is not given)."""
+    when it is not given), and `improve_details`, one returning `improve_details`'
+    rows (no fire is matched to a cost record when it is not given)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("check", "fits"))
+    parser.add_argument("command", choices=("check", "fits", "units"))
     parser.add_argument("--results-tree", type=Path, required=True,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
@@ -1098,6 +1358,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
                              "improve cap")
     args = parser.parse_args(argv)
     now = now or datetime.now(timezone.utc)
+    if args.command == "units":
+        return print_units(args.results_tree)
     try:
         limits = budget_file.load_budget(args.budget)
         since = window_start(now)
@@ -1107,12 +1369,14 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
             started = improve_starts(now) if improve_starts else None
             evals = eval_starts(now) if eval_starts else None
             by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
+            details = improve_details(now) if improve_details else None
         else:
             # One fetch feeds the counts and the start times.
-            improve, started, evals, (by_kind, in_flight) = _live_improve_both(now, since)
+            improve, started, evals, (by_kind, in_flight), details = _live_improve_both(
+                now, since)
         state = account(args.results_tree, limits, now, fires, improve, since, started,
                         eval_started=evals, improve_by_kind=by_kind,
-                        improve_in_flight=in_flight)
+                        improve_in_flight=in_flight, improve_fires=details)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")

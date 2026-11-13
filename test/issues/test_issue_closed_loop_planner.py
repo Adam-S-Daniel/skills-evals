@@ -246,10 +246,11 @@ class GuardImproveChargeTests(unittest.TestCase):
         measured_summary(old, 0.01)
         new = self.tree / "routine-results" / "20261026T000000Z-bbbbbb"
         measured_summary(new, 0.0)
-        # (0.01 + 0.005 + 0.0 + 0.005) / 2 = 0.01 per eval run; eight units
-        # since #572 (2026-11-02), twelve before.
+        # (0.01 + 0.005 + 0.0 + 0.005) / 2 = 0.01 per eval run, times the
+        # units recomputed from the cost records (#577, 2026-11-13).
         self.assertAlmostEqual(guard.eval_fire_cost(self.tree, LIMITS), 0.01)
-        self.assertAlmostEqual(guard.improve_charge(self.tree, LIMITS), 0.08)
+        self.assertAlmostEqual(guard.improve_charge(self.tree, LIMITS),
+                               guard.IMPROVE_FIRE_UNITS * 0.01)
 
     def test_improve_fires_are_held_all_week_and_not_matched_to_runs(self):
         state = guard.account(self.tree, LIMITS, NOW, (3, 0), (2, 0))
