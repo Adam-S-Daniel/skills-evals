@@ -1588,6 +1588,14 @@ def _removal_action(gates: dict, registries: dict, gh, skill: str, mode: str, lo
         return {"action": "none", "mode": mode, "skill": skill, "issue": held[0],
                 "reason": f"{skill}'s removal is held for a person: issue #{held[0]} "
                           "is open, so no removal is reviewed or opened again", **skip}
+    working = [n for n in issues.get("agent", []) if n in issues["open"]]
+    if working:
+        # The fleet worker owns this removal through its issue: a second pull
+        # request here would leave that issue open after the merge, and a
+        # loop withdrawal of it could read to the worker as a decline.
+        return {"action": "none", "mode": mode, "skill": skill, "issue": working[0],
+                "reason": f"the fleet worker holds {skill}'s removal: issue #{working[0]} "
+                          "is open, so this run opens no pull request beside it", **skip}
     capped = len(paused) >= MAX_LOOP_PAUSES
     if capped and unused:
         # The cap files a retirement issue from a verdict's cells; an unused
@@ -2401,7 +2409,7 @@ def guidance_issues(gh, marker: str) -> dict:
                        "author: .user.login, state: .state, "
                        "closed_at: (.closed_at // \"\"), "
                        "labels: [(.labels // [])[] | .name]}"])
-    found = {"open": [], "closed": [], "proposals": [], "capped": [], "held": []}
+    found = {"open": [], "closed": [], "proposals": [], "capped": [], "held": [], "agent": []}
     closed_at = {}
     labels = {}
     for item in _json_lines(text):
@@ -2423,6 +2431,8 @@ def guidance_issues(gh, marker: str) -> dict:
             found["capped"].append(number)
         if HELD_MARKER in item["body"]:
             found["held"].append(number)
+        if issue_origin(item["body"]) == "agent":
+            found["agent"].append(number)
     return {**{state: sorted(numbers) for state, numbers in found.items()},
             "closed_at": closed_at, "labels": labels}
 

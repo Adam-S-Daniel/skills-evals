@@ -562,6 +562,16 @@ class AutoTests(Base):
         self.assertIn("already open", out)
         self.assertEqual(fake.writes(), [])
 
+    def test_an_open_agent_issue_keeps_the_auto_path_from_opening_a_second_removal(self):
+        body = (f"{retire_skill.ISSUE_MARKER.format(skill=SKILL)}\n"
+                f"{retire_skill.AGENT_STAMP}\n")
+        fake = FakeGitHub(issues=[issue(41, body)])
+        code, out, err, fake = self.run_main(gates_doc("auto"), *BOTH, fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("the fleet worker holds", out)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(fake.writes(), [])
+
     def test_the_fallback_does_not_touch_a_proposal_or_an_allowed_auto(self):
         code, _, err, fake = self.run_main(gates_doc("proposal"), "--allow-mode", "proposal",
                                            "--fallback-to-proposal")
