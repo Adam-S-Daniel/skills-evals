@@ -565,6 +565,15 @@ def prepare(staged: Path, tree: Path, section: str, guidance_sha: str, run_id: s
         if payload.read_bytes() != (tree / BASE_MD).read_bytes():
             raise Rejected(CONTENT_PAYLOAD)
     if row["file"] == BASE_MD and has_contributor_script(tree):
+        # The script needs _agent-guidance's locked node deps, which the
+        # workflow's bare checkout lacks: install them, scripts off.
+        if (tree / "package-lock.json").is_file() \
+                and not (tree / "node_modules" / "yaml").is_dir():
+            try:
+                subprocess.run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+                               cwd=tree, capture_output=True, check=True)
+            except (OSError, subprocess.CalledProcessError) as e:
+                raise Rejected(CONTENT_CONTRIBUTOR) from e
         if _contributor_rules(tree, "--write") or not contributor_rules_current(tree):
             raise Rejected(CONTENT_CONTRIBUTOR)
     changed = [entry[3:] for entry in ingest.git(

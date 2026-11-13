@@ -2420,6 +2420,15 @@ def regenerate_agents_md(checkout: Path, managed: str) -> None:
     _write_exact(path, managed.rstrip("\n") + "\n" + tail + "\n")
 
 
+def _node_deps(checkout: Path) -> None:
+    """_agent-guidance's node scripts need its locked `yaml` and `markdown-it`,
+    and the workflow's checkout has no node_modules: install them, scripts
+    off, when the checkout has a lockfile and they are not there yet."""
+    if (checkout / "package-lock.json").is_file() \
+            and not (checkout / "node_modules" / "yaml").is_dir():
+        _run(checkout, "npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund")
+
+
 def _run(checkout: Path, *args: str) -> str:
     proc = subprocess.run(list(args), cwd=checkout, capture_output=True, text=True,
                           check=False)
@@ -2609,6 +2618,7 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
             (checkout / GUIDANCE_PAYLOAD).write_bytes(source.read_bytes())
     manifest = checkout / GUIDANCE_MANIFEST
     _write_exact(manifest, manifest_without_row(_read_exact(manifest), action["section"]))
+    _node_deps(checkout)
     _run(checkout, "node", "scripts/check-guidance-coverage.js", "--write-bytes")
     impact = checkout / GUIDANCE_IMPACT
     _write_exact(impact, guidance_insert_entry(_read_exact(impact), action["impact_entry"]))
@@ -2641,6 +2651,7 @@ def guidance_commands(action: dict) -> list:
                 *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD]]
                   if action["file"] == "agents-md/base.md" else []),
                 ["edit", GUIDANCE_MANIFEST, f"delete row {action['section']}"],
+                ["npm", "ci", "--ignore-scripts", "(when node_modules is missing)"],
                 ["node", "scripts/check-guidance-coverage.js", "--write-bytes"],
                 ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
