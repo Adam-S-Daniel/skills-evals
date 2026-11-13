@@ -2683,7 +2683,11 @@ RECHECK_FROZEN_STATES = ("pr-open", "worker", "waiting-turn", "queued", "removed
 def removal_frozen(verdict, state) -> bool:
     """True when a subject with this gate verdict and removal state (None or
     "unknown": not known) gets no re-check: it is being removed and the
-    removal is in motion or done, or its state is not known."""
+    removal is in motion or done, or its state is not known. A removal
+    that is done (`removed`) freezes the subject whatever its verdict: a
+    skill removed in its own registry has no retire verdict."""
+    if state == "removed":
+        return True
     if verdict not in ("retire", "retire-pending"):
         return False
     return state is None or state == "unknown" or state in RECHECK_FROZEN_STATES

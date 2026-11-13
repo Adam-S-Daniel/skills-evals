@@ -413,35 +413,65 @@ def removed_sections(guidance_dir: Path | None) -> list:
     return sorted(out, key=lambda r: (r["date"], r["id"]), reverse=True)
 
 
-#: A skill removal's heading in adam-agentskills' docs/skill-impact.md, as
-#: scripts/retire_skill.py `impact_entry` writes it.
+#: A skill removal's heading in a registry's docs/skill-impact.md, as
+#: scripts/retire_skill.py `impact_entry` writes it. cms-platform's headings
+#: carry `cms-platform` in the plugin slot.
 REMOVED_SKILL_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — ([a-z0-9-]+)/([a-z0-9][a-z0-9-]*) — remove\s*$",
                               re.MULTILINE)
-SKILL_REGISTRY = "adam-agentskills"
 
 
 def removed_skills(registries: dict | None) -> list:
-    """The skills removed so far from the public registry (#557: Adam,
-    2026-11-02, every removal tracked and reversible), newest first, from
-    the `remove` entries of its docs/skill-impact.md: {"name", "plugin",
-    "date", "reverse_url"}, the last the removal pull request the entry names,
-    else a search for a `retire-skill/<name>` branch, whose Revert button
-    restores it. [] without that checkout or file."""
-    entry = (registries or {}).get(SKILL_REGISTRY)
-    # compute_gates.flag_registries' entries carry the checkout as `path`.
-    root = entry.get("path") if isinstance(entry, dict) else entry
-    if root is None:
-        return []
-    try:
-        text = (Path(root) / "docs" / "skill-impact.md").read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []
-    out = [{"name": m.group(3), "plugin": m.group(2), "date": m.group(1),
-            "reverse_url": (_removal_pr_url(text, m.end(), SKILL_REGISTRY)
-                            or f"https://github.com/Adam-S-Daniel/{SKILL_REGISTRY}/pulls"
-                               f"?q=is%3Apr+head%3Aretire-skill%2F{m.group(3)}")}
-           for m in REMOVED_SKILL_RE.finditer(text)]
-    return sorted(out, key=lambda r: (r["date"], r["name"]), reverse=True)
+    """The skills removed so far from the public registries (#557: Adam,
+    2026-11-02, every removal tracked and reversible; 2026-11-13: every
+    registry, not only adam-agentskills), newest first, from the `remove`
+    entries of each `private: false` registry checkout's docs/skill-impact.md:
+    {"name", "registry", "plugin", "date", "reverse_url"}, the last the
+    removal pull request the entry names, else a search for a
+    `retire-skill/<name>` branch in that registry's repository, whose Revert
+    button restores it. A registry without a checkout or that file adds
+    nothing."""
+    out = []
+    for registry, repo in sorted(public_registry_repos().items()):
+        entry = (registries or {}).get(registry)
+        # compute_gates.flag_registries' entries carry the checkout as `path`.
+        root = entry.get("path") if isinstance(entry, dict) else entry
+        if root is None:
+            continue
+        try:
+            text = (Path(root) / "docs" / "skill-impact.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        name_of_repo = repo["repo"].split("/", 1)[-1]
+        out += [{"name": m.group(3), "registry": registry, "plugin": m.group(2),
+                 "date": m.group(1),
+                 "reverse_url": (_removal_pr_url(text, m.end(), name_of_repo)
+                                 or f"https://github.com/Adam-S-Daniel/{name_of_repo}/pulls"
+                                    f"?q=is%3Apr+head%3Aretire-skill%2F{m.group(3)}")}
+                for m in REMOVED_SKILL_RE.finditer(text)]
+    return sorted(out, key=lambda r: (r["date"], r["name"], r["registry"]), reverse=True)
+
+
+def mark_removed(skills: list, removed: list, registries: dict | None) -> None:
+    """A skill listed in `removed` (same name and registry) whose registry
+    checkout does not have it any more reads `removal: removed` with the
+    removal pull request's link (in place), whatever its verdict: it was
+    removed in its own registry, outside this repository's retire loop. A
+    checkout that is absent, or still has the skill (restored since), leaves
+    the subject alone: unknown is never "removed". An existing `removed`
+    state (the loop's own merged removal pull request) stands."""
+    newest = {}
+    for row in removed:
+        newest.setdefault((row["registry"], row["name"]), row)
+    for subject in skills:
+        row = newest.get((subject.get("registry"), subject["name"]))
+        if row is None or (subject.get("removal") or {}).get("state") == "removed":
+            continue
+        entry = (registries or {}).get(row["registry"])
+        root = entry.get("path") if isinstance(entry, dict) else entry
+        if root is None or not Path(root).is_dir() \
+                or any(Path(root).glob(f"**/{row['name']}/SKILL.md")):
+            continue
+        subject["removal"] = {"state": "removed", "url": row["reverse_url"], "since": row["date"]}
 
 
 def guidance_runs(index: dict) -> dict:
@@ -1790,9 +1820,15 @@ def without_test(subjects: list) -> None:
     removal is in motion, done or unknown is not tested again, so it has no
     place in line and no re-check due (in place); the planner's rule
     (`plan_week.removal_frozen`) over the subject's `removal`, so a declined
-    or owner-held removal keeps the next test the planner would plan."""
+    or owner-held removal keeps the next test the planner would plan. A
+    removal that is done (`removed`) leaves nothing to test, so the subject
+    has no band either and is not scheduled."""
     for subject in subjects:
-        if plan_week.removal_frozen(subject["verdict"], (subject.get("removal") or {}).get("state")):
+        state = (subject.get("removal") or {}).get("state")
+        if state == "removed":
+            subject["next_test"] = {**subject["next_test"], "position": None, "band": None,
+                                    "due": None, "scheduled": False}
+        elif plan_week.removal_frozen(subject["verdict"], state):
             subject["next_test"] = {**subject["next_test"], "position": None, "due": None}
 
 
@@ -2169,6 +2205,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         removal = removal_of("skill", subject["name"], subject["verdict"], removal_state)
         if removal:
             subject["removal"] = removal
+    removed_list = removed_skills(registries)
+    mark_removed(skills, removed_list, registries)
     without_test(skills)
     renumber(skills)
 
@@ -2269,7 +2307,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "policy": {**{k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                              "min_cli_versions", "objective_margin")},
                    "max_runs_per_cell": policy.get("max_runs_per_cell")},
-        "skills": skills, "removed_skills": removed_skills(registries),
+        "skills": skills, "removed_skills": removed_list,
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "discarded_runs": fleet_discards(skills, sections),
         "coverage": coverage, "alerts": alerts,

@@ -8,7 +8,10 @@ name: Scope the evals
 # rest), and on dispatch.
 #
 # `plan` reads main, `persistent/eval-results` (the explorer document and the
-# local usage census, both data) and adam-agentskills' plugin layout, and
+# local usage census, both data), adam-agentskills' plugin layout and, for the
+# `removed` rule (Adam, 2026-11-13: a removed skill's evals stop with no
+# approval), the skill directories of the three public registries (sparse,
+# read-only, the job token: all three are public, as in explorer-data.yml), and
 # uploads the plan; its job summary lists every change with its reason.
 # `propose` applies a non-empty plan on `eval-scope/<run id>` and opens one
 # pull request with auto-merge (merge commit) on, a lane declared by
@@ -73,6 +76,34 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts/plugin_layout.json
           sparse-checkout-cone-mode: false
+      # The removed rule reads only which skill directories exist, so each
+      # checkout is sparse (only the layout's SKILL.md files in the working
+      # tree, no history). A checkout that fails stops the job: the rule treats a
+      # missing one as unknown, but a half-checked-out tree is not trusted.
+      - name: Check out adam-agentskills' skills (the removed rule)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: ctx/registry-agentskills
+          persist-credentials: false
+          sparse-checkout: /plugins/*/skills/*/SKILL.md
+          sparse-checkout-cone-mode: false
+      - name: Check out cms-platform's skills (the removed rule)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: ctx/registry-cms
+          persist-credentials: false
+          sparse-checkout: /skills/*/SKILL.md
+          sparse-checkout-cone-mode: false
+      - name: Check out adamdaniel.ai's skills (the removed rule)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: ctx/registry-site
+          persist-credentials: false
+          sparse-checkout: /.claude/skills/*/SKILL.md
+          sparse-checkout-cone-mode: false
       - name: Plan the scope changes
         id: plan
         run: |
@@ -82,6 +113,9 @@ jobs:
             --explorer eval-results-branch/explorer/latest.json \
             --usage eval-results-branch/usage/weekly-local.json \
             --registry-layout ctx/adam-agentskills/scripts/plugin_layout.json \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/ctx/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/ctx/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/ctx/registry-site" \
             --now "$now" --out "$RUNNER_TEMP/plan.json" > "$RUNNER_TEMP/plan.out"
           cat "$RUNNER_TEMP/plan.out" >> "$GITHUB_OUTPUT"
           {
