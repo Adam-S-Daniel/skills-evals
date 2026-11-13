@@ -2286,6 +2286,14 @@ def _verdict(cells: list, any_fixture: bool, policy: dict) -> dict:
     headroom = [c for c in counted if c["class"] in ("no-benefit", "no-clear-effect")]
     if not any_fixture:
         return {"verdict": "insufficient", "reason": "no fixture on main"}
+    if any(c.get("scope_paused") == "removed" for c in cells):
+        # The eval scope pass paused the fixture because the skill is gone
+        # from its registry: there is nothing left to keep or remove, and no
+        # work item may ask for a fixture for it. The explorer shows it as
+        # removed (scripts/explorer_data.py mark_removed / removed_skills).
+        return {"verdict": "insufficient", "removed": True, "reason": "the skill no "
+                "longer exists in its registry, so its fixtures are paused and it is "
+                "not judged"}
     if "benefit" in classes:
         return {"verdict": "keep", "reason": "a cell shows benefit"}
     if classes & {"insufficient", "missing"}:
@@ -2473,7 +2481,7 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
            for pair in GUIDANCE_PAIRS}
     in_situ, alone = out["in_situ"], out["alone"]
     verdict, reason = in_situ["verdict"], in_situ["reason"]
-    extra = {k: in_situ[k] for k in ("removal", "removal_reason", "unmeasured",
+    extra = {k: in_situ[k] for k in ("removal", "removal_reason", "unmeasured", "removed",
                                          "paused_ceiling")
              if k in in_situ}
     if verdict == "retire" and any(c["class"] == "benefit" for c in alone["cells"]):

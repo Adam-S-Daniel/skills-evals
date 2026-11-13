@@ -1408,11 +1408,28 @@ The rules, in order:
   in `evals/removal-policy.yml` (`floor_weeks`, `value_per_use_usd` and the
   rest), not a session count. A pause is reversible and costs only the evals
   it skips. Current values: [docs/rules.md](rules.md).
+- **Removed.** A skill fixture whose skill no longer exists in its registry
+  is paused (*2026-11-13, Adam: a "remove it" decision acts with no approval
+  and the dashboard shows what happened*; fixtures are kept so a restored
+  skill can be evaluated again, 2026-11-12). The registry is the `registry`
+  field of the skill's explorer entry, its checkout comes in as `--registry
+  NAME=PATH` (eval-scope.yml checks the three public registries out sparse)
+  and its layout is `harness/registries.yml`'s. The rule reads the directory,
+  not the `remove` entry of the registry's `docs/skill-impact.md`: the
+  directory is what an eval would install, a restored skill needs no entry
+  retracted, and an entry written before its removal merges pauses nothing.
+  Confirmed absent needs a readable checkout whose layout matches at least one
+  skill (so an empty or sparse checkout is never "everything removed") and no
+  visible checkout with the skill; anything else is unknown and does nothing.
+  It applies at any stakes. The explorer shows the same fact from the
+  registries' `remove` entries (`removed_skills`, one per registry) as
+  `removal: removed` with no next test.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its
   runs no longer trip the rule per model; a zero-use pause ends when
-  `has_recorded_use` is true.
+  `has_recorded_use` is true; a removed pause ends when the skill exists in
+  its registry again.
 
 A pause removes the path from `evals/scheduled.yml`, records it in
 `evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume

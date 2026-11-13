@@ -820,7 +820,11 @@ class BreakerTests(OutageFixture, unittest.TestCase):
         refreshed = priced(0.0, refresh=True)
         self.assertEqual(len(refreshed), 1)
         self.assertLessEqual(refreshed[0]["cost"], 0.035)
-        self.assertEqual((refreshed[0]["mode"], refreshed[0]["arms"]), ("eval", "both"))
+        # Which fixture heads the refresh comes from the live evals/ tree, so
+        # its arm set moves with every scope pass (a skill fixture fires
+        # `both`, a guidance one `in-situ`); only the mode is this test's.
+        self.assertEqual(refreshed[0]["mode"], "eval")
+        self.assertIn(refreshed[0]["arms"], ("both", "in-situ"))
 
     def test_with_no_schedulable_cell_the_queue_is_not_held(self):
         def hold(cells):

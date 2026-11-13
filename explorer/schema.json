@@ -2623,6 +2623,9 @@
     "name": {
      "type": "string"
     },
+    "registry": {
+     "type": "string"
+    },
     "plugin": {
      "type": "string"
     },
@@ -2639,6 +2642,7 @@
     "date",
     "name",
     "plugin",
+    "registry",
     "reverse_url"
    ],
    "additionalProperties": false

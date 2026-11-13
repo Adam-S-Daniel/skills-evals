@@ -166,6 +166,21 @@ class ScopePauseTests(unittest.TestCase):
         kept = self.skill_verdict(self.runs(), expect("a", "b", paused="a", rule="zero-use"))
         self.assertEqual(kept["verdict"], "keep")
 
+    def test_a_removed_pause_takes_the_skill_out_of_judgment(self):
+        # The review of #1016's F3: a fixture paused because its skill is gone
+        # must neither free a retire through the other cells nor ask for a
+        # fixture (`unmeasured`) for a skill that no longer exists.
+        for runs, exp in ((self.runs(3), expect("a", "b", paused="a", rule="removed")),
+                          (self.runs(), expect("a", "b", paused="a", rule="removed")),
+                          (pairs("a", 3, 95, 95), expect("a", paused="a", rule="removed"))):
+            v = self.skill_verdict(runs, exp)
+            self.assertEqual(v["verdict"], "insufficient", v["reason"])
+            self.assertTrue(v.get("removed"))
+            self.assertNotIn("removal", v)
+            self.assertNotIn("unmeasured", v)
+            self.assertIsNone(retire_skill.retiring({"skills": {"demo": v},
+                                                     "roster_models": MODELS}))
+
     def test_a_subject_whose_every_cell_is_paused(self):
         # Round 4's M1: `ceiling` needs each paused cell's own evidence (20
         # pairs at 96 stop as `ceiling-unconfirmed`); three pairs are not.
