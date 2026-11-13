@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated_at": "2026-11-13T12:34:23Z",
+ "generated_at": "2026-11-13T14:18:02Z",
  "weeks": [
   {
    "week": "2026-10-19",
@@ -32,16 +32,16 @@
    "plan_meter_points": 11.0,
    "run_usd": 138.280329115,
    "api_usd": 122.68663849999996,
-   "thread_spend_usd": 342.04150471399953
+   "thread_spend_usd": 355.12901886399953
   }
  ],
  "total": {
   "since": "2026-10-19",
-  "usd": 5858.512866155,
+  "usd": 5871.600380305,
   "run_usd": 996.517010785,
-  "thread_spend_usd": 4647.584248065,
+  "thread_spend_usd": 4660.671762215,
   "api_usd": 214.41160730499996,
   "verdicts": 11,
-  "cost_per_verdict": 532.5920787413636
+  "cost_per_verdict": 533.7818527549999
  }
 }
