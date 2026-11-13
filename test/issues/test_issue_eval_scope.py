@@ -718,11 +718,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("import re\n", src)
         self.assertIsNone(re.search(r"^from re import", src, re.M))
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ScopePolicyTests(unittest.TestCase):
     """The ceiling and floor thresholds live in evals/scope-policy.yml
     (docs/rules.md), read with strict validation."""
@@ -743,3 +738,7 @@ class ScopePolicyTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(eval_scope.ScopeError):
                 eval_scope.parse_scope_policy(text)
         self.assertEqual(eval_scope.parse_scope_policy(self.GOOD)["ceiling_share"], 0.85)
+
+
+if __name__ == "__main__":
+    unittest.main()

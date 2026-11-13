@@ -2300,14 +2300,15 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
                        remove_need, _growth(margin - mu, var, 1 - margin))
     current = cell.get("current_rest_pairs") if pooled \
         and isinstance(cell.get("current_rest_pairs"), int) else None
-    floor = (policy.get("rest_guard_min_pairs") or 0) if pooled and current is not None else 0
+    floor = policy_value(policy, "rest_guard_min_pairs", True) \
+        if pooled and current is not None else 0
     held = current if current is not None else (cell.get("pairs") or n)
     blocked = None
     without = cell.get("without_mean")
     high = (_real(without) and without > 1 - margin) or cell.get("ceiling_at") is not None
     if high:
-        stop = policy.get("max_runs_high_cell")
-        least = policy.get("high_stop_min_without")
+        stop = policy_value(policy, "max_runs_high_cell", guidance)
+        least = policy_value(policy, "high_stop_min_without", guidance)
         can_stop = isinstance(stop, int) and _real(without) and _real(least) \
             and without >= least \
             and (cell.get("noharm_at") is not None or mu > -margin)
@@ -4110,10 +4111,13 @@ def zero_use_skills(tree: Path, skills: list, now: datetime, registries: dict,
         plugins = eval_scope._skill_plugins(layout if layout and layout.is_file() else None)
     except (OSError, ValueError, eval_scope.ScopeError):
         return frozenset()
-    return frozenset(
-        skill for skill in skills if skill not in exempt
-        and skill_usage.has_recorded_use(
-            doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is False)
+    try:
+        return frozenset(
+            skill for skill in skills if skill not in exempt
+            and skill_usage.has_recorded_use(
+                doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is False)
+    except ValueError:  # an unreadable evals/removal-policy.yml (PolicyError)
+        return frozenset()
 
 
 def guidance_use(tree: Path, now: datetime) -> float | None:

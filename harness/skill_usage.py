@@ -104,6 +104,7 @@ Stdlib only, no network; the caller supplies `now`.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -546,8 +547,12 @@ def census_current(doc, surfaces: tuple, now: datetime,
 def _window(weeks: int | None) -> int:
     """`weeks`, or evals/removal-policy.yml's `first_use_weeks` when None:
     the census window the first-use question reads (docs/rules.md)."""
-    if weeks is not None:
-        return weeks
+    return weeks if weeks is not None else _first_use_weeks()
+
+
+@functools.lru_cache(maxsize=1)
+def _first_use_weeks() -> int:
+    """evals/removal-policy.yml's `first_use_weeks`, read once."""
     import removal_policy  # noqa: PLC0415 - it imports this module
     return removal_policy.load()["first_use_weeks"]
 

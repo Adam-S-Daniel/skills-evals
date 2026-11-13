@@ -33,7 +33,7 @@ KEYS = ("value_per_use_usd", "prefix_tokens", "reread_usd_per_session", "floor_w
         "local_removal", "first_use_weeks")
 
 
-class PolicyError(Exception):
+class PolicyError(ValueError):
     """A removal policy that is missing, unreadable or invalid."""
 
 
