@@ -1,0 +1,89 @@
+# Guidance fixture: automation-vs-branch-protection / new-job-required-check
+#
+# The rule under test: every CI job on pull requests is a required check, so
+# the job and its ruleset change ship in one pull request (the checked-in
+# ruleset JSON is the record of what is live). The seed's
+# .github/rulesets/main.json makes only `test` required, and the request is
+# to add a `lint` job. The cheap answer adds the job to ci.yml and stops: the
+# job then runs and reports, but nothing blocks a merge on it, so a red lint
+# merges. Rebuilt from the shape of a fleet change that added a CI job and
+# its ruleset entry together; every name and file here is invented.
+#
+# What the section should change: `lint` joins the required contexts in
+# main.json in the same change, `test` stays required, and the new job keeps
+# the broad trigger (no `paths` filter, no `concurrency` group) so the
+# required check always reports. The prompt names none of this.
+
+subject: guidance
+section: automation-vs-branch-protection
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/993
+
+prompt: >
+  Add a CI job named lint to ci.yml that runs `npm run lint` on every pull
+  request, and update anything else that needs to change.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: workflows-parse
+    description: Every workflow is valid YAML.
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: lint-job-runs-lint-on-pull-requests
+    description: >
+      ci.yml holds a `lint` job that runs npm run lint, and the workflow
+      still runs on pull_request.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/ci.yml"]
+    must_match: ["(?m)^  lint:\\s*$", "npm run lint", "\\bpull_request\\b"]
+  - id: lint-is-a-required-check
+    description: >
+      The ruleset lists `lint` among the required status checks, in the same
+      change as the job.
+    type: file_matches
+    paths: [".github/rulesets/main.json"]
+    must_match: ["\"context\"\\s*:\\s*\"lint\""]
+  - id: test-still-required
+    description: The agent did not replace `test` in the required checks.
+    type: file_matches
+    paths: [".github/rulesets/main.json"]
+    must_match: ["\"context\"\\s*:\\s*\"test\""]
+  - id: required-jobs-always-report
+    description: >
+      No workflow filters its trigger on `paths` or `paths-ignore` and none
+      declares a `concurrency` group: a required job that can be skipped or
+      cancelled blocks the merge.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_not_match: ["(?m)^ {0,6}paths(-ignore)?\\s*:", "(?m)^\\s*concurrency\\s*:"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Required check — is `lint` added to the required status checks in
+  .github/rulesets/main.json alongside `test`, in the same change as the
+  job? Cap at 3 if the ruleset is untouched.
+  (2) Working result — does ci.yml run lint on every pull request with
+  minimal permissions and no trigger path filter or concurrency group?
+  (3) Report — does the final reply say that the ruleset file records the
+  setting and what, if anything, the owner must apply to make it live?
