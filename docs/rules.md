@@ -13,13 +13,13 @@ A skill and a guidance section are judged the same way, each from its own block 
 
 **No benefit.** A cell shows no benefit when it is confident at 90% ([`skills.retire_confidence`](../evals/gate-policy.yml#L50)) that D is below 0.15 ([`skills.objective_margin`](../evals/gate-policy.yml#L47)), with pairs spanning at least 2 ([`skills.min_cli_versions`](../evals/gate-policy.yml#L51)) Claude Code versions. A cell where the subject makes things worse (D < 0, at the same level) also counts as no benefit.
 
-**Cap.** A cell is fired at most 20 ([`skills.max_runs_per_cell`](../evals/gate-policy.yml#L52)) pairs. At the cap with neither test decided, and pairs on enough Claude Code versions, it has *no clear effect*, which counts toward removal like no benefit; on one version it stays *insufficient* and is listed as a `cell-at-cap` work item.
+**Cap.** A cell is fired at most 20 ([`skills.max_runs_per_cell`](../evals/gate-policy.yml#L52)) pairs. At the cap with neither test crossed, and pairs on enough Claude Code versions, it has *no clear effect*, which counts toward removal like no benefit. On one version, or with a test that crossed but has not decided, it stays *insufficient* and is listed as a `cell-at-cap` work item.
 
 **Ceiling (parked).** A cell whose without arm is confidently above 1 − margin (above 0.85 today) cannot show the margin: it is parked as `ceiling`, stops being fired and does not vote on removal. A high cell still undecided after 20 ([`skills.max_runs_high_cell`](../evals/gate-policy.yml#L53)) pairs stops as `ceiling-unconfirmed` (also parked) when its no-harm test has passed and its without arm averages at least 0.9 ([`skills.high_stop_min_without`](../evals/gate-policy.yml#L56)).
 
 **Broken fixture.** A cell whose arms both pass at most 0.1 ([`skills.floor_fraction`](../evals/gate-policy.yml#L54)) of checks over 3 ([`skills.floor_min_runs`](../evals/gate-policy.yml#L55)) pairs is `cannot-discriminate` and left out of the verdict.
 
-**Verdict**, first match: any keeping cell → `keep`; any cell still insufficient or missing → `insufficient`; every cell broken → `cannot-discriminate`; every counted cell parked → `ceiling` (when each shows it on its own runs, else `insufficient`); otherwise `retire`. A guidance section whose section-alone pair is unfinished is `insufficient`. A cell paused by the zero-use rule (below) keeps its subject `insufficient`. The judge's score is shown but does not vote (its margin: 1.5 ([`skills.judge_margin`](../evals/gate-policy.yml#L48)) on 0 to 10).
+**Verdict**, first match: any keeping cell → `keep`; any cell still insufficient or missing → `insufficient`; every cell broken → `cannot-discriminate`; every counted cell parked → `ceiling` (when each shows it on its own runs, else `insufficient`); otherwise `retire`. For a guidance section, a `retire` whose section-alone pair (the section against no guidance) shows a benefit is `shorten-or-merge`, never a removal, and one whose alone pair is unfinished is `insufficient`. A cell paused by the zero-use rule (below) keeps its subject `insufficient`. The judge's score is shown but does not vote (its margin: 1.5 ([`skills.judge_margin`](../evals/gate-policy.yml#L48)) on 0 to 10).
 
 **Guidance only.** Under `pooled-with-current-guard` ([`guidance.rest_policy`](../evals/gate-policy.yml#L76)) a section's cells pool pairs made beside every earlier version of the rest of the guidance, and every decision toward removal also needs at least 6 pairs ([`guidance.rest_guard_min_pairs`](../evals/gate-policy.yml#L77)) beside the current rest, deciding at the remove level on its own.
 
@@ -56,11 +56,11 @@ A decided subject is re-checked 8 ([`skills.recheck_weeks`](../evals/gate-policy
 
 ## Git hooks
 
-Each git hook check gets a verdict over the last 8 weeks ([`window_weeks`](../evals/hook-policy.yml#L18)):
+Each git hook check gets a verdict over the last 8 weeks ([`window_weeks`](../evals/hook-policy.yml#L19)):
 
-- `earning`: blocked at least once, and overridden in at most 20% of its blocks ([`max_override_rate`](../evals/hook-policy.yml#L20));
+- `earning`: blocked at least once, and overridden in at most 20% of its blocks ([`max_override_rate`](../evals/hook-policy.yml#L21));
 - `overridden-often`: overridden in more than that;
 - `never-blocked`: ran and blocked nothing;
 - `never-ran`: no recorded run and no block.
 
-A check with blocks but no override count gets no verdict. Non-public repositories are shown only when at least 3 feed the data ([`min_private_repos`](../evals/hook-policy.yml#L23)). **No rule removes a hook check**: the verdicts are reported, not acted on.
+A check that blocked but whose overrides no source counts is `earning`, marked unmeasured; `overridden-often` needs a measured rate. Non-public repositories are shown only when at least 3 feed the data ([`min_private_repos`](../evals/hook-policy.yml#L24)). **No rule removes a hook check**: the verdicts are reported, not acted on.

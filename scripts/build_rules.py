@@ -51,6 +51,8 @@ MERGE_WINDOW = ("https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/"
 #: checks a number written next to any of them.
 LEGACY_NAMES = {
     "gate-policy.yml#skills.high_stop_min_without": ["HIGH_STOP_MIN_WITHOUT"],
+    "gate-policy.yml#skills.benefit_confidence": ["DEFAULT_BENEFIT_CONFIDENCE", "KEEP_AT"],
+    "gate-policy.yml#skills.retire_confidence": ["DEFAULT_RETIRE_CONFIDENCE", "REMOVE_AT"],
     "gate-policy.yml#skills.floor_min_runs": ["FLOOR_MIN_RUNS"],
     "gate-policy.yml#skills.recheck_weeks": ["RECHECK_AFTER"],
     "gate-policy.yml#skills.recheck_weeks_high": ["RECHECK_AFTER_HIGH"],
@@ -70,6 +72,8 @@ RETIRED_NAMES = {
                              "skill's first recorded use, with no session minimum",
     "AUTO_MIN_HEADROOM_CELLS": "every retire verdict's removal is automatic; no headroom "
                                "minimum decides it",
+    "HOOK_POLICY_DEFAULTS": "evals/hook-policy.yml is read strictly "
+                            "(explorer_public.load_hook_policy); no defaults in code",
 }
 
 
@@ -224,9 +228,10 @@ def render_md(doc: dict) -> str:
         "as no benefit.",
         "",
         f"**Cap.** A cell is fired at most {same('max_runs_per_cell')} pairs. At the cap "
-        "with neither test decided, and pairs on enough Claude Code versions, it has *no "
-        "clear effect*, which counts toward removal like no benefit; on one version it "
-        "stays *insufficient* and is listed as a `cell-at-cap` work item.",
+        "with neither test crossed, and pairs on enough Claude Code versions, it has *no "
+        "clear effect*, which counts toward removal like no benefit. On one version, or "
+        "with a test that crossed but has not decided, it stays *insufficient* and is "
+        "listed as a `cell-at-cap` work item.",
         "",
         "**Ceiling (parked).** A cell whose without arm is confidently above "
         f"1 − margin (above {_num(round(1 - margin, 10))} today) cannot show the margin: it "
@@ -242,8 +247,10 @@ def render_md(doc: dict) -> str:
         "**Verdict**, first match: any keeping cell → `keep`; any cell still insufficient "
         "or missing → `insufficient`; every cell broken → `cannot-discriminate`; every "
         "counted cell parked → `ceiling` (when each shows it on its own runs, else "
-        "`insufficient`); otherwise `retire`. A guidance section whose section-alone pair "
-        "is unfinished is `insufficient`. A cell paused by the zero-use rule (below) keeps "
+        "`insufficient`); otherwise `retire`. For a guidance section, a `retire` whose "
+        "section-alone pair (the section against no guidance) shows a benefit is "
+        "`shorten-or-merge`, never a removal, and one whose alone pair is unfinished is "
+        "`insufficient`. A cell paused by the zero-use rule (below) keeps "
         "its subject `insufficient`. The judge's score is shown but does not vote (its "
         f"margin: {same('judge_margin')} on 0 to 10).",
         "",
@@ -341,7 +348,8 @@ def render_md(doc: dict) -> str:
         "- `never-blocked`: ran and blocked nothing;",
         "- `never-ran`: no recorded run and no block.",
         "",
-        "A check with blocks but no override count gets no verdict. Non-public repositories "
+        "A check that blocked but whose overrides no source counts is `earning`, marked "
+        "unmeasured; `overridden-often` needs a measured rate. Non-public repositories "
         f"are shown only when at least {v(H + 'min_private_repos')} feed the data "
         f"({ref(H + 'min_private_repos')}). **No rule removes a hook check**: the verdicts "
         "are reported, not acted on.",

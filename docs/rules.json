@@ -135,7 +135,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.benefit_confidence",
       "names": [
-        "benefit_confidence"
+        "benefit_confidence",
+        "DEFAULT_BENEFIT_CONFIDENCE",
+        "KEEP_AT"
       ]
     },
     "gate-policy.yml#skills.floor_fraction": {
@@ -236,7 +238,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.retire_confidence",
       "names": [
-        "retire_confidence"
+        "retire_confidence",
+        "DEFAULT_RETIRE_CONFIDENCE",
+        "REMOVE_AT"
       ]
     },
     "gate-policy.yml#skills.retirement_mode": {
@@ -404,6 +408,7 @@
   },
   "retired_names": {
     "ZERO_USE_MIN_SESSIONS": "the zero-use session minimum is gone: evals pause until a skill's first recorded use, with no session minimum",
-    "AUTO_MIN_HEADROOM_CELLS": "every retire verdict's removal is automatic; no headroom minimum decides it"
+    "AUTO_MIN_HEADROOM_CELLS": "every retire verdict's removal is automatic; no headroom minimum decides it",
+    "HOOK_POLICY_DEFAULTS": "evals/hook-policy.yml is read strictly (explorer_public.load_hook_policy); no defaults in code"
   }
 }

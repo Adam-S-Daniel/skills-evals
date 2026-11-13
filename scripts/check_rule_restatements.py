@@ -30,10 +30,13 @@ not code structure.
 Skipped: any `test`/`tests`, `vendor` or `.claude` (worktrees) directory, `results/`, `routine-results/`,
 `node_modules/`, `.git/`, built bundles CI rebuilds from source
 (`tool/index.html`, `explorer/dist/`, `dashboard/page/`), fixture seeds
-(`evals/*/seed/`, copies of other repositories), CSS, ADR bodies (`docs/decisions/`, the
+(`evals/*/seed/`, copies of other repositories) and fixture rubrics
+(`evals/*/fixture.yaml`), CSS, ADR bodies (`docs/decisions/`, the
 history), the generated `docs/rules.md` and `docs/rules.json`, and the
-source YAMLs themselves (each root's `evals/*-policy.yml`,
-`evals/usage-unknown.yml`, `evals/stakes.yml`), plus `--exclude` globs
+rule sources themselves (each root's `evals/gate-policy.yml`,
+`removal-policy.yml`, `hook-policy.yml`, `scope-policy.yml`,
+`usage-unknown.yml` and `stakes.yml`; other `evals/*-policy.yml` files are
+checked), plus `--exclude` globs
 (matched against the path relative to its root).
 """
 
@@ -53,15 +56,22 @@ TEXT_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".svelte",
 SKIP_DIRS = {".git", "node_modules", "test", "tests", "results", "routine-results",
              "__pycache__", ".venv", "venv", "vendor", ".claude"}
 SKIP_PATHS = ("tool/index.html", "explorer/dist/*", "dashboard/page/*", "evals/*/seed/*",
+              # A fixture's scoring rubric ("cap at 3 if ...") is task data.
+              "evals/*/fixture.yaml",
               "*.css", "scripts/check_rule_restatements.py", "docs/decisions/*", "docs/rules.md",
-              "docs/rules.json", "evals/*-policy.yml", "evals/usage-unknown.yml",
+              "docs/rules.json", "evals/gate-policy.yml", "evals/removal-policy.yml",
+              "evals/hook-policy.yml", "evals/scope-policy.yml", "evals/usage-unknown.yml",
               "evals/stakes.yml")
 MAX_BYTES = 2_000_000
 #: A numeric literal, not a format spec (`:.0%`, `:.2f`) or part of a word.
-NUMBER = r"(-?(?:\d+(?:\.\d+)?|\.\d+))(?![\w%.])"
-#: What may sit between a rule's name and its number: quotes, a colon, an
-#: equals sign, a comma, `??`/`||`, spaces, and `timedelta(weeks=`.
-GAP = r"""["'`\]\s]{0,2}\s*(?:[:=,]|\?\?|\|\|)\s*(?:timedelta\(weeks=)?["'`]?\s*"""
+NUMBER = r"(-?(?:\d+(?:\.\d+)?|\.\d+))(?![\w%.-])"
+#: What may sit between a rule's name and its number: quotes or a closing
+#: bracket, then a colon, an equals sign, a comma, an opening parenthesis
+#: (`max_runs_per_cell` (20)), `??`/`||`, `) or` (`.get("key") or 0.9`), or a
+#: type annotation (`NAME: int = 3`), then optionally `timedelta(weeks=`.
+GAP = (r"""["'`\]\s]{0,2}\s*"""
+       r"""(?:\)\s*or\b|:\s*[A-Za-z_][\w\[\], |.]{0,30}?\s*=(?!=)|[:=,(]|\?\?|\|\|)"""
+       r"""\s*(?:timedelta\(weeks=)?["'`]?\s*""")
 
 #: The prose table. Each row: a regex whose group 1 is the number, how to
 #: read it (`frac` keeps it, `pct` divides by 100), the context words that
@@ -80,11 +90,34 @@ PHRASES = [
         ],
     },
     {
+        "name": "confidence level",
+        # The same as a fraction: "0.85 confidence", "confidence of 0.9".
+        "regex": r"(?<![\w.])(0?\.\d+)\s+confiden|confiden\w*\s+(?:level\s+)?(?:of\s+|at\s+)?(0?\.\d+)(?![\w.%])",
+        "scale": "frac",
+        "contexts": [
+            (r"\bkeep|\bbenefit\b|\bhelps?\b", ["gate-policy.yml#*.benefit_confidence"]),
+            (r"\bremov|\bretire|no[- ]benefit|\bharm", ["gate-policy.yml#*.retire_confidence"]),
+        ],
+    },
+    {
+        "name": "pair cap",
+        # "the cap of 40", "a cap at 20", "capped at 40".
+        "regex": r"\bcap(?:ped)?\s+(?:of|at|is)\s+(\d{1,4})\b(?!\s?%)",
+        "scale": "frac",
+        "window": 80,
+        "contexts": [
+            (r"\bpauses?\b|withdr[ae]w", ["gate-policy.yml#*.max_removal_pauses"]),
+            (r"\bpairs?\b|\bcells?\b|paired runs|comparison runs",
+             ["gate-policy.yml#*.max_runs_per_cell", "gate-policy.yml#*.max_runs_high_cell"]),
+        ],
+    },
+    {
         "name": "pair count",
         "regex": r"(\d{1,4})\s+(?:paired\s+runs|pairs)\b|(\d{1,4})-pair\b",
         "scale": "frac",
         "contexts": [
-            (r"\bcap\b|\bcapped\b|at most|up to|\bmax", ["gate-policy.yml#*.max_runs_per_cell",
+            (r"\bcap\b|\bcapped\b|at most|up to|\bmax|neither test|no[- ]clear[- ]effect",
+             ["gate-policy.yml#*.max_runs_per_cell",
                                                      "gate-policy.yml#*.max_runs_high_cell"]),
             (r"current rest|rest guard|beside the current", [
                 "gate-policy.yml#guidance.rest_guard_min_pairs"]),
@@ -193,12 +226,20 @@ def check_text(rel: str, text: str, doc: dict) -> list[str]:
         sorted(map(re.escape, {*by_name, *retired}), key=len, reverse=True))
         + r")(?![A-Za-z0-9_])" + GAP + NUMBER)
     phrases = [(row, re.compile(row["regex"], re.I)) for row in PHRASES]
+    # A retired name may not be set at all, to a number or a mapping.
+    retired_set = re.compile(r"(?<![A-Za-z0-9_.])(" + "|".join(map(re.escape, retired))
+                             + r")\s*(?::[^=\n]{1,40})?=(?!=)") if retired else None
     for number, line in enumerate(text.split("\n"), 1):
+        if retired_set is not None:
+            for m in retired_set.finditer(line):
+                findings.append(f"{rel}:{number}: {m.group(1)} is retired "
+                                f"({retired[m.group(1)]}); it is set here")
         for m in name_re.finditer(line):
             name, found = m.group(1), float(m.group(2))
             if name in retired:
-                findings.append(f"{rel}:{number}: {name} is retired ({retired[name]}); "
-                                f"found {m.group(2)}")
+                if retired_set is None or not retired_set.search(line[m.start():m.end()]):
+                    findings.append(f"{rel}:{number}: {name} is retired ({retired[name]}); "
+                                    f"found {m.group(2)}")
                 continue
             current = by_name[name]
             if not any(_equal(found, v) for _, v in current):

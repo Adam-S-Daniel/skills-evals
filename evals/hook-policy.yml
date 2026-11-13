@@ -11,8 +11,9 @@
 # Current values in plain English: docs/rules.md (generated from this file).
 # No rule removes a hook check: these verdicts are reported, never acted on.
 #
-# A check that blocks but that no source counts overrides for (the local hook
-# log records none; only the CI file does) gets no verdict, never a guess.
+# A check that blocked but whose overrides no source counts (the local hook
+# log records none; only the CI file does) is `earning` with
+# `overrides_measured: false`; `overridden-often` needs a measured rate.
 
 # ISO weeks, ending with the document's as-of week.
 window_weeks: 8

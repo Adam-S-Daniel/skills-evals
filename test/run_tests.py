@@ -4739,7 +4739,8 @@ class CiDispatchTests(unittest.TestCase):
                "README.md",
                "DESIGN.md",
                # The rules restatement check reads every doc (docs/rules.md).
-               "AGENTS.md", "HANDOFF.md", "docs/**",
+               "AGENTS.md", "CLAUDE.md", "HANDOFF.md", ".agent-checks/**",
+               ".githooks/**", "badges/**", "docs/**",
                "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
                "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]
 

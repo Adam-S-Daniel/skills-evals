@@ -152,6 +152,14 @@ class CheckerTests(unittest.TestCase):
             "get.py": f'm = policy.get("objective_margin", {margin + 0.1:g})\n',
             "fallback.js": f"const at = policy.retire_confidence ?? {retire - 0.1:g};\n",
             "weeks.py": f"RECHECK_AFTER = timedelta(weeks={value('gate-policy.yml#skills.recheck_weeks') + 1})\n",
+            # Key then a parenthesized value, the docs' most common shape.
+            "paren.md": f"Keep at `benefit_confidence` ({value('gate-policy.yml#skills.benefit_confidence') - 0.1:g}).\n",
+            "guard.md": f"`rest_guard_min_pairs` ({value('gate-policy.yml#guidance.rest_guard_min_pairs') + 3}) pairs.\n",
+            "legacy.md": f"HIGH_STOP_MIN_WITHOUT ({value('gate-policy.yml#skills.high_stop_min_without') - 0.05:g}; round 3).\n",
+            "cap.md": f"`max_runs_per_cell` ({value('gate-policy.yml#skills.max_runs_per_cell') + 20})\n",
+            "or.py": f'level = policy.get("retire_confidence") or {retire + 0.05:g}\n',
+            "typed.py": f"MAX_LOOP_PAUSES: int = {value('gate-policy.yml#skills.max_removal_pauses') + 2}\n",
+            "default.py": f"DEFAULT_RETIRE_CONFIDENCE = {retire - 0.2:g}\n",
         }
         for name, text in cases.items():
             with self.subTest(name=name):
@@ -179,6 +187,9 @@ class CheckerTests(unittest.TestCase):
             "margin": f"No benefit means a gain under the {margin_points + 5}-point margin.\n",
             "use": f"Remove it once its cost passes ${use + 5:g}, the value of one use.\n",
             "weeks": f"A decided subject is re-checked after {recheck + 4} weeks.\n",
+            "paired runs": f"A cell with {cap + 20} paired runs with neither test crossed has no clear effect.\n",
+            "cap of": f"Each cell stops at the cap of {cap + 20}.\n",
+            "fraction": f"Remove it at {value('gate-policy.yml#skills.retire_confidence') - 0.05:g} confidence that it does not help.\n",
         }
         for what, text in wrong.items():
             with self.subTest(what=what):
@@ -192,12 +203,22 @@ class CheckerTests(unittest.TestCase):
             f"A subject is kept at {keep}% confidence that it helps. A cell is capped at "
             f"{cap} pairs. No benefit means a gain under the {margin_points}-point margin.\n"
             f"Remove it once its cost passes ${use:g}, the value of one use.\n"
-            f"A decided subject is re-checked after {recheck} weeks.\n"))
+            f"A decided subject is re-checked after {recheck} weeks.\n"
+            f"A cell with {cap} paired runs with neither test crossed has no clear effect.\n"
+            f"Each cell stops at the cap of {cap}.\n"
+            f"Remove it at {value('gate-policy.yml#skills.retire_confidence'):g} confidence that it "
+            "does not help.\n"))
+        tree.write("src/ok.py", (
+            f'level = policy.get("retire_confidence") or '
+            f'{value("gate-policy.yml#skills.retire_confidence"):g}\n'
+            f'MAX_LOOP_PAUSES: int = {value("gate-policy.yml#skills.max_removal_pauses")}\n'
+            f'# `max_runs_per_cell` ({cap}); `max_runs_per_cell` (2026-11-03) is a date.\n'))
         code, out, err = self.check(tree.root)
         self.assertEqual(code, 0, out + err)
 
     def test_a_retired_rule_fails_whatever_its_number(self):
         for text in ("ZERO_USE_MIN_SESSIONS = 7\n",
+                     'HOOK_POLICY_DEFAULTS = {"window_weeks": 8}\n',
                      "Evals pause after 500 sessions of zero use.\n"):
             with self.subTest(text=text):
                 tree = ScratchTree(self)
@@ -253,6 +274,10 @@ class WiringTests(unittest.TestCase):
         doc = yaml.safe_load(text)
         self.assertEqual(set(doc[True]), {"schedule", "workflow_dispatch"})
         self.assertEqual(doc["permissions"], {"contents": "read", "issues": "write"})
+        self.assertEqual(doc["concurrency"], {"group": "rules-consistency",
+                                              "cancel-in-progress": False})
+        # Each repository is checked alone, with its own excludes.
+        self.assertNotIn("--exclude \"$", text)
         for step in doc["jobs"]["check"]["steps"]:
             self.assertNotIn("${{", step.get("run", ""), step.get("name"))
         # The repositories come from evals/rules-consistency.yml alone.
