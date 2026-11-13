@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-12T15:38:02Z",
+  "generated_at": "2026-11-13T14:56:47Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-21T00:00:00Z",
-      "to": "2026-11-12T15:38:02Z",
+      "to": "2026-11-13T14:56:47Z",
       "repos_scanned": 23
     }
   ],
@@ -4152,7 +4152,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 25,
+      "invocations": 46,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4164,7 +4164,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/acsi-kit",
       "surface": "ci",
-      "invocations": 13,
+      "invocations": 38,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4176,7 +4176,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "ci",
-      "invocations": 41,
+      "invocations": 58,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4188,7 +4188,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 60,
+      "invocations": 121,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4200,7 +4200,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/ai-usage-dashboard",
       "surface": "ci",
-      "invocations": 3,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4212,7 +4212,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/claude-memory-map",
       "surface": "ci",
-      "invocations": 3,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4224,7 +4224,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 20,
+      "invocations": 29,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4236,7 +4236,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/fastmail-actions",
       "surface": "ci",
-      "invocations": 3,
+      "invocations": 6,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4248,10 +4248,10 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 5,
+      "invocations": 14,
       "sessions": null,
-      "blocked": 0,
-      "overridden": 0,
+      "blocked": 2,
+      "overridden": 2,
       "outcome": null
     },
     {
@@ -4260,7 +4260,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/rss-inator",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 1,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4272,7 +4272,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/scratch-claude-001",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 1,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4284,7 +4284,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/scratch-jules-001",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 1,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4296,7 +4296,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 61,
+      "invocations": 108,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4308,7 +4308,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/verify-actions-lock",
       "surface": "ci",
-      "invocations": 5,
+      "invocations": 7,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4320,7 +4320,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/wsl-automation",
       "surface": "ci",
-      "invocations": 6,
+      "invocations": 20,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4332,7 +4332,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/jodidaniel.com",
       "surface": "ci",
-      "invocations": 9,
+      "invocations": 18,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4344,7 +4344,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/scratch-claude-002",
       "surface": "ci",
-      "invocations": 3,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4356,7 +4356,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/squarespacetemp",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 1,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4368,7 +4368,7 @@
       "name": "agent-checks",
       "repo": "private",
       "surface": "ci",
-      "invocations": 8,
+      "invocations": 15,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4385,12 +4385,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 20,
-        "prs_merged": 20,
+        "prs_opened": 34,
+        "prs_merged": 29,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 16,
-        "ci_red_after": 0
+        "agent_prs_merged": 23,
+        "ci_red_after": 2
       }
     },
     {
@@ -4404,12 +4404,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 12,
-        "prs_merged": 10,
-        "prs_closed_unmerged": 2,
+        "prs_opened": 24,
+        "prs_merged": 18,
+        "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 10,
-        "ci_red_after": 3
+        "agent_prs_merged": 17,
+        "ci_red_after": 7
       }
     },
     {
@@ -4423,11 +4423,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 11,
-        "prs_merged": 10,
+        "prs_opened": 17,
+        "prs_merged": 15,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 10,
+        "agent_prs_merged": 15,
         "ci_red_after": 0
       }
     },
@@ -4442,12 +4442,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 61,
-        "prs_merged": 52,
-        "prs_closed_unmerged": 8,
+        "prs_opened": 103,
+        "prs_merged": 82,
+        "prs_closed_unmerged": 19,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
-        "ci_red_after": 2
+        "agent_prs_merged": 4,
+        "ci_red_after": 3
       }
     },
     {
@@ -4455,177 +4455,6 @@
       "kind": "repo",
       "name": "Adam-S-Daniel/ai-usage-dashboard",
       "repo": "Adam-S-Daniel/ai-usage-dashboard",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 3,
-        "prs_merged": 3,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/claude-memory-map",
-      "repo": "Adam-S-Daniel/claude-memory-map",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 3,
-        "prs_merged": 3,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/cms-platform",
-      "repo": "Adam-S-Daniel/cms-platform",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 15,
-        "prs_merged": 8,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 2,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/fastmail-actions",
-      "repo": "Adam-S-Daniel/fastmail-actions",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 3,
-        "prs_merged": 3,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/repo-settings",
-      "repo": "Adam-S-Daniel/repo-settings",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 5,
-        "prs_merged": 5,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 1,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/rss-inator",
-      "repo": "Adam-S-Daniel/rss-inator",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/scratch-claude-001",
-      "repo": "Adam-S-Daniel/scratch-claude-001",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/scratch-jules-001",
-      "repo": "Adam-S-Daniel/scratch-jules-001",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 0,
-        "ci_red_after": 0
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/skills-evals",
-      "repo": "Adam-S-Daniel/skills-evals",
-      "surface": "ci",
-      "invocations": null,
-      "sessions": null,
-      "blocked": null,
-      "overridden": null,
-      "outcome": {
-        "prs_opened": 43,
-        "prs_merged": 46,
-        "prs_closed_unmerged": 0,
-        "prs_reverted": 0,
-        "agent_prs_merged": 42,
-        "ci_red_after": 7
-      }
-    },
-    {
-      "week": "2026-11-09",
-      "kind": "repo",
-      "name": "Adam-S-Daniel/verify-actions-lock",
-      "repo": "Adam-S-Daniel/verify-actions-lock",
       "surface": "ci",
       "invocations": null,
       "sessions": null,
@@ -4643,6 +4472,177 @@
     {
       "week": "2026-11-09",
       "kind": "repo",
+      "name": "Adam-S-Daniel/claude-memory-map",
+      "repo": "Adam-S-Daniel/claude-memory-map",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 5,
+        "prs_merged": 4,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 1,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/cms-platform",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 23,
+        "prs_merged": 15,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 5,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/fastmail-actions",
+      "repo": "Adam-S-Daniel/fastmail-actions",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 6,
+        "prs_merged": 5,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 2,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/repo-settings",
+      "repo": "Adam-S-Daniel/repo-settings",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 13,
+        "prs_merged": 10,
+        "prs_closed_unmerged": 1,
+        "prs_reverted": 0,
+        "agent_prs_merged": 2,
+        "ci_red_after": 1
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/rss-inator",
+      "repo": "Adam-S-Daniel/rss-inator",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 1,
+        "prs_merged": 1,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 1,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/scratch-claude-001",
+      "repo": "Adam-S-Daniel/scratch-claude-001",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 1,
+        "prs_merged": 1,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 1,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/scratch-jules-001",
+      "repo": "Adam-S-Daniel/scratch-jules-001",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 1,
+        "prs_merged": 1,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 1,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/skills-evals",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 64,
+        "prs_merged": 65,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 61,
+        "ci_red_after": 10
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
+      "name": "Adam-S-Daniel/verify-actions-lock",
+      "repo": "Adam-S-Daniel/verify-actions-lock",
+      "surface": "ci",
+      "invocations": null,
+      "sessions": null,
+      "blocked": null,
+      "overridden": null,
+      "outcome": {
+        "prs_opened": 7,
+        "prs_merged": 5,
+        "prs_closed_unmerged": 0,
+        "prs_reverted": 0,
+        "agent_prs_merged": 2,
+        "ci_red_after": 0
+      }
+    },
+    {
+      "week": "2026-11-09",
+      "kind": "repo",
       "name": "Adam-S-Daniel/wsl-automation",
       "repo": "Adam-S-Daniel/wsl-automation",
       "surface": "ci",
@@ -4651,11 +4651,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 5,
-        "prs_merged": 5,
+        "prs_opened": 14,
+        "prs_merged": 12,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 9,
         "ci_red_after": 0
       }
     },
@@ -4670,11 +4670,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 7,
-        "prs_merged": 5,
-        "prs_closed_unmerged": 0,
+        "prs_opened": 16,
+        "prs_merged": 11,
+        "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
+        "agent_prs_merged": 2,
         "ci_red_after": 1
       }
     },
@@ -4689,11 +4689,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 3,
-        "prs_merged": 3,
+        "prs_opened": 5,
+        "prs_merged": 4,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4708,11 +4708,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
+        "prs_opened": 1,
+        "prs_merged": 1,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4727,16 +4727,30 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 8,
-        "prs_merged": 6,
+        "prs_opened": 15,
+        "prs_merged": 13,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 3,
+        "agent_prs_merged": 10,
         "ci_red_after": 0
       }
     }
   ],
   "red_runs": [
+    {
+      "week": "2026-11-09",
+      "repo": "Adam-S-Daniel/repo-settings",
+      "created_at": "2026-11-12T19:13:36Z",
+      "conclusion": "failure",
+      "url": "https://github.com/Adam-S-Daniel/repo-settings/actions/runs/43287968812"
+    },
+    {
+      "week": "2026-11-09",
+      "repo": "Adam-S-Daniel/repo-settings",
+      "created_at": "2026-11-12T19:12:03Z",
+      "conclusion": "failure",
+      "url": "https://github.com/Adam-S-Daniel/repo-settings/actions/runs/43287700533"
+    },
     {
       "week": "2026-11-09",
       "repo": "Adam-S-Daniel/adam-agentskills",
