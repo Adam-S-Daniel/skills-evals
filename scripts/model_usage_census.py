@@ -137,7 +137,7 @@ field checked, a malformed line skipped), and become `skill-digest` rows with
 this run's records or a machine file counts once, as local. No cloud `skill`
 rows are written, and cloud coverage is records seen, never complete. Readers
 add the cloud `skill-digest` rows' invocations to the skill rows
-(`harness/skill_usage.weight`, `zero_use`).
+(`harness/skill_usage.weight`, `zero_use`, `has_recorded_use`).
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
@@ -554,7 +554,7 @@ DIGEST_NULL_REASONS = ("no-base-dir", "builtin", "outside-known-roots", "gone",
                        "too-large", "bad-name")
 #: Where the loaded copy lives.
 BASE_KINDS = ("plugin-cache", "user-skills", "repo", "builtin", "account-plugin",
-              "account-sync", "unknown")
+              "account-sync", "account-plugin-sync", "unknown")
 #: Claude Code's built-in prompt skills, measured to write no base-directory
 #: message.
 BUILTIN_SKILLS = frozenset({"schedule", "update-config", "loop", "simplify",
@@ -622,6 +622,10 @@ def _path_shape(real: str) -> tuple[str, str | None, str | None]:
             return "plugin-cache", claude, rest[2]
         if len(rest) > 2 and rest[:2] == ("skills", "synced"):
             return "account-sync", claude, None
+        if len(rest) == 6 and rest[:2] == ("plugins", "synced") and rest[4] == "skills":
+            # The marketplace is in the bucket's manifest.json, read by the
+            # resolver; this function looks at the path alone.
+            return "account-plugin-sync", claude, None
         if len(rest) == 2 and rest[0] == "skills":
             return "user-skills", claude, None
     return "unknown", None, None
@@ -696,6 +700,12 @@ class LoadedCopies:
         if kind == "plugin-cache":
             out["registry"] = self._marketplace_repo(claude, marketplace)
             out["ref"] = self._install_ref(claude, os.path.dirname(os.path.dirname(real)))
+        elif kind == "account-plugin-sync":
+            # claude.ai re-serializes SKILL.md's frontmatter, so this digest
+            # is the synced plugin's own copy, not the lock's pin.
+            market = self._synced_marketplace(os.path.dirname(os.path.dirname(real)))
+            out["registry"] = (self._marketplace_repo(claude, market)
+                               if market is not None else None)
         elif kind == "repo":
             out["registry"] = self._origin_repo(checkout)
         tree = self._tree(real, checkout)
@@ -793,6 +803,18 @@ class LoadedCopies:
         source = entry.get("source") if isinstance(entry, dict) else None
         if isinstance(source, dict) and source.get("source") == "github":
             return _owner_repo(source.get("repo"))
+        return None
+
+    def _synced_marketplace(self, plugin_dir: str) -> str | None:
+        """The `marketplaceName` that the bucket's `manifest.json`
+        ({"plugins": [{"name", "marketplaceName"}]}) lists for the plugin
+        whose directory is `plugin_dir`, else None."""
+        manifest = self._load(os.path.join(os.path.dirname(plugin_dir), "manifest.json"))
+        plugins = manifest.get("plugins") if isinstance(manifest, dict) else None
+        for entry in plugins if isinstance(plugins, list) else ():
+            if isinstance(entry, dict) and entry.get("name") == os.path.basename(plugin_dir):
+                market = entry.get("marketplaceName")
+                return market if isinstance(market, str) and market else None
         return None
 
     def _install_ref(self, claude: str, version_root: str) -> str | None:

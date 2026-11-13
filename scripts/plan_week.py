@@ -316,11 +316,12 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      is `retire` or `retire-pending`, or a `retire-skill/<skill>` pull
      request is open in adam-agentskills. An owned skill gets no
      `needs-fixtures` or `needs-harder-fixtures` item either.
-  5. not a zero-use skill (`zero_use_skills`, 2026-11-12): a skill with no
-     use over the census's 8 weeks in at least 500 full-listing sessions on
-     the surfaces it reaches (`skill_usage.zero_use` True) is not improved;
-     a skill in evals/usage-unknown.yml is never excluded, and an unknown
-     answer (stale or missing census, too few sessions) stays eligible.
+  5. not a zero-use skill (`zero_use_skills`, 2026-11-12, reworded
+     2026-11-13): a skill with no recorded use in real work over the
+     census's 8 weeks (`skill_usage.has_recorded_use` False, no exposure
+     minimum, the eval scope pass's own rule) is not improved; a skill in
+     evals/usage-unknown.yml is never excluded, and an unknown answer (stale
+     or missing census, untracked skill) stays eligible.
   6. not paused (rule C, `pause`): no open improve pull request
      (`eval-improve/<skill>` in adam-agentskills), no attempt in flight, no
      open issue or pull request labeled `on-hold` whose title names the
@@ -1841,6 +1842,13 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     model (`model_costs`) is still open (`cheaper_first`). A keep there keeps
     the subject, and a removal needs both cells, so only the cost changes.
 
+    RETIRING SUBJECTS ARE NOT RE-CHECKED (2026-11-13): a cell bound for the
+    recheck band whose subject's verdict is `retire` or `retire-pending`
+    (ctx["gate_verdicts"], a section's ctx["guidance"] entry) plans no fire,
+    since the removal bot is acting on it and the run would be wasted. A
+    removal that is declined, or waits on the owner, is not in motion, so
+    that subject is re-checked (`removal_frozen`, ctx["removal_states"]).
+
     A cell bound for the missing, near, recheck, focus or guidance-rest
     band with at least BROKEN_AFTER_FIRES `empty_fires` is a
     `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
@@ -1948,6 +1956,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
+        if band == "recheck" and _retiring(ctx, subject):
+            continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
                 and not provisional:
             # THE BATCH: measured once its subject joins one. A provisional
@@ -2660,6 +2670,56 @@ def hook_candidate(text: str) -> bool:
             total += 1
             under += level is not None
     return bool(total) and under / total >= HOOK_RULE_SHARE
+
+
+#: The removal states (explorer_data.removal_of) in which a removal is in
+#: motion or done: its subject is not re-checked. A declined or owner-held
+#: removal is not in motion, so a retire verdict may still change by a
+#: re-check (and gates pick one `retire` at a time, so a frozen one would
+#: block every retire-pending behind it).
+RECHECK_FROZEN_STATES = ("pr-open", "worker", "waiting-turn", "queued", "removed")
+
+
+def removal_frozen(verdict, state) -> bool:
+    """True when a subject with this gate verdict and removal state (None or
+    "unknown": not known) gets no re-check: it is being removed and the
+    removal is in motion or done, or its state is not known. A removal
+    that is done (`removed`) freezes the subject whatever its verdict: a
+    skill removed in its own registry has no retire verdict."""
+    if state == "removed":
+        return True
+    if verdict not in ("retire", "retire-pending"):
+        return False
+    return state is None or state == "unknown" or state in RECHECK_FROZEN_STATES
+
+
+def removal_states(tree: Path) -> dict | None:
+    """{(kind, name): removal state} from the results tree's
+    explorer/latest.json (`removal` of each skill and guidance section), or
+    None when it is missing or unreadable (every state is then unknown)."""
+    try:
+        doc = json.loads((tree / "explorer" / "latest.json").read_text(encoding="utf-8"))
+        out = {}
+        for row in doc["skills"]:
+            out[("skill", row["name"])] = (row.get("removal") or {}).get("state")
+        for row in doc["guidance"]["sections"]:
+            out[("guidance", row["id"])] = (row.get("removal") or {}).get("state")
+        return out
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def _retiring(ctx: dict, subject: tuple) -> bool:
+    """True when the subject's own verdict is `retire` or `retire-pending`
+    and its removal is in motion, done or unknown (`removal_frozen`): its
+    cells get no re-check. ctx["removal_states"] (`removal_states`) is
+    {(kind, name): state}; without it every state is unknown."""
+    kind, name = subject
+    if kind == "guidance":
+        verdict = ((ctx.get("guidance") or {}).get(name) or {}).get("verdict")
+    else:
+        verdict = (ctx.get("gate_verdicts") or {}).get(name)
+    return removal_frozen(verdict, (ctx.get("removal_states") or {}).get(subject))
 
 
 def gate_verdicts(gates_doc: dict) -> dict:
@@ -4021,10 +4081,13 @@ def skill_weights(tree: Path, skills: list, now: datetime,
 
 def zero_use_skills(tree: Path, skills: list, now: datetime, registries: dict,
                     evals_dir: Path) -> frozenset:
-    """The skills whose `skill_usage.zero_use` is True on the surfaces they
-    reach (surfaces from adam-agentskills' scripts/plugin_layout.json, as
-    eval_scope reads them). A skill in evals/usage-unknown.yml is never in
-    it; unknown (None) is not in it either, so it stays improvable."""
+    """The skills with no recorded use in real work over the census window
+    (`skill_usage.has_recorded_use` False, the eval scope pass's own
+    question, 2026-11-13: no exposure minimum). A skill in
+    evals/usage-unknown.yml is never in it; unknown (None) is not in it
+    either, so it stays improvable. The census must be current for every
+    surface the skill reaches (surfaces from adam-agentskills'
+    scripts/plugin_layout.json, as eval_scope reads them), else unknown."""
     import eval_scope  # noqa: PLC0415
     import skill_usage  # noqa: PLC0415
     try:
@@ -4037,7 +4100,8 @@ def zero_use_skills(tree: Path, skills: list, now: datetime, registries: dict,
         return frozenset()
     return frozenset(
         skill for skill in skills if skill not in exempt
-        and skill_usage.zero_use(doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is True)
+        and skill_usage.has_recorded_use(
+            doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is False)
 
 
 def guidance_use(tree: Path, now: datetime) -> float | None:
@@ -4230,6 +4294,7 @@ def gather(args, now: datetime) -> dict:
             "roster_models": list(gates_doc["roster_models"]),
             "removal_prs": removal,
             "gate_verdicts": gate_verdicts(gates_doc),
+            "removal_states": removal_states(args.results_tree),
             # The guidance focus's inputs (`guidance_focus`): its decision
             # levels, a separate top-level key of the verdict document, and
             # the sections whose removal pull request is open.

@@ -149,8 +149,8 @@ def unused_removal(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: 
     known (cloud is unknown unless its records carry the install and listing
     fields, so a cloud-reaching skill is not removed on such a census); and
     the accrued description cost (`accrued_usd`) is at least
-    `value_per_use_usd`. A removal is irreversible, unlike the pause
-    `skill_usage.zero_use` allows on the known surfaces alone. The dict also carries `uses` (None when the census
+    `value_per_use_usd`. A removal is irreversible, unlike the eval pause
+    (`skill_usage.has_recorded_use`, no exposure minimum, 2026-11-13). The dict also carries `uses` (None when the census
     is unknown), `exposure` and `threshold` (N*) per surface, `d`,
     `accrued_usd`, `value_usd`, `floor_weeks`, `window_start`, `surfaces`,
     `exempt`, `known` (a fresh census was read) and `why`.

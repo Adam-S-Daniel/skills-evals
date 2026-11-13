@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import explorer_data  # noqa: E402
+import plan_week  # noqa: E402
+import retire_skill  # noqa: E402
 
 WORKFLOW = ROOT / ".github" / "workflows" / "explorer-data.yml"
 SHA_A, SHA_B = "a" * 40, "b" * 40
@@ -159,7 +161,7 @@ class ShapeAndMathTests(unittest.TestCase):
         # The public data contract adds evals, hooks, lesson_funnel, activity and
         # spend, keeping schema_version 1
         # (test_issue_public_data_contract.py covers them).
-        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_unknown",
+        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_held", "context_drift_unknown",
                                      "coverage", "discarded_runs", "evals", "fires_without_results",
                                      "fixture_queue", "generated_at",
                                      "guidance", "hooks", "lesson_funnel", "lessons",
@@ -175,6 +177,7 @@ class ShapeAndMathTests(unittest.TestCase):
         # No --lessons directory: unknown, not an empty list.
         self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
+        self.assertEqual(d["context_drift_held"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")
@@ -377,6 +380,31 @@ class RemovedSectionsTests(unittest.TestCase):
         self.assertEqual(removed[0]["reverse_url"],
                          "https://github.com/Adam-S-Daniel/_agent-guidance/pulls"
                          "?q=is%3Apr+head%3Aretire-guidance%2Fbravo")
+
+    def test_removed_skills_read_every_public_registry_and_carry_the_registry(self):
+        def registry(heading, body=""):
+            root = Path(tempfile.mkdtemp(prefix="removed-skills-"))
+            self.addCleanup(shutil.rmtree, root, True)
+            (root / "docs").mkdir()
+            (root / "docs" / "skill-impact.md").write_text(
+                f"# Skill impact\n\n## {heading} — remove\n\n{body}\n", encoding="utf-8")
+            return {"path": root}
+        found = explorer_data.removed_skills({
+            "adam-agentskills": registry("2026-11-10 — adam-coding-anywhere/old-one"),
+            "cms-platform": registry(
+                "2026-11-13 — cms-platform/consumer-repo-provisioning",
+                "- PR: https://github.com/Adam-S-Daniel/cms-platform/pull/1016\n"),
+            "adamdaniel.ai": registry("2026-11-12 — adamdaniel-ai/site-skill"),
+            # A private registry is never read: the explorer is public.
+            "adam-agentskills-private": registry("2026-11-14 — private-plugin/secret-one")})
+        self.assertEqual([(r["name"], r["registry"], r["plugin"]) for r in found],
+                         [("consumer-repo-provisioning", "cms-platform", "cms-platform"),
+                          ("site-skill", "adamdaniel.ai", "adamdaniel-ai"),
+                          ("old-one", "adam-agentskills", "adam-coding-anywhere")])
+        self.assertEqual(found[0]["reverse_url"],
+                         "https://github.com/Adam-S-Daniel/cms-platform/pull/1016")
+        self.assertIn("/adamdaniel.ai/pulls?q=", found[1]["reverse_url"])
+        self.assertIn("/adam-agentskills/pulls?q=", found[2]["reverse_url"])
 
     def test_removed_skills_come_from_the_registrys_impact_file(self):
         root = Path(tempfile.mkdtemp(prefix="removed-skills-"))
@@ -587,6 +615,245 @@ class CurrentTextRunsTests(unittest.TestCase):
             "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
         counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
         self.assertEqual(counts, {"sec-one": 2, "sec-two": 0})
+
+
+class RemovalStateTests(unittest.TestCase):
+    """A subject being removed has no re-check, and says where its removal
+    stands, from `--removal-state` (never a guessed state without it)."""
+    GATES = {"skills": {"alpha": {"verdict": "retire", "reason": "flat"},
+                        "beta": {"verdict": "retire-pending", "reason": "flat"},
+                        "gamma": {"verdict": "retain", "reason": "y"}},
+             "guidance": {"sec-one": {"verdict": "retire", "in_situ_verdict": "retire",
+                                      "reason": "flat", "cells": []}}}
+
+    def build_with(self, removal_state=None):
+        t = Tree(self)
+        gates_doc = {"policy": {"benefit_confidence": 0.85, "retire_confidence": 0.95,
+                                "min_cli_versions": 2, "objective_margin": 0.05}, **self.GATES}
+        with mock.patch.object(explorer_data.compute_gates, "compute", return_value=gates_doc):
+            doc = explorer_data.build(t.tree, t.roster, t.policy, t.evals, AS_OF, SHA_A, SHA_B,
+                                      manifest=MANIFEST, removal_state=removal_state)
+        explorer_data.validate(doc)  # explorer/schema.json accepts `removal`
+        return doc
+
+    @staticmethod
+    def load(doc):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "removal-state.json"
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            return explorer_data.load_removal_state(path)
+
+    @staticmethod
+    def pr(head, number=1, state="open", merged=False, repo="Adam-S-Daniel/adam-agentskills",
+           **more):
+        return {"repo": repo, "number": number, "head": head, "state": state, "merged": merged,
+                "auto_merge": False, **more}
+
+    @staticmethod
+    def issue(subject, number=2, state="open", labels=(), kind="proposal", target="skill",
+              **more):
+        return {"number": number, "state": state, "labels": list(labels), **more,
+                "body_markers": {"target": target, "subject": subject, "kind": kind}}
+
+    def status(self, kind, name, verdict, prs=(), issues=()):
+        return explorer_data.removal_of(kind, name, verdict,
+                                        self.load({"prs": list(prs), "issues": list(issues)}))
+
+    def test_a_skill_removed_in_its_registry_reads_removed_with_no_next_test(self):
+        queued = {"position": 2, "band": "near", "due": "2026-12-06T00:00:00Z", "scheduled": True}
+        root = Path(tempfile.mkdtemp(prefix="reg-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "skills" / "kept").mkdir(parents=True)
+        (root / "skills" / "kept" / "SKILL.md").write_text("x\n", encoding="utf-8")
+        removed = [{"name": n, "registry": "cms-platform", "plugin": "cms-platform",
+                    "date": "2026-11-13", "reverse_url": f"https://github.com/Adam-S-Daniel/cms-platform/pull/{i}"}
+                   for i, n in ((1016, "gone"), (1017, "kept"))]
+
+        def rows():
+            return [{"name": n, "registry": "cms-platform", "verdict": "insufficient",
+                     "next_test": dict(queued)} for n in ("gone", "kept", "never-removed")]
+        # Absent from the checkout: removed, pull request linked, no test in line.
+        out = rows()
+        explorer_data.mark_removed(out, removed, {"cms-platform": {"path": root}})
+        explorer_data.without_test(out)
+        self.assertEqual(out[0]["removal"], {"state": "removed", "since": "2026-11-13",
+                                             "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/1016"})
+        self.assertEqual(out[0]["next_test"], {"position": None, "band": None, "due": None,
+                                               "scheduled": False})
+        # Back in the registry, or never listed: untouched.
+        for untouched in out[1:]:
+            self.assertNotIn("removal", untouched)
+            self.assertEqual(untouched["next_test"], queued)
+        # An absent or unreadable checkout is unknown, never "removed".
+        for registries in (None, {}, {"cms-platform": {"path": root / "missing"}}):
+            out = rows()
+            explorer_data.mark_removed(out, removed, registries)
+            self.assertTrue(all("removal" not in r for r in out), registries)
+        self.assertTrue(plan_week.removal_frozen("insufficient", "removed"))
+
+    def test_build_marks_a_removed_skill_and_validates(self):
+        t = Tree(self)
+        reg = t.root / "reg"
+        (reg / "docs").mkdir(parents=True)
+        (reg / "docs" / "skill-impact.md").write_text(
+            "## 2026-11-13 — pub-plugin/alpha — remove\n\n- PR #7.\n", encoding="utf-8")
+        (reg / "plugins" / "bundle-one" / "skills" / "beta").mkdir(parents=True)
+        (reg / "plugins" / "bundle-one" / "skills" / "beta" / "SKILL.md").write_text(
+            "x\n", encoding="utf-8")
+        gates_doc = {"policy": {"benefit_confidence": 0.85, "retire_confidence": 0.95,
+                                "min_cli_versions": 2, "objective_margin": 0.05},
+                     "skills": {"alpha": {"verdict": "insufficient", "reason": "few"}},
+                     "guidance": {}}
+        public = {"pub": {"repo": "Adam-S-Daniel/pub-repo", "layout": "plugins/*/skills/*/SKILL.md"}}
+        with mock.patch.object(explorer_data.compute_gates, "compute", return_value=gates_doc), \
+                mock.patch.object(explorer_data, "public_registry_repos", return_value=public):
+            doc = explorer_data.build(t.tree, t.roster, t.policy, t.evals, AS_OF, SHA_A, SHA_B,
+                                      registries={"pub": {"path": reg}}, manifest=MANIFEST)
+        explorer_data.validate(doc)
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["removal"]["state"], "removed")
+        self.assertEqual(by["alpha"]["removal"]["url"], "https://github.com/Adam-S-Daniel/pub-repo/pull/7")
+        self.assertEqual(by["alpha"]["next_test"],
+                         {"position": None, "band": None, "due": None, "scheduled": False})
+        self.assertEqual([(r["name"], r["registry"]) for r in doc["removed_skills"]],
+                         [("alpha", "pub")])
+
+    def test_a_subject_being_removed_has_no_place_in_line_and_no_recheck(self):
+        rows = [{"verdict": v, "removal": {"state": st} if st else None,
+                 "next_test": {"position": 3, "band": "near",
+                               "due": "2026-12-06T00:00:00Z", "scheduled": True}}
+                for v, st in (("retire", "queued"), ("retire-pending", "waiting-turn"),
+                              ("retain", None), (None, None), ("retire", "unknown"),
+                              ("retire", None))]
+        explorer_data.without_test(rows)
+        self.assertEqual([(r["next_test"]["position"], r["next_test"]["due"]) for r in rows],
+                         [(None, None), (None, None), (3, "2026-12-06T00:00:00Z"),
+                          (3, "2026-12-06T00:00:00Z"), (None, None), (None, None)])
+        self.assertEqual(rows[0]["next_test"]["scheduled"], True)
+
+    def test_a_declined_or_owner_held_removal_keeps_its_next_test_as_the_planner_does(self):
+        # The planner re-checks these (plan_week.removal_frozen), so the page
+        # may show the next test beside "removal declined".
+        for state in ("declined", "owner", "blocked"):
+            row = {"verdict": "retire", "removal": {"state": state},
+                   "next_test": {"position": None, "band": None,
+                                 "due": "2026-12-06T00:00:00Z", "scheduled": True}}
+            explorer_data.without_test([row])
+            self.assertEqual(row["next_test"]["due"], "2026-12-06T00:00:00Z", state)
+            self.assertFalse(plan_week.removal_frozen("retire", state), state)
+        for state in ("pr-open", "worker", "waiting-turn", "queued", "removed", "unknown", None):
+            self.assertTrue(plan_week.removal_frozen("retire-pending", state), state)
+        self.assertFalse(plan_week.removal_frozen("keep", "queued"))
+
+    def test_a_pull_request_the_loop_withdrew_is_a_pause_not_a_decline(self):
+        # Mirrors retire_skill.loop_withdrawn: the loop opened it, it carries
+        # the label, the loop closed it, and it is unmerged.
+        bot = retire_skill.LOOP_AUTHOR
+        label = retire_skill.WITHDRAWN_LABEL
+        base = {"state": "closed", "closed_at": "2026-11-01T00:00:00Z"}
+        withdrawn = self.pr("retire-skill/a", 8, author=bot, labels=[label], closed_by=bot, **base)
+        self.assertEqual(self.status("skill", "a", "retire", [withdrawn]), {"state": "queued"})
+        self.assertEqual(self.status("skill", "a", "retire-pending", [withdrawn]),
+                         {"state": "waiting-turn"})
+        for more in ({"closed_by": "a-person"}, {"closed_by": None}, {"labels": []},
+                     {"author": "a-person"}):
+            row = self.pr("retire-skill/a", 8, **{**{"author": bot, "labels": [label],
+                                                      "closed_by": bot}, **more}, **base)
+            self.assertEqual(self.status("skill", "a", "retire", [row])["state"], "declined", more)
+        # A row without the new fields (an older file) is a decline, as before.
+        self.assertEqual(self.status("skill", "a", "retire",
+                                     [self.pr("retire-skill/a", 8, **base)])["state"], "declined")
+
+    def test_an_issue_with_no_stamp_is_the_owners_and_an_on_hold_one_says_so(self):
+        legacy = self.issue("a", 21, kind="legacy")
+        self.assertEqual(self.status("skill", "a", "retire", issues=[legacy]),
+                         {"state": "owner", "reason": "proposal",
+                          "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/21"})
+        held = self.issue("a", 22, kind="agent", labels=["agent-ready", "on-hold"])
+        self.assertEqual(self.status("skill", "a", "retire", issues=[held]),
+                         {"state": "owner", "reason": "on-hold",
+                          "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/22"})
+        self.assertEqual(self.status("skill", "a", "retire", issues=[
+            self.issue("a", 23, kind="agent", labels=["agent-ready"])])["state"], "worker")
+        # The built document validates against the schema with a reason.
+        doc = self.build_with(self.load({"prs": [], "issues": [held]}))
+        explorer_data.validate(doc)
+
+    def test_without_the_file_each_removal_is_unknown(self):
+        doc = self.build_with()
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["removal"], {"state": "unknown"})
+        self.assertEqual(by["beta"]["removal"], {"state": "unknown"})
+        self.assertNotIn("removal", by["gamma"])
+        sec = {s["id"]: s for s in doc["guidance"]["sections"]}
+        self.assertEqual(sec["sec-one"]["removal"], {"state": "unknown"})
+        self.assertNotIn("removal", sec["sec-two"])
+        self.assertIsNone(explorer_data.load_removal_state(Path("/nonexistent/removal.json")))
+        self.assertIsNone(self.load({"prs": []}))
+
+    def test_a_built_document_reads_each_state_from_the_file(self):
+        state = self.load({"prs": [self.pr("retire-skill/alpha", 7, created_at="2026-11-10T01:02:03Z")],
+                           "issues": [self.issue("sec-one", 9, target="guidance",
+                                                 labels=["agent-ready"], kind="agent")]})
+        doc = self.build_with(state)
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["removal"], {
+            "state": "pr-open", "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/7",
+            "since": "2026-11-10T01:02:03Z"})
+        self.assertEqual(by["beta"]["removal"], {"state": "waiting-turn"})
+        sec = {s["id"]: s for s in doc["guidance"]["sections"]}
+        self.assertEqual(sec["sec-one"]["removal"]["state"], "worker")
+        self.assertEqual(sec["sec-one"]["removal"]["url"],
+                         "https://github.com/Adam-S-Daniel/skills-evals/issues/9")
+        for subject in (*by.values(), *sec.values()):
+            if subject.get("verdict") in ("retire", "retire-pending"):
+                self.assertEqual((subject["next_test"]["position"], subject["next_test"]["due"]),
+                                 (None, None))
+
+    def test_each_state_in_order(self):
+        s = self.status
+        merged = self.pr("retire-skill/a", 5, state="closed", merged=True,
+                         merged_at="2026-11-12T12:00:00Z")
+        self.assertEqual(s("skill", "a", "retire", [merged]),
+                         {"state": "removed", "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/5",
+                          "since": "2026-11-12T12:00:00Z"})
+        # A merged removal of a skill whose verdict is no longer retire is not "removed".
+        self.assertIsNone(s("skill", "a", "retain", [merged]))
+        self.assertEqual(s("skill", "a", "retire", [self.pr("retire-skill/a", 6, repo="Adam-S-Daniel/cms-platform")])["state"], "pr-open")
+        owner = self.issue("a", 11, labels=["agent-blocked"])
+        self.assertEqual(s("skill", "a", "retire", issues=[owner]),
+                         {"state": "owner", "reason": "proposal", "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/11"})
+        self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 12, labels=["agent-blocked"], kind="agent")])["state"], "blocked")
+        for label in ("agent-ready", "agent-working"):
+            self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 13, labels=[label])])["state"], "worker")
+        self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 14, kind="agent")])["state"], "worker")
+        self.assertEqual(s("skill", "a", "retire-pending"), {"state": "waiting-turn"})
+        self.assertEqual(s("skill", "a", "retire"), {"state": "queued"})
+        closed_pr = self.pr("retire-skill/a", 8, state="closed", closed_at="2026-11-01T00:00:00Z")
+        self.assertEqual(s("skill", "a", "retire", [closed_pr])["state"], "declined")
+        closed_issue = self.issue("a", 15, state="closed", closed_at="2026-11-02T00:00:00Z")
+        declined = s("skill", "a", "retire", issues=[closed_issue])
+        self.assertEqual((declined["state"], declined["since"]), ("declined", "2026-11-02T00:00:00Z"))
+        # A retire-pending subject with a closed issue is still waiting its turn.
+        self.assertEqual(s("skill", "a", "retire-pending", issues=[closed_issue]), {"state": "waiting-turn"})
+        # A kept subject shows only a removal in flight.
+        self.assertIsNone(s("skill", "a", "retain", issues=[closed_issue]))
+        self.assertEqual(s("skill", "a", "retain", issues=[owner])["state"], "owner")
+
+    def test_rows_off_the_shape_are_ignored(self):
+        state = self.load({"prs": [
+            self.pr("retire-skill/a", 1, repo="Evil/repo"),            # not a registry
+            self.pr("retire-guidance/a", 2),                           # guidance lives in _agent-guidance
+            self.pr("improve-skill/a", 3),                             # not a removal head
+            self.pr("retire-skill/a", 4, state="open", merged=True),   # contradictory
+            self.pr("retire-skill/a", "5")],                           # number is not an int
+            "issues": [self.issue("a", 6, kind="withdrawal"),          # the pause cap's notice
+                       self.issue("../x", 7), "junk"]})
+        self.assertEqual(state, {"prs": {}, "issues": {}})
+        guidance = self.load({"prs": [self.pr("retire-guidance/s", 3, repo="Adam-S-Daniel/_agent-guidance")],
+                              "issues": []})
+        self.assertEqual(explorer_data.removal_of("guidance", "s", "retire", guidance)["url"],
+                         "https://github.com/Adam-S-Daniel/_agent-guidance/pull/3")
 
 
 class AlertTests(unittest.TestCase):

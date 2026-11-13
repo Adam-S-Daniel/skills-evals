@@ -94,7 +94,8 @@ SKILL_BOOKKEEPING = ("docs/skill-impact.md", "README.md", "skills.lock",
 #: What `retire_skill.guidance_prepare_branch` may write besides the
 #: section's own file.
 GUIDANCE_BOOKKEEPING = ("agents-md/eval-coverage.yml", "docs/guidance-impact.md",
-                        "AGENTS.md", ".claude/hooks/fleet-guidance.md")
+                        "AGENTS.md", ".claude/hooks/fleet-guidance.md",
+                        ".github/fleet-contributor-rules.md")
 
 
 class ReviewError(Exception):

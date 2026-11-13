@@ -678,9 +678,20 @@ proposer writes `$RESULTS/proposal-<ts>.json` from `Runner.last_usage`), the
 trigger loop's call count (its dollars are unknown), the arm and proposal
 models, busy and span seconds, and the weekly meter's first and last
 snapshot across all trials with their `delta` (null across a window reset or
-with fewer than two snapshots). The guard does not charge it yet: that, and
-recomputing the improve fire's reservation from these records, is a
-follow-up once at least six exist.
+with fewer than two snapshots). A proposal call that failed or timed out is
+recorded as `{calls: 1, usd: null, input_tokens: null, output_tokens: null}`:
+it was billed, its cost is unknown. The proposal's cache tokens are not
+recorded, because its `usd` already includes them.
+
+Since 2026-11-13 (#577) `scripts/allowance_guard.py` charges a matched fire
+its record: one-to-one, oldest first, by mode, target and a run id stamp from
+2 minutes before to 30 minutes after the fire's start, at the record's
+dollars times `points_per_usd` (or, when those are only a floor, the larger of
+that and a clean bracket's meter delta). Unmatched fires keep
+`IMPROVE_FIRE_UNITS` times the mean eval fire, and
+`python3 scripts/allowance_guard.py units --results-tree <persistent/eval-results>`
+prints how those units follow from the records, flagging brackets with a low
+busy/span ratio.
 
 The routine's saved prompt is not in this repository. Its improve sections,
 and the rule sentence that allows the cost branch, read as follows (a test
@@ -753,16 +764,16 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   `ceiling-unconfirmed`, which does not vote either, but only once the
   no-harm test has rejected and the without arm averages at least 0.90
   (`HIGH_STOP_MIN_WITHOUT`); otherwise it is fired on to the cap. A retire
-  verdict beside either is only a proposal.
+  verdict beside either still removes automatically (2026-11-13).
 - *Harm.* A cell whose without arm is high is also tested for harm (D below
   0 at 90%), and is `no-benefit` once that test decides: it needs no
   headroom to show harm. A harm beyond the margin is parked only at the
   no-harm test's error rate; a milder one can still end parked or, at the
-  cap, `no-clear-effect` (a proposal at most). A fixture the eval scope
+  cap, `no-clear-effect`. A fixture the eval scope
   pass pauses stops being fired, so a harm it had not yet decided stays
   undecided (`paused`, below); the subject is then `insufficient`, not
-  `ceiling`, when every cell is parked, and otherwise a `retire` proposal
-  (a parked cell beside decided `no-benefit` cells), never automatic.
+  `ceiling`, when every cell is parked, and otherwise a `retire`
+  (a parked cell beside decided `no-benefit` cells).
 - *The cap.* A cell still undecided after 20 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
@@ -771,13 +782,16 @@ pending, and `harness/gates.py`'s docstring is the full statement):
 - *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
   cells in the verdict: a `benefit` cell still keeps, a `no-benefit` cell
   (a harm or no-benefit its test decided before the pause) still votes, and
-  any other is `paused`, parked, so it does not vote and a removal beside it
-  is only a proposal. A subject whose every cell is parked is `ceiling` only
+  any other is `paused`, parked, so it does not vote. A subject whose every cell is parked is `ceiling` only
   when each shows the ceiling on its own runs: a ceiling class, or a cell
   paused for the ceiling that was a ceiling class or whose no-harm test had
   rejected with a without arm averaging 0.90 or more. The pause reads only
   a pooled sample of the without arm, which is not that evidence. Otherwise
-  (and for a floor or zero-use pause) the subject is `insufficient`, and the
+  (and for a floor or zero-use pause) the subject is `insufficient`, and a
+  cell parked by a zero-use pause keeps its subject `insufficient` even beside
+  cells that show no benefit: a never-used skill is not removed by the cells
+  that voted while its other fixtures never did (an unused skill leaves by
+  the removal policy instead), and the
   planner lists it as a `paused-unmeasured` work item: a paused fixture is
   off the schedule, so it has no planner cell to carry a `fixture-ceiling`
   item. A `ceiling` subject with a paused cell among its cells (round 6's
@@ -791,11 +805,13 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   `routine-outage`, `needs-fixtures`, `needs-harder-fixtures` and
   `needs-trigger-set`).
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
-  no-clear-effect, none undecided. It may be automatic only with two or
-  more such cells, every one no-benefit; one headroom cell, or any
-  no-clear-effect or parked cell, makes it a proposal (`removal: proposal`
-  in the verdict), and `scripts/retire_skill.py` re-derives that from the
-  cells rather than trusting the field. A removal decides at the first pair
+  no-clear-effect, none undecided. Every `retire` removal is automatic
+  (`removal: auto`; Adam, 2026-11-13: "I want removals to occur without
+  requiring my intervention/approval"): `removal_reason` records the
+  evidence (one headroom cell, a cell at the run cap with no clear effect,
+  parked cells that did not vote), and when the bot cannot open the pull
+  request itself for a reason an agent can fix, `scripts/retire_skill.py`
+  files an `agent-ready` issue for the fleet worker. A removal decides at the first pair
   where its test is at its level and the pairs so far span two Claude Code
   versions, and a skill cell with an agent-errored trial supports no
   removal at all.
@@ -827,7 +843,12 @@ adam-agentskills ADR 0021, and the
 The committed value is `auto` again: Adam set it to `proposal` on
 2026-11-03 ("Resume, auto-removal off") and pre-approved turning it back on
 once a loop withdrawal was hardened (PR #740, skills-evals#645). A
-`removal: proposal` verdict files the issue whatever the mode. Each removal also files an `agent-authored`
+verdict never lowers a removal to an issue (2026-11-13: every retire is
+automatic); a skill the bot cannot open a pull request for, where an agent can
+fix the reason (a copy in cms-platform or adamdaniel.ai, a last skill, a
+layout, waiver or citing test, or no write token), gets an `agent-ready`
+issue for the fleet worker (`AGENT_STAMP`), and only a removal
+plugin-runtime-review would hold stays a proposal for the owner. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
@@ -841,18 +862,21 @@ checks read — the skill gone, the plugin's major version raised, a
 locked, a `skills.lock` re-pin — produced by the registry's own generators
 rather than reimplemented here. The job checks out the registry with full
 history (the lock re-pin reads the commit the lock pins) and writes with the
-improvement gate's GitHub App token. Without that token, or for a skill whose
+improvement gate's GitHub App token. Without that token, for a skill whose
+copy is in cms-platform or adamdaniel.ai, or when the mechanical path refuses
+(the skill is its plugin's last, the layout does not list it, a waiver, a
+citing test), it files the `agent-ready` issue for the fleet worker described
+above. For a skill whose
 removal plugin-runtime-review would hold (the skill has its own `hooks/` or
 `bin/`, or a hook of its plugin names a path in it), it falls
 back to `proposal`: one skills-evals issue that is filed or updated and that
-a human acts on; once that issue is closed, the skill is not proposed
+the owner acts on; once that issue is closed, the skill is not proposed
 again. In `auto` mode no removal is opened for it either: the proposal path
 stamps the issue it files, and a closed one with that stamp (or one older
 than the stamps, which has none) declines the removal for good, whatever the
 close reason ("completed" and "not planned" alike), even once
-the reason it was only a proposal is gone (a `removal: proposal` verdict
-that firms up to `auto`, the token coming back, or the mode switched from
-`proposal` to `auto`). A closed issue the withdrawal path filed carries its
+the reason it was only a proposal is gone (the token coming back, or the
+mode switched from `proposal` to `auto`). A closed issue the withdrawal path filed carries its
 own stamp and declines nothing until the pause cap (below); while `auto` is
 lowered to a proposal short of the cap, it does not count as already
 decided either, so a fresh proposal issue is filed for a person to decline.
@@ -891,8 +915,7 @@ bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
 
 The pull request is withdrawn when the verdict no longer supports an
 automatic removal: `keep`, `insufficient` (a roster model just added
-included), a `retire` lowered to a proposal (for a section, also an
-unfinished section-alone pair), or a `retire-pending` that was not a
+included, and a section whose alone pair is unfinished), or a `retire-pending` that was not a
 supported `retire` before
 `finalize` ranked it. A `retire-pending` whose raw verdict is a supported
 `retire` keeps its pull request, since only one subject retires per
@@ -1238,6 +1261,23 @@ and the same job still contextualizes drafted fixtures.
    adds it to `evals/scheduled.yml` with a readiness note starting
    "Promoted automatically", and the App opens that change as one
    auto-merging pull request; an open one holds the slot.
+4. **Re-pin (context drift, #545).** An in-place fixture whose context
+   repository's other skills moved more than 7 days ago would alert as
+   `context-drift`, but a re-pin changes the fixture's `fixture_digest`, so
+   every ingested run at the old pin stops pooling. Owner policy
+   (2026-11-13): a pin holds while its evidence is in use, and is re-pinned
+   automatically only when the evidence would restart anyway.
+   `explorer_data.drift_evidence` calls a drifted fixture *held* when it has
+   runs at its current pin newer than the re-check age (8 weeks, 4 for a
+   high-stakes skill), its skill is in the open batch, or its digest cannot
+   be measured; a held fixture raises no alert and is counted in the
+   document's `context_drift_held`. Otherwise it is *free*: it alerts, and
+   the same daily job's `scripts/repin_drifted_fixtures.py` points its
+   `context.revision` and `guidance_revision` at the context repository's
+   HEAD, in the same pull request. The committed budget stays; a fixture the
+   re-measured context no longer fits is left alone, and the job opens one
+   `Re-pin needs a budget raise` issue for it. `explorer_data.py
+   context-drift-report` shows each fixture's `evidence`.
 
 Known gaps: no workflow runs a draft's agent arms (`--allow-draft`), and a
 real-work fixture needs a subject (`--skill`) that the fire's eval mode does
@@ -1296,9 +1336,9 @@ block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
 guidance already covers it. A `retire` whose alone check has not finished
-(no alone cell yet, or one still undecided) is only ever proposed, never
-removed automatically, since the alone check could still turn it into
-`shorten-or-merge`. The Evals Explorer shows a section's alone results only
+(no alone cell yet, or one still undecided) is `insufficient`, neither
+removed nor proposed to the owner (2026-11-13), since the alone check could
+still turn it into `shorten-or-merge`; the planner fires the alone arm. The Evals Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
 whole-guidance headline still pools every run with no guidance, and each
 section card's trend, help-per-word order and early sign use the in-situ
@@ -1342,38 +1382,53 @@ The rules, in order:
   paused fixture's cells as parked `paused` cells (below), and a decided
   `keep` or `no-benefit` cell still counts, so the guard is not needed for
   safety; it keeps a kept subject's fixtures measured.
-- **Zero use.** A skill with no use over the census's 8 weeks, in at least
-  500 sessions that listed it in full on the surfaces it reaches
-  (`skill_usage.zero_use`; both surfaces, or local only for the two local-only
-  plugins in adam-agentskills' `plugin_layout.json`; an unknown answer does
-  nothing), has all its scheduled fixtures paused. Exposure
-  (`skill_usage.exposure`) is the count of those sessions: local sessions
-  whose skill listing was `full` (a `truncated` or `unknown` listing is left
-  out, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)) plus
-  cloud `listing` rows, which count only sessions whose guidance record names
-  the adam-agentskills registry in `sources` AND reports a full listing. A
-  cloud `guidance` row proves neither (a record is written whether or not the
-  bundle was installed, and a cloud listing can be cut), so it is never
-  exposure. When the cloud records carry neither field the cloud source lacks
-  `listing_recorded` and cloud exposure is unknown, not 0. A pause is
-  reversible and resumes on the first use, so it rests on the surfaces whose
-  exposure is known (an unknown one adds nothing); a removal for being unused
-  needs every surface the skill reaches known (`harness/removal_policy.py`), so
-  while cloud is unknown no cloud-reaching skill is removed. Each surface
-  counts only the weeks from its `counted_from`. A skill the census does not
-  track by name (`skill_keys` on its transcripts source) is counted under
-  `other` and reads as 0 uses, so it is neither zero-use nor removable. A
-  removal also needs the census to end where its floor window does: its
-  `generated_at` and the `to` of every source on a reached surface within 1 day
-  of the run's `as_of`. Any use wins whatever the exposure. A skill listed in
-  `evals/usage-unknown.yml` has unknown use whatever the census says: it is
-  never paused for zero use, and an earlier zero-use pause of it resumes. The
-  improvement lane skips a zero-use skill the same way.
+- **Zero use.** A skill with no recorded use in real work over the census's
+  8 weeks (`skill_usage.has_recorded_use` is False: a fresh census that
+  tracks the skill by name and counts no use) has all its scheduled fixtures
+  paused, `stakes: high` skills included (the high-stakes exemption covers the
+  ceiling and floor rules only). They resume on its first recorded use. An
+  unknown answer (a missing or stale census, a skill the census does not
+  track by name, which it counts under `other` and reads as 0 uses) does
+  nothing. A skill listed in `evals/usage-unknown.yml` has unknown use
+  whatever the census says: it keeps being evaluated, since its use cannot be
+  measured and its eval verdict is its only path to removal, and an earlier
+  zero-use pause of it resumes. The improvement lane skips a zero-use skill
+  the same way (`plan_week.zero_use_skills`).
+
+  *2026-11-13, Adam: "Do we/should we run evals on skills before they have
+  been recorded used in real work? I think we should not."* So the pause has
+  no exposure minimum. The earlier rule (no use in at least 500 sessions that
+  listed the skill in full on the surfaces it reaches, never for `stakes:
+  high`) was written for an irreversible removal and still governs one:
+  `harness/removal_policy.py`'s unused-skill removal keeps
+  `skill_usage.zero_use`, the 500-session threshold (`exposure`: local
+  sessions whose listing was `full`, plus cloud `listing` rows that name the
+  adam-agentskills registry and a full listing, never a `guidance` row), the
+  every-reached-surface-known requirement, a census ending within 1 day of the
+  run's `as_of` and the accrued description cost. A pause is reversible and
+  costs only the evals it skips, so it does not need that evidence.
+- **Removed.** A skill fixture whose skill no longer exists in its registry
+  is paused (*2026-11-13, Adam: a "remove it" decision acts with no approval
+  and the dashboard shows what happened*; fixtures are kept so a restored
+  skill can be evaluated again, 2026-11-12). The registry is the `registry`
+  field of the skill's explorer entry, its checkout comes in as `--registry
+  NAME=PATH` (eval-scope.yml checks the three public registries out sparse)
+  and its layout is `harness/registries.yml`'s. The rule reads the directory,
+  not the `remove` entry of the registry's `docs/skill-impact.md`: the
+  directory is what an eval would install, a restored skill needs no entry
+  retracted, and an entry written before its removal merges pauses nothing.
+  Confirmed absent needs a readable checkout whose layout matches at least one
+  skill (so an empty or sparse checkout is never "everything removed") and no
+  visible checkout with the skill; anything else is unknown and does nothing.
+  It applies at any stakes. The explorer shows the same fact from the
+  registries' `remove` entries (`removed_skills`, one per registry) as
+  `removal: removed` with no next test.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its
   runs no longer trip the rule per model; a zero-use pause ends when
-  `zero_use` is false.
+  `has_recorded_use` is true; a removed pause ends when the skill exists in
+  its registry again.
 
 A pause removes the path from `evals/scheduled.yml`, records it in
 `evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume

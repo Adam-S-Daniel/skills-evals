@@ -126,28 +126,60 @@ class ScopePauseTests(unittest.TestCase):
             self.assertEqual([c["class"] for c in a], ["benefit", "benefit"])
             self.assertEqual({c["scope_paused"] for c in a}, {"ceiling"})
 
-    def test_a_paused_fixture_never_frees_an_auto_removal(self):
+    def test_a_paused_fixture_parks_its_cells_beside_an_auto_removal(self):
         # Paused after 3 pairs, before its keep: its cells are parked, not
-        # dropped, so b's two no-benefit cells can only propose.
-        for verdict, runs, expected in (
-                (self.skill_verdict, self.runs(3), expect("a", "b", paused="a")),
-                (self.guidance_verdict, self.runs(3, in_situ=True, skill="sec"),
-                 expect("a", "b", paused="a", rest=True))):
-            v = verdict(runs, expected)
-            self.assertEqual((v["verdict"], v["removal"]), ("retire", "proposal"),
-                             v["reason"])
+        # dropped, and say so in the removal reason (every retire is
+        # automatic since 2026-11-13).
+        for rule in ("ceiling", "floor"):
+            v = self.skill_verdict(self.runs(3), expect("a", "b", paused="a", rule=rule))
+            self.assertEqual((v["verdict"], v["removal"]), ("retire", "auto"), v["reason"])
             self.assertIn("paused by the eval scope pass", v["removal_reason"])
             a = [c for c in v["cells"] if c["fixture"] == "a"]
             self.assertEqual([(c["class"], c["class_before_pause"]) for c in a],
                              [("paused", "insufficient")] * 2)
-            self.assertFalse(retire_skill.cells_allow_auto(v))
-            self.assertIsNotNone(retire_skill.proposal_only({**v, "removal": "auto"}))
             gates_doc = {"skills": {"demo": v}, "roster_models": MODELS}
             self.assertEqual(retire_skill.retiring(gates_doc), "demo")
-        # The same runs with a's cells dropped, as before the fix, would
-        # have been automatic: the parking is what stops it.
+        # A section with no alone pair yet is `insufficient` (2026-11-13: no
+        # removal and no owner proposal; the scheduler runs the alone arm).
+        v = self.guidance_verdict(self.runs(3, in_situ=True, skill="sec"),
+                                  expect("a", "b", paused="a", rest=True))
+        self.assertEqual(v["verdict"], "insufficient", v["reason"])
+        self.assertEqual(v["reason"], gates.ALONE_UNFINISHED_REASON)
+        self.assertEqual(v["in_situ_verdict"], "retire")
+        # The same runs with a's cells dropped differ only in the reason.
         dropped = self.skill_verdict(self.runs(3), expect("b"))
         self.assertEqual(dropped["removal"], "auto")
+
+    def test_a_zero_use_pause_never_lets_the_other_cells_remove_the_skill(self):
+        # A skill with no recorded use has all its fixtures paused by the
+        # `zero-use` rule; one early no-benefit cell must not remove it while
+        # the paused fixtures never voted (this is not the unused-skill path,
+        # harness/removal_policy.py).
+        v = self.skill_verdict(self.runs(3), expect("a", "b", paused="a", rule="zero-use"))
+        self.assertEqual(v["verdict"], "insufficient", v["reason"])
+        self.assertNotIn("removal", v)
+        self.assertIn("no recorded use", v["reason"])
+        gates_doc = {"skills": {"demo": v}, "roster_models": MODELS}
+        self.assertIsNone(retire_skill.retiring(gates_doc))
+        # A keep it earned still keeps, and a decided no-benefit cell of a
+        # zero-use fixture still counts as before.
+        kept = self.skill_verdict(self.runs(), expect("a", "b", paused="a", rule="zero-use"))
+        self.assertEqual(kept["verdict"], "keep")
+
+    def test_a_removed_pause_takes_the_skill_out_of_judgment(self):
+        # The review of #1016's F3: a fixture paused because its skill is gone
+        # must neither free a retire through the other cells nor ask for a
+        # fixture (`unmeasured`) for a skill that no longer exists.
+        for runs, exp in ((self.runs(3), expect("a", "b", paused="a", rule="removed")),
+                          (self.runs(), expect("a", "b", paused="a", rule="removed")),
+                          (pairs("a", 3, 95, 95), expect("a", paused="a", rule="removed"))):
+            v = self.skill_verdict(runs, exp)
+            self.assertEqual(v["verdict"], "insufficient", v["reason"])
+            self.assertTrue(v.get("removed"))
+            self.assertNotIn("removal", v)
+            self.assertNotIn("unmeasured", v)
+            self.assertIsNone(retire_skill.retiring({"skills": {"demo": v},
+                                                     "roster_models": MODELS}))
 
     def test_a_subject_whose_every_cell_is_paused(self):
         # Round 4's M1: `ceiling` needs each paused cell's own evidence (20

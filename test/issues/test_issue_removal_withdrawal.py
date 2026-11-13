@@ -126,16 +126,12 @@ class DecisionTests(unittest.TestCase):
     def test_retire_with_an_automatic_removal_keeps(self):
         self.assertEqual(self.decide(VERDICTS["retire+auto"])["action"], "keep")
 
-    def test_retire_with_a_proposal_removal_withdraws(self):
-        d = self.decide(VERDICTS["retire+proposal"])
-        self.assertEqual((d["action"], d["verdict"], d["removal"]),
-                         ("withdraw", "retire", "proposal"))
-
-    def test_retire_auto_whose_cells_allow_only_a_proposal_withdraws(self):
-        # The field says auto, but a no-clear-effect headroom cell makes it a
-        # proposal (retire_skill.proposal_only): it should not be auto-merging.
-        d = self.decide(retire("auto", ("no-benefit", "no-clear-effect")))
-        self.assertEqual(d["action"], "withdraw")
+    def test_a_skills_retire_is_kept_whatever_its_removal_field_or_cells_say(self):
+        # Adam, 2026-11-13: every retire is automatic, so neither a `proposal`
+        # field nor a no-clear-effect headroom cell makes the removal stale.
+        for entry in (VERDICTS["retire+proposal"],
+                      retire("auto", ("no-benefit", "no-clear-effect"))):
+            self.assertEqual(self.decide(entry)["action"], "keep")
 
     def test_retire_pending_with_a_confirmed_automatic_removal_keeps(self):
         # Round 1's M1: finalize demotes all but one confirmed subject per
@@ -145,10 +141,7 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(d["action"], "keep")
 
     def test_retire_pending_whose_raw_verdict_is_not_an_automatic_retire_withdraws(self):
-        for name, entry in (("raw retire, proposal removal", pending(retire("proposal"))),
-                            ("raw retire, cells allow a proposal only",
-                             pending(retire("auto", ("no-benefit", "no-clear-effect")))),
-                            ("no raw verdict", {**pending(retire("auto")),
+        for name, entry in (("no raw verdict", {**pending(retire("auto")),
                                                 "raw_verdict": None}),
                             ("raw keep", pending(retire("auto"), raw="keep"))):
             with self.subTest(name):
@@ -781,7 +774,6 @@ class RefreshAllowedTests(unittest.TestCase):
                  ("retire-pending", doc({SKILL: pending(retire("auto"))}), True),
                  ("keep", doc({SKILL: VERDICTS["keep"]}), False),
                  ("insufficient", doc({SKILL: VERDICTS["insufficient"]}), False),
-                 ("retire+proposal", doc({SKILL: VERDICTS["retire+proposal"]}), False),
                  ("proposal mode", doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal"),
                   False),
                  ("absent", doc({}), False), ("unknown", None, False))
@@ -2572,16 +2564,20 @@ class ClosedProposalIssueTests(t70.Base):
         self.assertNotIn(rs.WITHDRAWAL_STAMP, body)
         self.assertEqual(rs.issue_origin(body), "proposal")
 
-    def test_a_verdict_that_allowed_only_a_proposal_then_auto(self):
-        # Path (a): a `removal: proposal` verdict in auto mode files the issue;
-        # the person closes it; the verdict firms up to `removal: auto`.
+    def test_a_verdict_that_once_allowed_only_a_proposal_now_opens_the_removal(self):
+        # Path (a) is gone (Adam, 2026-11-13: every retire is automatic): a
+        # `removal: proposal` verdict in auto mode opens the removal, so no
+        # proposal issue is filed to close.
         verdicts = t70.gates_doc("auto")["skills"]
         verdicts[t70.SKILL] = {**verdicts[t70.SKILL], "removal": "proposal",
                                "removal_reason": "one cell with headroom"}
-        body = self.filed(t70.gates_doc("auto", verdicts), "--allow-mode", "auto",
-                          "--allow-mode", "proposal")
-        self.assertIn("one cell with headroom", body)
-        self.assertDeclined(body)
+        code, out, err, fake = self.run_gates(t70.gates_doc("auto", verdicts), (),
+                                              "--allow-mode", "auto", "--allow-mode",
+                                              "proposal")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1, out)
+        self.assertFalse([a for a, _ in fake.calls if a[:2] == ["issue", "create"]
+                          and "Retire skill" in " ".join(a)])
 
     def test_a_day_without_a_token_then_one_with_it(self):
         # Path (b): --fallback-to-proposal files the issue; the token returns.
@@ -2659,8 +2655,8 @@ class ClosedProposalIssueTests(t70.Base):
     def test_a_guidance_section_is_declined_the_same_way(self):
         from unittest import mock
         gates = doc(guidance={SECTION: gretire()})
-        filed = rs.guidance_plan(gates, None, FakeGh(), allowed=("proposal",),
-                                 fallback=True)
+        filed = rs.guidance_plan(doc(guidance={SECTION: gretire()}, mode="proposal"), None,
+                                 FakeGh(), allowed=("proposal",))
         self.assertEqual(filed["action"], "create-issue")
         self.assertIn(rs.PROPOSAL_STAMP, filed["body"])
         item = {"subject": SECTION, "url": GUIDANCE_URL, "verdict": "keep", "reason": "r",
@@ -3269,23 +3265,22 @@ class ClosedWithdrawalIssueProposalTests(t70.Base):
                 "why": "w"}
         return rs.withdrawal_issue(item, doc({}), target, FakeGh(), None)["body"]
 
-    def run_gates(self, mode, issues, removal="proposal"):
-        verdicts = t70.gates_doc(mode)["skills"]
-        verdicts[t70.SKILL] = {**verdicts[t70.SKILL], "removal": removal,
-                               "removal_reason": "one cell with headroom"}
+    def run_gates(self, mode, issues):
+        # `auto` lowered by a missing write token (2026-11-13: no verdict is
+        # lowered any more), which files the agent route's issue.
         fake = t70.FakeGitHub(issues=list(issues))
-        return t70.Base.run_main(self, t70.gates_doc(mode, verdicts), "--allow-mode", "auto",
-                                 "--allow-mode", "proposal", env=t70.AUTO_ENV, fake=fake)
+        return t70.Base.run_main(self, t70.gates_doc(mode), "--allow-mode", "proposal",
+                                 "--fallback-to-proposal", env=t70.AUTO_ENV, fake=fake)
 
-    def test_a_proposal_verdict_files_a_fresh_issue(self):
+    def test_a_lowered_pass_files_a_fresh_issue(self):
         code, out, err, fake = self.run_gates("auto", [t70.issue(900, self.withdrawn(),
                                                                  state="closed")])
         self.assertEqual(code, 0, err)
         self.assertNotIn("already decided", out)
         create = [s for a, s in fake.calls if a[:2] == ["issue", "create"]]
         self.assertEqual(len(create), 1, out)
-        self.assertIn(rs.PROPOSAL_STAMP, create[0])
-        self.assertIn("one cell with headroom", create[0])
+        self.assertIn(rs.AGENT_STAMP, create[0])
+        self.assertIn(rs.NO_CREDENTIAL, create[0])
 
     def test_a_closed_proposal_still_decides(self):
         body = f"{rs.ISSUE_MARKER.format(skill=t70.SKILL)}\n{rs.PROPOSAL_STAMP}\nbody"
@@ -3311,21 +3306,13 @@ class ClosedWithdrawalIssueProposalTests(t70.Base):
         self.assertIn("already decided", out)
         self.assertEqual((fake.pushes, fake.writes()), ([], []))
 
-    def test_a_guidance_section_files_a_fresh_issue_too(self):
-        gates = doc(guidance={SECTION: gretire(removal="proposal")})
+    def test_a_guidance_section_in_proposal_mode_is_decided_by_a_closed_issue(self):
+        # No guidance retire is lowered from auto any more (2026-11-13), so a
+        # closed withdrawal issue decides in proposal mode like any close.
+        gates = doc(guidance={SECTION: gretire()}, mode="proposal")
         closed = stamped(900, rs.WITHDRAWAL_STAMP, subject=SECTION,
                          marker=rs.GUIDANCE_ISSUE_MARKER)
         plan = rs.guidance_plan(gates, None, FakeGh(issues=[closed]),
-                                allowed=("auto", "proposal"))
-        self.assertEqual(plan["action"], "create-issue")
-        self.assertIn(rs.PROPOSAL_STAMP, plan["body"])
-        proposal = stamped(900, rs.PROPOSAL_STAMP, subject=SECTION,
-                           marker=rs.GUIDANCE_ISSUE_MARKER)
-        plan = rs.guidance_plan(gates, None, FakeGh(issues=[proposal]),
-                                allowed=("auto", "proposal"))
-        self.assertEqual((plan["action"], plan["issue"]), ("none", 900))
-        plan = rs.guidance_plan(doc(guidance={SECTION: gretire(removal="proposal")},
-                                    mode="proposal"), None, FakeGh(issues=[closed]),
                                 allowed=("auto", "proposal"))
         self.assertEqual((plan["action"], plan["issue"]), ("none", 900))
 
@@ -3526,10 +3513,6 @@ class RoundTenTests(t70.Base):
         paused = [closed_pr(n, head=head) for n in (7, 8, 9)]
         closed = stamped(900, rs.WITHDRAWAL_STAMP, subject=SECTION,
                          marker=rs.GUIDANCE_ISSUE_MARKER)
-        lowered = rs.guidance_plan(doc(guidance={SECTION: gretire(removal="proposal")}), None,
-                                   FakeGh(issues=[closed], closed=paused),
-                                   allowed=("auto", "proposal"))
-        self.assertEqual((lowered["action"], lowered["issue"]), ("none", 900))
         # R11-1: beside the closed issue, the open one gets the cap comment
         # once; with the comment recorded on it, the closed issue decides.
         opened = stamped(901, rs.WITHDRAWAL_STAMP, subject=SECTION,
@@ -4094,24 +4077,6 @@ class RoundTwelveTests(t70.Base):
                 if a[:2] == ["issue", "comment"] and marker in (s or "")]
         self.assertEqual(len(caps), 1)
         self.assertIn(f"@{rs.NOTICE_OWNER}", caps[0])
-
-    def test_the_guidance_lowered_path_at_the_cap_keeps_the_note(self):
-        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
-        paused = [closed_pr(n, head=head) for n in (7, 8, 9)]
-        opened = stamped(901, rs.WITHDRAWAL_STAMP, subject=SECTION,
-                         marker=rs.GUIDANCE_ISSUE_MARKER, state="open")
-        gates = doc(guidance={SECTION: gretire(removal="proposal")})
-        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused),
-                                  allowed=("auto", "proposal"))
-        self.assertEqual((action["action"], action["issue"]), ("update-issue", 901))
-        self.assertIn(rs.CAP_MARKER.format(subject=SECTION), action["body"])
-        self.assertIn("cap_comment", action)
-        # Short of the cap the lowered body carries no cap note.
-        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused[:2]),
-                                  allowed=("auto", "proposal"))
-        self.assertNotIn(rs.CAP_PREFIX, action["body"])
-        self.assertNotIn("cap_comment", action)
-
 
 
 class RoundThirteenTests(t70.Base):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import sys
 import tempfile
 import textwrap
@@ -126,6 +127,48 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual([i["skill"] for i in bands["recheck"]], ["b"])
         self.assertEqual(plan_week.recheck_after({"stakes": "high"}).days, 28)
         self.assertEqual(plan_week.recheck_after({}).days, 56)
+
+    def test_a_subject_being_removed_is_not_rechecked(self):
+        # A retire or retire-pending verdict hands the subject to the removal
+        # bot, so a re-check run would be wasted; a kept one is still checked.
+        old = "20260901T070000Z"
+        cells = [cell("evals/a/x", "benefit", runs=6, newest=old),
+                 cell("evals/b/x", "benefit", runs=6, newest=old),
+                 cell("evals/c/x", "benefit", runs=6, newest=old)]
+        gate = {"a": "retire", "b": "retire-pending", "c": "keep"}
+        bands, _ = plan_week.eval_items({**ctx(cells), "gate_verdicts": gate}, NOW)
+        self.assertEqual([i["skill"] for i in bands["recheck"]], ["c"])
+        gcells = [{**cell("evals/guidance/s1/x", "benefit", runs=6, newest=old), "skill": "",
+                   "section": "s1"},
+                  {**cell("evals/guidance/s2/x", "benefit", runs=6, newest=old), "skill": "",
+                   "section": "s2"}]
+        guidance = {"s1": {"verdict": "retire"}, "s2": {"verdict": "keep"}}
+        bands, _ = plan_week.eval_items({**ctx(gcells), "guidance": guidance}, NOW)
+        self.assertEqual([i["fixture"] for i in bands["recheck"]], ["evals/guidance/s2/x"])
+
+    def test_a_declined_or_unknown_removal_decides_whether_the_recheck_is_skipped(self):
+        # Only a removal in motion or done freezes the re-check; a declined or
+        # owner-held one lets the verdict change, and an unknown one keeps skipping.
+        old = "20260901T070000Z"
+        names = ("a", "b", "c", "d", "e")
+        cells = [cell(f"evals/{n}/x", "benefit", runs=6, newest=old) for n in names]
+        gate = {n: "retire" for n in names}
+        states = {("skill", "a"): "declined", ("skill", "b"): "owner",
+                  ("skill", "c"): "queued", ("skill", "d"): "unknown"}  # e: absent
+        bands, _ = plan_week.eval_items(
+            {**ctx(cells), "gate_verdicts": gate, "removal_states": states}, NOW)
+        self.assertEqual(sorted(i["skill"] for i in bands["recheck"]), ["a", "b"])
+
+    def test_removal_states_read_the_published_explorer_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            self.assertIsNone(plan_week.removal_states(tree))
+            (tree / "explorer").mkdir()
+            (tree / "explorer" / "latest.json").write_text(json.dumps({
+                "skills": [{"name": "a", "removal": {"state": "declined"}}, {"name": "b"}],
+                "guidance": {"sections": [{"id": "s", "removal": {"state": "queued"}}]}}))
+            self.assertEqual(plan_week.removal_states(tree), {
+                ("skill", "a"): "declined", ("skill", "b"): None, ("guidance", "s"): "queued"})
 
     def test_a_none_subject_plans_no_eval_fire(self):
         cells = [cell("evals/a/x", "missing", level="none"),

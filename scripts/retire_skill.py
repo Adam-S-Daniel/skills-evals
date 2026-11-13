@@ -20,23 +20,32 @@ compute_gates lets one skill retire per evaluation; two `retire` verdicts
 here are refused, never a pick.
 
 THE MODE is the gates file's `retirement_mode` (from evals/gate-policy.yml;
-anything but `auto` is `proposal`), lowered to `proposal` in three cases (the
-removal path's `effective_mode`, as scripts/improve_gate.py lowers an
+anything but `auto` is `proposal`). Every `retire` verdict's removal is
+automatic (Adam, 2026-11-13: "I want removals to occur without requiring my
+intervention/approval"; harness/gates.py, THE VERDICT), so the verdict's
+`removal` and the cells are no longer re-derived into a proposal. In `auto`
+mode a removal that cannot be opened mechanically goes to one of two places
+(the removal path's `effective_mode`, as scripts/improve_gate.py lowers an
 improvement to a draft):
 
-  * the verdict's own `removal` is not `auto` (2026-11-03: a subject with
-    one cell with headroom, or a cell that reached the run cap with no clear
-    effect, is only ever proposed; harness/gates.py, THE VERDICT);
-  * removing the skill would wait on adam-agentskills' plugin-runtime-review,
-    which auto-merge cannot approve (adam-agentskills ADR 0021, decision 4):
-    improve_gate.py's `auto_refusal`, a skill with its own `hooks/` or `bin/`
-    or one a hook of its plugin names a path in;
-  * the caller has no write credential for adam-agentskills this run
-    (`--fallback-to-proposal` without `--allow-mode auto`): the scheduled
-    workflow passes it when the GitHub App token, or the adversarial
-    review's Anthropic bearer (skills-evals#917), was not minted.
+  * the OWNER, as a `proposal` issue, when removing the skill would wait on
+    adam-agentskills' plugin-runtime-review, which auto-merge cannot approve
+    (adam-agentskills ADR 0016 and 0021, decision 4: owner approval is a
+    standing rule there): improve_gate.py's `auto_refusal`, a skill with its
+    own `hooks/` or `bin/` or one a hook of its plugin names a path in;
+  * the FLEET WORKER, as an `agent` issue (below), for a reason an agent can
+    fix: the skill's one copy is in a public registry other than
+    adam-agentskills (cms-platform, adamdaniel.ai), adam-agentskills' mechanical
+    path refuses (the skill is its plugin's last, the layout file does not
+    list it, a `scripts/skills_waivers.yml` waiver, or a test a tracked source
+    elsewhere cites by name), or the caller has no write credential for
+    adam-agentskills this run (`--fallback-to-proposal` without `--allow-mode
+    auto`: the scheduled workflow passes it when the GitHub App token, or the
+    adversarial review's Anthropic bearer (skills-evals#917), was not minted).
 
-The issue says why, and a human removes.
+A basename found 0 or 2+ times, a copy in adam-agentskills-private (never a
+target) or an unsafe path stays a refusal (exit 2); with
+`--fallback-to-proposal` an unlocated skill still gets the proposal issue.
 
   * `proposal`: an issue in skills-evals, found by a marker comment in its
     body (`ISSUE_MARKER`) on an issue `github-actions[bot]` opened, is
@@ -44,6 +53,16 @@ The issue says why, and a human removes.
     skill, ever: an open one is updated, and a closed one means the skill is
     already decided, so nothing is filed again. A human removes. An issue
     anyone else wrote is ignored, whatever it quotes.
+  * `agent` (`AGENT_STAMP`, `agent_issue_body`): the same one issue per
+    skill (same `ISSUE_MARKER`), its body naming the registry
+    (`Adam-S-Daniel/<registry>`), the skill's path in it, why the bot could
+    not open the pull request, and that the fleet worker removes it with a
+    `retire-skill/<skill>` pull request that closes the issue. The label
+    `agent-ready` is added through `gh` (REST) unless the issue carries
+    `agent-working`, `agent-blocked` or `on-hold`. An open
+    proposal-stamped issue that now qualifies is rewritten in place and
+    labeled; a closed agent-stamped issue decides the skill, as a closed
+    proposal does.
   * `auto` (Adam, 2026-10-25; docs/decisions/0014 and adam-agentskills ADR
     0021): a branch `retire-skill/<skill>` is prepared in the
     adam-agentskills checkout; it is pushed (and the push verified with
@@ -100,7 +119,7 @@ the cap comment is posted once per subject (R11-1): on the open retirement
 issue, when none of the subject's issues carries `CAP_MARKER` yet, even
 beside a closed issue; from then on a closed issue decides with no comment,
 and so does one with no issue open, which gets none. A pass lowered to a
-proposal at the cap (no token, or a verdict that allows only a proposal)
+proposal at the cap (a skill's removal is paused three times)
 writes the cap note into the issue body it rewrites, and posts the comment
 itself when it is still owed (R12-1), so no path erases `CAP_MARKER` and
 the comment is posted once whichever pass reaches the cap first.
@@ -125,27 +144,27 @@ REFUSALS (exit 2, nothing written):
     (`GITHUB_ACTIONS` must be `true`) on the default branch (`GITHUB_REF`
     must be `refs/heads/main`);
   * in auto mode, a shallow adam-agentskills checkout (the lock re-pin and
-    its check read the commit the lock pins, which a shallow clone lacks), a
-    skill that is its plugin's last (emptying a plugin is a registry
-    decision, and the lock generator refuses it), a
+    its check read the commit the lock pins, which a shallow clone lacks) or
+    a skill whose removal that registry's `plugin-runtime-review` gate would
+    hold for the owner although its plugin runs no code (a `hooks/` or
+    `bin/` directory in the skill, or another plugin's hook naming a path
+    inside it; the owner's proposal issue is filed instead). A skill that
+    is its plugin's last (the lock generator refuses an empty plugin), a
     `scripts/plugin_layout.json` that does not list the skill under its
-    plugin, a skill whose removal that registry's `plugin-runtime-review`
-    gate would hold for the owner although its plugin runs no code (a
-    `hooks/` or `bin/` directory in the skill, or another plugin's hook
-    naming a path inside it), which auto-merge cannot
-    approve, a skill `scripts/skills_waivers.yml` waives a finding under
-    (the waiver goes stale with it and `check_skills.py` exits 1), or a
-    skill defining a test that a tracked source elsewhere cites by name (the
-    registry's citation test would fail on the dangling name);
+    plugin, a skill `scripts/skills_waivers.yml` waives a finding under (the
+    waiver goes stale with it and `check_skills.py` exits 1), or a skill
+    defining a test that a tracked source elsewhere cites by name (the
+    registry's citation test would fail on the dangling name) take the
+    agent route instead of a refusal (`AgentFixable`);
   * in auto mode, a skill whose basename is not found exactly once across
     every `--registry` checkout given, or whose one copy is not a real
-    `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills: none
-    of `plugins/`, the plugin, its `skills/`, the skill, its manifests or
+    directory (`plugins/<plugin>/skills/<skill>/` of adam-agentskills, or
+    a copy in cms-platform or adamdaniel.ai for the agent route): none of
+    `plugins/`, the plugin, its `skills/`, the skill, its manifests or
     `docs/skill-impact.md` may be a symlink or resolve outside the
-    checkout. In proposal mode the issue says so instead, since a human
-    removes.
+    checkout.
 
-Only adam-agentskills is ever written. The private registry,
+Only adam-agentskills is ever written by this script. The private registry,
 adam-agentskills-private, is never a target (adam-agentskills ADR 0021,
 decision 7): the scheduled job does not check it out, so a skill there has
 no tested digest and never reaches `retire`, and a `--registry` copy found
@@ -205,7 +224,9 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
 
   * a `retire` verdict, re-checked as a skill's is, and its section-alone
     pair too (`guidance_proposal_only`: an alone pair with no cell, or with
-    a cell that has not decided, allows only a proposal, 2026-11-03): in `proposal` mode an
+    a cell that has not decided files nothing and removes nothing, 2026-11-13:
+    the evidence is incomplete and the scheduler runs the alone arm; the
+    gates report such a section `insufficient`): in `proposal` mode an
     issue in skills-evals (`GUIDANCE_ISSUE_MARKER`); in `auto` mode (Adam:
     removal is automatic, 2026-10-10, and its pull requests auto-merge,
     2026-10-25) a branch `retire-guidance/<section>` in the
@@ -232,8 +253,9 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     These writes to _agent-guidance go through `registry_gh` and the push
     with `REGISTRY_TOKEN`, as the skill path's do; the issues stay on `gh`.
     With `--fallback-to-proposal`, `auto` mode without `auto` allowed (no
-    token reached the run) files the issue instead of exiting 2, and the
-    issue says why;
+    token reached the run) files nothing (an infrastructure failure is not
+    the owner's decision, 2026-11-13) and exits 1 with a fixed message, so
+    the scheduled-run health audit flags the run;
   * a `shorten-or-merge` verdict (the section helps only alone): an issue in
     skills-evals (`SHORTEN_ISSUE_MARKER`) in either mode, never a removal.
 
@@ -422,8 +444,11 @@ REGISTRY_ADR = improve_gate.REGISTRY_ADR
 #: skills-evals GitHub App's installation token, minted by the workflow).
 REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
 PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
-GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance, or no credential for "
-                          "the adversarial review, reached this run (a token was not minted)")
+#: What a guidance run with no credential prints and fails with: fixed, and
+#: naming no identity.
+GUIDANCE_NO_CREDENTIAL_FAILURE = ("no credential for the guidance removal reached this run, "
+                                  "so nothing was filed or removed; the run fails so the "
+                                  "scheduled-run health audit flags it")
 #: The cell classes a `retire` verdict may hold, and those with headroom,
 #: of which it needs one (harness/gates.py, THE VERDICT).
 RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "cannot-discriminate",
@@ -442,6 +467,20 @@ ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
 #: stamp predates them and is read as a proposal (`issue_origin`).
 PROPOSAL_STAMP = "<!-- skills-evals:retirement-issue:proposal -->"
 WITHDRAWAL_STAMP = "<!-- skills-evals:retirement-issue:withdrawal -->"
+#: The third path (Adam, 2026-11-13: removals happen without his approval): an
+#: issue an agent acts on, for a removal the bot cannot open mechanically
+#: (`agent_issue_body`). A closed one decides the skill like a closed proposal.
+AGENT_STAMP = "<!-- skills-evals:retirement-issue:agent -->"
+#: The label that hands the issue to the fleet worker, unless the issue
+#: already carries one of AGENT_BLOCKING_LABELS (a worker is on it, it is
+#: stuck, or the owner paused it).
+AGENT_READY_LABEL = "agent-ready"
+AGENT_BLOCKING_LABELS = ("agent-working", "agent-blocked", "on-hold")
+#: Public registries other than adam-agentskills whose skills the agent route
+#: may name. adam-agentskills-private is never one (ADR 0021, decision 7).
+AGENT_REGISTRIES = ("Adam-S-Daniel/cms-platform", "Adam-S-Daniel/adamdaniel.ai")
+AGENT_WORKER_DOC = ("Adam-S-Daniel/_agent-guidance docs/reference/agent-issue-worker.md, "
+                    '"Skill removal issues"')
 IMPACT_FILE = "docs/skill-impact.md"
 #: Who a removal notice mentions, so GitHub notifies him (#557).
 NOTICE_OWNER = "Adam-S-Daniel"
@@ -691,6 +730,41 @@ def locate(registries: dict, skill: str) -> dict:
     return {"plugin": plugin, "path": rel}
 
 
+class AgentFixable(RetireError):
+    """A refusal the bot cannot clear mechanically but an agent can (the
+    agent route files an `agent-ready` issue instead of exiting 2)."""
+
+
+def locate_anywhere(registries: dict, skill: str) -> dict:
+    """`locate`'s answer for a skill in adam-agentskills, with `registry`
+    (`REGISTRY_REPO`); or {"plugin", "path", "registry"} of its one copy in
+    another PUBLIC registry (AGENT_REGISTRIES), which the bot never writes.
+    RetireError for a basename found 0 or 2+ times, a copy in any other
+    registry (adam-agentskills-private is never a target), or an unsafe path."""
+    if TARGET not in registries:
+        raise RetireError(f"no {TARGET} checkout was given (--registry {TARGET}=PATH)")
+    try:
+        matches = delivery._registry_matches(registries, None, skill)
+    except delivery.DeliveryError:
+        raise RetireError(f"{skill}: a copy escapes its checkout") from None
+    if len(matches) == 1 and matches[0][0] != REGISTRY_REPO:
+        identity, plugin, directory = matches[0]
+        if identity not in AGENT_REGISTRIES:
+            raise RetireError(f"{skill}: its one copy is in {identity}, which is not a "
+                              f"registry a removal may name")
+        roots = [Path(e["path"]) for e in registries.values()
+                 if directory.is_relative_to(Path(e["path"]))]
+        if len(roots) != 1:
+            raise RetireError(f"{skill}: its copy is in no single checkout")
+        root = roots[0]
+        rel = directory.relative_to(root)
+        contained(root, ["/".join(rel.parts[:i]) for i in range(1, len(rel.parts) + 1)])
+        if not directory.is_dir():
+            raise RetireError(f"{skill}: its copy is not a real directory")
+        return {"plugin": plugin, "path": rel.as_posix(), "registry": identity}
+    return {**locate(registries, skill), "registry": REGISTRY_REPO}
+
+
 def contained(root: Path, rels) -> None:
     """RetireError unless each of `rels` under `root` is no symlink and
     resolves inside `root`, so no write follows a link out of the checkout."""
@@ -818,12 +892,14 @@ def runtime_refusal(checkout: Path, plugin: str, skill: str) -> str | None:
 
 def issue_origin(body: str) -> str:
     """Which path filed a retirement issue, from its body's stamp (R8-1):
-    "proposal", "withdrawal", or "legacy" for one with neither stamp, which
+    "proposal", "agent", "withdrawal", or "legacy" for one with neither stamp, which
     predates them. A legacy issue counts as a proposal: before the stamps
     the committed mode was `proposal`, in which closing the issue declined,
     so reading it as declined keeps that meaning, and the error it risks is
     a removal not opened (a person can still remove by hand), never one
     opened against a person's decline."""
+    if AGENT_STAMP in body:
+        return "agent"
     if PROPOSAL_STAMP in body:
         return "proposal"
     if WITHDRAWAL_STAMP in body:
@@ -998,9 +1074,14 @@ def check_registry(checkout: Path, location: dict, skill: str) -> None:
     others = [p for p in skills_dir.iterdir() if p.name != skill
               and (p.is_dir() or p.is_symlink())]
     if not others:
-        raise RetireError(f"{skill} is {plugin}'s last skill; emptying a plugin is a "
-                          "registry decision, not a retirement")
-    layout_without(checkout, plugin, skill)
+        raise AgentFixable(f"{skill} is {plugin}'s last skill; emptying a plugin is a "
+                           "registry decision, not a retirement")
+    try:
+        layout_without(checkout, plugin, skill)
+    except RetireError as exc:
+        if "does not list" in str(exc):
+            raise AgentFixable(str(exc)) from None
+        raise
     contained(checkout, [README_FILE, README_GENERATOR, LOCK_GENERATOR])
     for rel in (README_FILE, README_GENERATOR):
         if not (checkout / rel).is_file():
@@ -1032,13 +1113,13 @@ def _defined_tests(checkout: Path, rels) -> set:
 
 
 def dangling_citations(checkout: Path, path: str, skill: str) -> None:
-    """RetireError when a tracked source outside the skill cites, by name, a
+    """AgentFixable when a tracked source outside the skill cites, by name, a
     test that only the skill defines. adam-agentskills'
     test_every_test_this_repo_cites_by_name_exists scans every tracked
     non-test `*.py` and `*.sh` for `test_...` tokens and fails on one no
     tracked module defines, so removing the skill would turn that citation
     into a failing required check. Rewording someone's comment is not a
-    removal's job; a human does that."""
+    removal's job; an agent does that."""
     inside = _git(checkout, "ls-files", "-z", "--", path).split("\0")
     gone = _defined_tests(checkout, [r for r in inside if r])
     if not gone:
@@ -1055,18 +1136,18 @@ def dangling_citations(checkout: Path, path: str, skill: str) -> None:
             raise RetireError(f"cannot read {rel}") from None
         cited = sorted(set(TEST_NAME_RE.findall(text)) & gone)
         if cited:
-            raise RetireError(f"{rel} cites {cited[0]}, a test only {skill} defines; "
-                              "removing the skill leaves that citation dangling, which "
-                              f"{TARGET}' test_every_test_this_repo_cites_by_name_exists "
-                              "fails on")
+            raise AgentFixable(f"{rel} cites {cited[0]}, a test only {skill} defines; "
+                               "removing the skill leaves that citation dangling, which "
+                               f"{TARGET}' test_every_test_this_repo_cites_by_name_exists "
+                               "fails on")
 
 
 def waived_paths(checkout: Path, path: str, skill: str) -> None:
-    """RetireError when `scripts/skills_waivers.yml` waives a finding inside
+    """AgentFixable when `scripts/skills_waivers.yml` waives a finding inside
     the skill: that waiver matches nothing once the skill is gone, and
     check_skills.py reports a `stale-waiver` and exits 1, so the pull request
     could never merge. Removing the waiver with the skill means editing a
-    commented YAML file, which this does not do; a human does that. The
+    commented YAML file, which this does not do; an agent does that. The
     file is parsed, never grepped — its comments name skills
     and would read as waivers."""
     contained(checkout, [WAIVERS_FILE])
@@ -1085,9 +1166,9 @@ def waived_paths(checkout: Path, path: str, skill: str) -> None:
     for waiver in waivers:
         where = waiver.get("path") if isinstance(waiver, dict) else None
         if isinstance(where, str) and (where == path or where.startswith(f"{path}/")):
-            raise RetireError(f"{WAIVERS_FILE} waives a finding under {skill}; that "
-                              "waiver goes stale when the skill does and check_skills.py "
-                              "would exit 1, so a human retires the waiver with the skill")
+            raise AgentFixable(f"{WAIVERS_FILE} waives a finding under {skill}; that "
+                               "waiver goes stale when the skill does and check_skills.py "
+                               "would exit 1, so the waiver is retired with the skill")
 
 
 def runtime_gated(checkout: Path, path: str, skill: str) -> None:
@@ -1166,6 +1247,24 @@ def _issue_body(gates, skill, location, problem, run_url, usage=None,
             "Filed by scripts/retire_skill.py on the scheduled workflow (#70).\n")
 
 
+def agent_issue_body(gates, skill, agent, run_url, usage=None) -> str:
+    """The agent route's issue (Adam, 2026-11-13): the proposal body's verdict
+    line and table, the registry and path, why the bot did not open the
+    removal itself, and who removes it."""
+    run = f"\nWorkflow run: {run_url}\n" if run_url else ""
+    return (f"{ISSUE_MARKER.format(skill=skill)}\n{AGENT_STAMP}\n"
+            f"The retirement verdict for `{skill}` is **retire** as of "
+            f"{gates['as_of']}: {gates['skills'][skill].get('reason')}.\n\n"
+            f"{usage_line(usage, skill, gates['as_of'])}\n\n"
+            f"Registry: `{agent['registry']}`, path `{agent['path']}`. The bot did not "
+            f"open the removal pull request itself: {agent['reason']}.\n\n"
+            f"{evidence(gates, skill)}\n{run}\n"
+            f"The fleet worker removes it ({AGENT_WORKER_DOC}): a pull request from "
+            f"branch `{BRANCH_PREFIX}{skill}` in that repository that closes this "
+            "issue.\n\n"
+            "Filed by scripts/retire_skill.py on the scheduled workflow (#70).\n")
+
+
 def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
     bumps = "\n".join(f"- `{p}`: {old} -> {new}" for p, (old, new) in versions.items())
     lock = (f" A second commit re-pins `{LOCK_FILE}` to the removal commit."
@@ -1187,49 +1286,14 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
             f"workflow.\n\n{AGENT_MARKER}\n")
 
 
-#: Headroom cells, every one `no-benefit`, an automatic removal needs: the
-#: gates' own constant, one source (round 2's m1).
-AUTO_MIN_HEADROOM_CELLS = gates.AUTO_MIN_HEADROOM_CELLS
-
-
-def cells_allow_auto(verdict: dict) -> bool:
-    """Whether a `retire` verdict's cells allow an automatic removal, derived
-    here rather than trusted from its `removal` field (the review's m3): at
-    least AUTO_MIN_HEADROOM_CELLS headroom cells, every one `no-benefit`,
-    and no parked cell (`gates.PARKED_CLASSES`) beside them."""
-    cells = [c for c in verdict.get("cells") or [] if isinstance(c, dict)]
-    headroom = [c for c in cells if c.get("class") in HEADROOM_CLASSES]
-    return (len(headroom) >= AUTO_MIN_HEADROOM_CELLS
-            and all(c["class"] == "no-benefit" for c in headroom)
-            and not any(c.get("class") in gates.PARKED_CLASSES for c in cells))
-
-
-def proposal_only(verdict: dict) -> str | None:
-    """Why a `retire` verdict can only be a proposal, or None when it may be
-    removed automatically: its `removal` must be `auto` AND its cells must
-    allow it (`cells_allow_auto`); on any disagreement it is a proposal."""
-    if verdict.get("removal") == "auto":
-        if cells_allow_auto(verdict):
-            return None
-        return ("the verdict says auto, but its cells allow only a proposal: fewer "
-                f"than {AUTO_MIN_HEADROOM_CELLS} headroom cells, one that is not "
-                "no-benefit, or a parked cell (at the ceiling, or paused by the eval "
-                "scope pass)")
-    why = verdict.get("removal_reason")
-    return ("the verdict allows only a proposal"
-            + (f" ({why})" if isinstance(why, str) and why else ""))
-
-
 def guidance_proposal_only(verdict: dict) -> str | None:
-    """`proposal_only` for a guidance section's `retire` verdict, with its
-    section-alone pair re-checked here too rather than trusted from its
-    `removal` field: an unfinished alone pair (harness/gates.py
+    """Why a guidance section's `retire` verdict allows only a proposal, or
+    None. Every `retire` removal is automatic (Adam, 2026-11-13), but the
+    section-alone pair is re-checked here rather than trusted from the
+    verdict's `removal` field: an unfinished alone pair (harness/gates.py
     `alone_unfinished`: no alone cell, or one that has not decided) could
-    still turn the verdict into shorten-or-merge, so it allows only a
-    proposal."""
-    why = proposal_only(verdict)
-    if why is not None:
-        return why
+    still turn the verdict into shorten-or-merge, so the removal waits
+    (`guidance_plan` files nothing)."""
     alone = verdict.get("alone")
     if alone is not None and not isinstance(alone, dict):
         return "the verdict's alone block is malformed"
@@ -1371,9 +1435,13 @@ def deciding_issues(found: dict, withdrawn_decides: bool, paused: int = 0) -> li
 
 
 def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
-                 withdrawn_decides=True, paused=0) -> dict:
+                 withdrawn_decides=True, paused=0, agent=None) -> dict:
     """The proposal path's action: create or update the skill's issue, or
-    nothing when a closed one already decided it (`deciding_issues`)."""
+    nothing when a closed one already decided it (`deciding_issues`).
+    With `agent` ({registry, path, reason}) it is the agent route's: the
+    agent body and stamp, and the `agent-ready` label unless the issue
+    already carries one of AGENT_BLOCKING_LABELS. An open proposal-stamped
+    issue is rewritten in place; an open held one is left alone."""
     try:
         location, problem = locate(registries, skill), None
     except RetireError as exc:
@@ -1387,6 +1455,19 @@ def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
                 "reason": f"{skill} is already decided: issue "
                           f"#{decided[0]} is closed, so none is filed again"}
     number = issues["open"][0] if issues["open"] else None
+    if agent:
+        held = [n for n in issues.get("held", []) if n in issues["open"]]
+        if held:
+            return {"action": "none", "mode": "agent", "skill": skill, "issue": held[0],
+                    "reason": f"{skill}'s removal is held for a person: issue #{held[0]} "
+                              "is open, so no agent issue is filed over it"}
+        carried = issues.get("labels", {}).get(number, [])
+        return {"action": "update-issue" if number else "create-issue", "mode": "agent",
+                "skill": skill, "issue": number, "agent_reason": agent["reason"],
+                "label": None if any(n in AGENT_BLOCKING_LABELS for n in carried)
+                else AGENT_READY_LABEL,
+                "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
+                "body": agent_issue_body(gates, skill, agent, run_url, usage)}
     return {"action": "update-issue" if number else "create-issue", "mode": "proposal",
             "skill": skill, "issue": number, **lowered,
             "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
@@ -1409,28 +1490,67 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
                                unused_loader)
         return {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
     mode_reason = None
-    if mode == "auto" and proposal_only(gates["skills"][skill]):
-        mode_reason = proposal_only(gates["skills"][skill])
-        mode = _lowered(mode_reason, allowed)
+    agent = None
     if mode == "auto" and "auto" not in allowed and fallback:
         mode_reason = NO_CREDENTIAL
         mode = _lowered(mode_reason, allowed)
+        # No registry write credential: an auto-eligible skill goes to the
+        # fleet worker, a runtime-review one to the owner, one the bot cannot
+        # find exactly once stays the proposal it was.
+        try:
+            where = locate_anywhere(registries, skill)
+        except RetireError:
+            where = None
+        if where is not None:
+            runtime = runtime_refusal(Path(registries[TARGET]["path"]), where["plugin"],
+                                      skill) if where["registry"] == REGISTRY_REPO else None
+            if runtime:
+                mode_reason = runtime
+            else:
+                agent = {**where, "reason": NO_CREDENTIAL}
     if mode not in allowed:
         raise RetireError(f"retirement_mode is {mode}, which this caller has not wired "
                           f"(allowed: {', '.join(allowed)})")
     if mode == "auto":
-        location = locate(registries, skill)
+        where = locate_anywhere(registries, skill)
         checkout = Path(registries[TARGET]["path"])
-        mode_reason = runtime_refusal(checkout, location["plugin"], skill)
-        if mode_reason:
-            mode = _lowered(mode_reason, allowed)
+        if where["registry"] != REGISTRY_REPO:
+            # Its one copy is in a registry the bot never writes: an agent can.
+            agent = {**where, "reason": f"its one copy is in {where['registry']}, a "
+                     f"registry this bot has no credential to write ({TARGET} is the "
+                     "only one)"}
+            mode = _lowered(agent["reason"], allowed)
+        else:
+            location = {"plugin": where["plugin"], "path": where["path"]}
+            mode_reason = runtime_refusal(checkout, location["plugin"], skill)
+            if mode_reason:
+                mode = _lowered(mode_reason, allowed)
     if mode == "proposal":
         # R10-3: lowered from `auto`, the pause cap still decides, so the
         # subject's loop pauses are counted here too.
         lowered_from_auto = mode_of(gates) == "auto"
-        paused = len(deciding(closed_removal_prs(gh, skill))[1]) if lowered_from_auto else 0
+        paused = 0
+        if lowered_from_auto:
+            declined_prs, paused_prs = deciding(closed_removal_prs(gh, skill))
+            paused = len(paused_prs)
+            if agent and declined_prs:
+                # The auto path's "already decided": a person closed this
+                # skill's removal, so no agent issue overrides the decline.
+                return {"action": "none", "mode": mode, "skill": skill,
+                        "reason": f"{skill} is already decided: removal pull request "
+                                  f"{declined_prs[0].get('url')} is closed, so none "
+                                  "is opened again"}
+            mine = [p for p in open_loop_prs(gh)
+                    if p.get("head") == f"{BRANCH_PREFIX}{skill}"] if agent else []
+            if mine:
+                return {"action": "none", "mode": mode, "skill": skill,
+                        "reason": f"{skill}'s removal pull request {mine[0].get('url')} "
+                                  "is already open, so no agent issue is filed beside it"}
+        if paused >= MAX_LOOP_PAUSES:
+            agent = None  # the loop stopped: a person decides (the cap note)
         action = _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
-                              withdrawn_decides=not lowered_from_auto, paused=paused)
+                              withdrawn_decides=not lowered_from_auto, paused=paused,
+                              agent=agent)
         # R12-1: at the cap the rewritten body keeps CAP_MARKER, so the cap
         # comment is posted once whichever pass reaches the cap first.
         return cap_notice(action, gh, skill, paused) if paused >= MAX_LOOP_PAUSES else action
@@ -1468,6 +1588,14 @@ def _removal_action(gates: dict, registries: dict, gh, skill: str, mode: str, lo
         return {"action": "none", "mode": mode, "skill": skill, "issue": held[0],
                 "reason": f"{skill}'s removal is held for a person: issue #{held[0]} "
                           "is open, so no removal is reviewed or opened again", **skip}
+    working = [n for n in issues.get("agent", []) if n in issues["open"]]
+    if working:
+        # The fleet worker owns this removal through its issue: a second pull
+        # request here would leave that issue open after the merge, and a
+        # loop withdrawal of it could read to the worker as a decline.
+        return {"action": "none", "mode": mode, "skill": skill, "issue": working[0],
+                "reason": f"the fleet worker holds {skill}'s removal: issue #{working[0]} "
+                          "is open, so this run opens no pull request beside it", **skip}
     capped = len(paused) >= MAX_LOOP_PAUSES
     if capped and unused:
         # The cap files a retirement issue from a verdict's cells; an unused
@@ -1484,7 +1612,17 @@ def _removal_action(gates: dict, registries: dict, gh, skill: str, mode: str, lo
         return cap_notice(_skill_issue(gates, registries, gh, skill, mode_reason, run_url,
                                        usage), gh, skill, len(paused))
     versions = manifest_versions(checkout, location["plugin"])
-    check_registry(checkout, location, skill)
+    try:
+        check_registry(checkout, location, skill)
+    except AgentFixable as exc:
+        if unused:
+            raise
+        # An agent can clear it (a waiver, a citing source, the layout, the
+        # plugin's last skill): the fleet worker removes it, not a person.
+        return _skill_issue(gates, registries, gh, skill, None, run_url, usage,
+                            withdrawn_decides=False, paused=len(paused),
+                            agent={"registry": REGISTRY_REPO, "path": location["path"],
+                                   "reason": str(exc)})
     repin = lock_relevant(checkout, location["plugin"])
     if unused:
         as_of = gates["as_of"]
@@ -1852,10 +1990,14 @@ def commands(action: dict) -> list:
     kind = action["action"]
     if kind == "create-issue":
         return [["gh", "issue", "create", "-R", EVALS_REPO, "--title", action["title"],
+                 *(["--label", action["label"]] if action.get("label") else []),
                  "--body-file", "-"]]
     if kind == "update-issue":
         return [*_cap_commands(action), ["gh", "issue", "edit", str(action["issue"]), "-R",
-                                         EVALS_REPO, "--body-file", "-"]]
+                                         EVALS_REPO, "--body-file", "-"],
+                *([["gh", "api", "-X", "POST",
+                    f"repos/{EVALS_REPO}/issues/{action['issue']}/labels",
+                    "-f", f"labels[]={action['label']}"]] if action.get("label") else [])]
     if kind == "removal":
         return [["git", "checkout", "-b", action["branch"]],
                 ["git", "rm", "-r", "--", action["path"]],
@@ -2116,7 +2258,11 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None,
         return f"filed an issue for {action['skill']}"
     if kind == "update-issue":
         commented = _cap_comment(action, gh)  # R8-4: before the edit that records it
-        gh(commands(action)[-1][1:], action["body"])
+        edit = [c for c in commands(action) if c[:3] == ["gh", "issue", "edit"]][0]
+        gh(edit[1:], action["body"])
+        if action.get("label"):
+            gh(["api", "-X", "POST", f"repos/{EVALS_REPO}/issues/{action['issue']}/labels",
+                "-f", f"labels[]={action['label']}"])
         return f"updated issue #{action['issue']} for {action['skill']}" + commented
     check_auto_env(env)
     check_review_url(action)
@@ -2189,6 +2335,10 @@ GUIDANCE_AGENTS = "AGENTS.md"
 #: _agent-guidance's own fleet-memory payload: a hand-made byte copy of
 #: base.md that nothing syncs (its scripts/check-fleet-guidance-mirror.js).
 GUIDANCE_PAYLOAD = ".claude/hooks/fleet-guidance.md"
+#: _agent-guidance's generated contributor rules and the script that builds
+#: them; an older _agent-guidance has neither, and then nothing is run.
+GUIDANCE_CONTRIBUTOR_SCRIPT = "scripts/build-contributor-rules.js"
+GUIDANCE_CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 #: The heading LINE AGENTS.md is split on, never a substring of a line: the
 #: managed block's own first line quotes it (_agent-guidance AGENTS.md).
 REPO_SPECIFIC_LINE = "## Repo-specific additions"
@@ -2257,9 +2407,11 @@ def guidance_issues(gh, marker: str) -> dict:
                "--jq", ".[] | select(.pull_request == null) | "
                        "{number: .number, body: (.body // \"\"), "
                        "author: .user.login, state: .state, "
-                       "closed_at: (.closed_at // \"\")}"])
-    found = {"open": [], "closed": [], "proposals": [], "capped": [], "held": []}
+                       "closed_at: (.closed_at // \"\"), "
+                       "labels: [(.labels // [])[] | .name]}"])
+    found = {"open": [], "closed": [], "proposals": [], "capped": [], "held": [], "agent": []}
     closed_at = {}
+    labels = {}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
                 or marker not in item["body"]:
@@ -2268,6 +2420,9 @@ def guidance_issues(gh, marker: str) -> dict:
         if type(number) is not int or number < 1 or state not in ("open", "closed"):
             raise RetireError("an issue record from the API is malformed")
         found[state].append(number)
+        names = item.get("labels")
+        labels[number] = [n for n in names if isinstance(n, str)] \
+            if isinstance(names, list) else []
         if state == "closed":
             closed_at[number] = item.get("closed_at")
         if issue_origin(item["body"]) != "withdrawal":
@@ -2276,8 +2431,10 @@ def guidance_issues(gh, marker: str) -> dict:
             found["capped"].append(number)
         if HELD_MARKER in item["body"]:
             found["held"].append(number)
+        if issue_origin(item["body"]) == "agent":
+            found["agent"].append(number)
     return {**{state: sorted(numbers) for state, numbers in found.items()},
-            "closed_at": closed_at}
+            "closed_at": closed_at, "labels": labels}
 
 
 def guidance_evidence(verdict: dict) -> str:
@@ -2416,9 +2573,28 @@ def regenerate_agents_md(checkout: Path, managed: str) -> None:
     _write_exact(path, managed.rstrip("\n") + "\n" + tail + "\n")
 
 
+def _node_deps(checkout: Path) -> None:
+    """_agent-guidance's node scripts need its locked `yaml` and `markdown-it`,
+    and the workflow's checkout has no node_modules: install them, scripts
+    off, when the checkout has a lockfile and they are not there yet."""
+    if (checkout / "package-lock.json").is_file() \
+            and not (checkout / "node_modules" / "yaml").is_dir():
+        _run(checkout, "npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund")
+
+
+#: The only variables _agent-guidance's build scripts and `npm ci` see: the
+#: job's environment holds the App token and the review credential, and
+#: none of it is theirs to read.
+_BUILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def _build_env() -> dict:
+    return {k: os.environ[k] for k in _BUILD_ENV_KEYS if k in os.environ}
+
+
 def _run(checkout: Path, *args: str) -> str:
     proc = subprocess.run(list(args), cwd=checkout, capture_output=True, text=True,
-                          check=False)
+                          check=False, env=_build_env())
     if proc.returncode != 0:
         raise RetireError(f"{' '.join(args[:2])} exited {proc.returncode}")
     return proc.stdout
@@ -2487,25 +2663,29 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     else:
         kind = "retire"
         if mode == "auto" and guidance_proposal_only(guidance_block(gates)[section]):
-            mode_reason = guidance_proposal_only(guidance_block(gates)[section])
-            mode = _lowered(mode_reason, allowed)
+            # Evidence is incomplete, not a call for the owner (2026-11-13):
+            # file nothing; the scheduler runs the alone arm. harness/gates.py
+            # already reports such a section `insufficient`, so this guards a
+            # verdict document that predates that.
+            return {"action": "none", "mode": mode, "section": section,
+                    "reason": f"{section}'s removal waits: "
+                              + guidance_proposal_only(guidance_block(gates)[section])}
         if mode == "auto" and "auto" not in allowed and fallback:
-            mode_reason = GUIDANCE_NO_CREDENTIAL
-            mode = _lowered(mode_reason, allowed)
+            # An infrastructure failure, not a decision for the owner: file
+            # nothing and fail the run, so the scheduled-run health audit
+            # flags it (`main` exits 1 on `failure`).
+            return {"action": "none", "mode": mode, "section": section,
+                    "failure": GUIDANCE_NO_CREDENTIAL_FAILURE,
+                    "reason": GUIDANCE_NO_CREDENTIAL_FAILURE}
         if mode not in allowed:
             raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
                               f"not wired (allowed: {', '.join(allowed)})")
     if kind == "shorten" or mode == "proposal":
-        # R10-3: a retire lowered from `auto` still honors the pause cap.
-        lowered_from_auto = kind == "retire" and guidance_mode(gates) == "auto"
-        paused = len(deciding(guidance_closed_removal_prs(gh, section))[1]) \
-            if lowered_from_auto else 0
-        action = _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url,
-                                 withdrawn_decides=kind == "shorten"
-                                 or guidance_mode(gates) != "auto", paused=paused)
-        # R12-1: as for a skill, the rewritten body keeps CAP_MARKER.
-        return cap_notice(action, gh, section, paused) if paused >= MAX_LOOP_PAUSES \
-            else action
+        # No guidance retire is lowered from `auto` any more (2026-11-13: an
+        # unfinished alone pair or no credential files nothing for the
+        # owner), so the pause cap and the withdrawal stamp concern only
+        # the auto path below.
+        return _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url)
     prs = guidance_open_prs(gh)
     if prs:
         # R8-5: as for a skill, an open removal (one a person holds by
@@ -2605,12 +2785,16 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
             (checkout / GUIDANCE_PAYLOAD).write_bytes(source.read_bytes())
     manifest = checkout / GUIDANCE_MANIFEST
     _write_exact(manifest, manifest_without_row(_read_exact(manifest), action["section"]))
+    _node_deps(checkout)
     _run(checkout, "node", "scripts/check-guidance-coverage.js", "--write-bytes")
     impact = checkout / GUIDANCE_IMPACT
     _write_exact(impact, guidance_insert_entry(_read_exact(impact), action["impact_entry"]))
     regenerate_agents_md(checkout, _run(checkout, "bash", "scripts/build-agents-md.sh"))
+    rules = (checkout / GUIDANCE_CONTRIBUTOR_SCRIPT).is_file()
+    if rules:
+        _run(checkout, "node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write")
     _git(checkout, "add", "-A", "--", "agents-md", GUIDANCE_IMPACT, GUIDANCE_AGENTS,
-         GUIDANCE_PAYLOAD)
+         GUIDANCE_PAYLOAD, *([GUIDANCE_CONTRIBUTOR_RULES] if rules else []))
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
@@ -2634,9 +2818,12 @@ def guidance_commands(action: dict) -> list:
                 *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD]]
                   if action["file"] == "agents-md/base.md" else []),
                 ["edit", GUIDANCE_MANIFEST, f"delete row {action['section']}"],
+                ["npm", "ci", "--ignore-scripts", "(when node_modules is missing)"],
                 ["node", "scripts/check-guidance-coverage.js", "--write-bytes"],
                 ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
+                ["node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write",
+                 "(when _agent-guidance has the script)"],
                 ["git", "commit"],
                 REVIEW_COMMAND,
                 *_push_commands(action),
@@ -2801,9 +2988,9 @@ def removal_support(gates: dict, entry, target: str = "skill") -> tuple:
     """Whether a verdict entry still supports an automatic removal:
     `("supported", why)`, `("unknown", why)` or `("stale", why)`.
 
-    Supported is a `retire` whose `removal` is `auto` and whose cells agree
-    (`proposal_only` None; for a section `guidance_proposal_only`, which
-    `guidance_plan` lowers by, so an unfinished alone pair is stale too). A `retire-pending` whose `raw_verdict` is
+    Supported is a `retire` (every skill's is automatic; for a section
+    `guidance_proposal_only` must be None, which `guidance_plan` lowers by, so
+    an unfinished alone pair is stale too). A `retire-pending` whose `raw_verdict` is
     `retire` counts as that `retire`: compute_gates' `finalize` demotes all
     but one confirmed subject per evaluation, which ranks them and says
     nothing against this one (round 1's M1). Unknown is a verdict that
@@ -2821,7 +3008,7 @@ def removal_support(gates: dict, entry, target: str = "skill") -> tuple:
         retiring({**gates, "skills": {"subject": {**entry, "verdict": "retire"}}})
     except RetireError:
         return "unknown", "the subject's retire verdict is malformed"
-    lowered = guidance_proposal_only(entry) if target == "guidance" else proposal_only(entry)
+    lowered = guidance_proposal_only(entry) if target == "guidance" else None
     if lowered is not None:
         return "stale", lowered
     return "supported", "the verdict is still retire with an automatic removal"
@@ -3893,6 +4080,9 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
                       file=sys.stderr)
             out.write(guidance_execute(action, args.guidance, gh, push, env,
                                        registry_gh, review=review) + "\n")
+            if action.get("failure"):
+                print(f"retire_skill: {action['failure']}", file=sys.stderr)
+                return 1
             return 0
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)

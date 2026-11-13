@@ -2,10 +2,10 @@
 # with what it needs to bring each back. Adam, 2026-11-03: decide which
 # fixtures are worth running automatically, and decide often.
 #
-# `rule` is ceiling, floor or zero-use. `fixture_digest` is the sha256 of the
+# `rule` is ceiling, floor, zero-use or removed. `fixture_digest` is the sha256 of the
 # fixture directory when it was paused (sorted relative paths and bytes): a
 # ceiling or floor pause ends when the digest changes, a zero-use pause when
-# the skill is used again. `readiness` is the evals/scheduled.yml note, kept
+# the skill is used again, a removed pause when the skill exists again. `readiness` is the evals/scheduled.yml note, kept
 # so a resume restores it. A skill fixture also has an evals/unscheduled.yml
 # row whose reason starts "Auto scope ("; a guidance fixture has none.
 # test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
@@ -51,3 +51,148 @@ rows:
     since: "2026-11-10"
     fixture_digest: "14ab9e98ec3ae415fecbe16258948aabcfd53ef9053e48e70ccf72f3a17e574b"
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arms claude-sonnet-5-5 and claude-opus-5-5 and judge claude-fable-5-1). Harder fixture for a section whose first fixture sat at the ceiling or could not run (set A, 2026-11-07). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them in the workspace the harness builds (test_issue_124_guidance_gates.py, 2026-11-07)."
+  - path: evals/embeddable-tool-pages
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "69b92783902a7fbd8980c31d7e2a262ee41ecad6b98423a5ff89b15190396610"
+    readiness: "Isolation pair, unpinned (the committed roster then named arm claude-sonnet-5 and judge claude-fable-5-1). Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
+  - path: evals/review-bash-ci-reliability/release-pipeline
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "fec9cb8b872be14e78f0b66bd7f568b0a0f995ca00162dc4100cbd77bc6c91df"
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 8/11 vs without 5.67/11; judge 6.05 vs 4.95."
+  - path: evals/skills-doctor/bucketed-account-store
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "327eef88414a9bc196143693cf9bd2e816f880f8ecfb96a1c46afc7a0e758220"
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
+  - path: evals/github-actions-sha-pinning
+    rule: "removed"
+    since: "2026-11-13"
+    fixture_digest: "1fcf7ce7178c4a7477ec33bebdaeabbe4177c56aee1e1ba415651047c8591baa"
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-5). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8.67/10 vs without 8.0/10; judge 7.93 vs 3.1, ranges 6.8-8.5 vs 0.9-4.4."
+  - path: evals/consumer-repo-provisioning
+    rule: "removed"
+    since: "2026-11-13"
+    fixture_digest: "318a7fdcf1b342218fd7ec14c0e1a185168b3196ad9d7f35fab4f4c1d7b2303e"
+    readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#91)."
+  - path: evals/ci-job-performance/browser-cache
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "cb82de63fe7038ea85f9c4283617c284fe799d8dd559b5438f01c4f16b953679"
+    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
+  - path: evals/github-actions-repo-settings/drift-diagnosis
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "c56e44f29efea82b3697498bd2a056abbfbb938015a96c14182a737c8212478e"
+    readiness: "In-place pair on repo-settings, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled until the eval runner routine cloned repo-settings (2026-11-01); hermetic checks exercised by test."
+  - path: evals/review-bash-ci-reliability/drift-report-capture
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "690bd238c3de1fd1a8b8c4c2007405121c434501f6d817090e2e56a9658aec5b"
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/review-bash-ci-reliability/nightly-snapshot
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "a66ca5de2a2b24b946e65ebd358ad959809005ecc98abc7420e1f95695734780"
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/review-bash-ci-reliability/test-runner-assertions
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "f2e6541ce1c877270f16d0db083ecd5a1568582b73e233d33b247af4e76e58f6"
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/skills-doctor/personal-copy-outranks-repo
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "2262ba35dc5700cf119597f617bde951b5550d0d075c34c67710cdb57f5c14ca"
+    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/fan-out-triage/keyword-lookalikes
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "89b0bc0e787bcea749c99695d809e7e187d6fcfe147f54b9e4af29596d3bbc29"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/fan-out-triage/shifted-draft
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "c30915007b02ffba5e7381fc3982e54e33a81ae6c37891ee6064140bf5900720"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/fan-out-triage/single-file
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "aefa17e33fba0ac74b0c52fb99d3b733f05edb86a8dbe77621372fb145b0b44c"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/fan-out-triage/three-files
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "4c298c407bcbdecc06eab42d13fa0c854e5e4b080c8bb92fc8fddce47cede645"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/red-ci-adamdaniel-ai/paths-required
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "59953d78e1b3c9e937166b4fbef59942bf029d936208e11d9d11f82d23167baf"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/red-ci-adamdaniel-ai/timeout-wall
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "2678e21c9a93cdae556055fe48623ebee99772350daebe6bbf9cdc5d1bc3963f"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/review-bash-ci-reliability/pages-temp-repo-commit
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "be797ff714d7d25f56f968f6f87521ce4513ad34ef060046be6ad02742f4d576"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/robocopy-exit-one
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "7e94aae16324e39f236681f564f8054525a279f9d3a0e39de95dbc76647b4dcb"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 83aa8e87a1ad (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/fan-out-triage/indirect-surfaces
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "01936e154cad77ac0041efef7ab8a98de6d6204ee81b537a8085518e73f5d1c3"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/ci-job-performance/fast-suite-sharding
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "59179290b86285d222ddd603667de6b530678ec1ce60ec64223990a54225b590"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/ci-job-performance/spawn-per-test
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "61cf6af2ea15c9dc4718caa6ded9390bf86c050a9f7efee73f2144d84dac6504"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/ci-job-performance/sharded-required-check
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "8369dd51c6f4ebf9f6c183399e6988873260e969df9c0849f374391a8c973e28"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/ci-job-performance/act-local-loop
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "79d274f52222472bb87bff77c5511d964b409af8b7543236228be56f7a625909"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/red-ci-adamdaniel-ai/release-bump-blocked
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "3dbda6b90cdb4fa119d8a5296c879814bfd8d29fd4d6bf7401c80a99f24e8702"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 0e3957f01bd9 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/skills-doctor/laptop-double-delivery
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "8dc10d48db77f83f2487f2842e08f57abfc1d0822081da9b583b76bc0ca9aba1"
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adam-agentskills at eccda739064b (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/spaced-path-silent-exit
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "0b355ea180814790c2b7e2054b684c4b942baa81f11ef0a68038979f9474499b"
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/two-strikes-unreachable-host
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "31a13f59f3326e151e688e339c0621ab9b49c777e481ea6df38f46e6f9016b6e"
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/installer-exit-3010
+    rule: "zero-use"
+    since: "2026-11-13"
+    fixture_digest: "d7e910a386f2c6d6ac1f6d40ef688c8ab214ab61ebf8924a3197e1f4205371ad"
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."

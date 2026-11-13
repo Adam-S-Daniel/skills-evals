@@ -371,6 +371,81 @@ jobs:
           fi
           exit 0
 
+      # Where each removal stands (Adam, 2026-11-13: the page said "re-check due"
+      # and "remove it" for a skill nothing had removed). Public data only,
+      # with the job token (`pull-requests: read`, `issues: read`): the newest
+      # 300 pull requests of each registry, kept only when the head branch is
+      # `retire-skill/*` or `retire-guidance/*` in that same repository (a
+      # fork's branch of that name is not a removal), and skills-evals issues
+      # `github-actions[bot]` opened with a `skills-evals:retire-skill:` or
+      # `retire-guidance:` marker. Each call lands in a temp file first and
+      # counts only on success, because `gh api --jq` prints an HTTP error's
+      # body to stdout. The row keeps numbers, states, dates, label names and
+      # the marker's subject and kind, and, for a pull request the loop may have
+      # withdrawn, who closed it, never a body or title; nothing is
+      # printed but a fixed line. A failed listing leaves no file, so each
+      # removal reads "unknown", never a guessed state.
+      - name: List the removal pull requests and issues
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/removal-state.json"
+          prs="$RUNNER_TEMP/removal-prs.jsonl"
+          issues="$RUNNER_TEMP/removal-issues.jsonl"
+          part="$RUNNER_TEMP/removal-part.tmp"
+          rc=0
+          : > "$prs"; : > "$issues"
+          for repo in Adam-S-Daniel/adam-agentskills Adam-S-Daniel/cms-platform \
+                      Adam-S-Daniel/adamdaniel.ai Adam-S-Daniel/_agent-guidance; do
+            for page in 1 2 3; do
+              if gh api --method GET "repos/$repo/pulls" -f state=all -f per_page=100 \
+                   -f sort=created -f direction=desc -f page="$page" \
+                   --jq '.[] | select(.head.repo != null and .head.repo.full_name == .base.repo.full_name and (.head.ref | test("^retire-(skill|guidance)/"))) | {repo: .base.repo.full_name, number: .number, head: .head.ref, state: .state, merged: (.merged_at != null), auto_merge: (.auto_merge != null), author: .user.login, labels: [.labels[].name], created_at: .created_at, merged_at: .merged_at, closed_at: .closed_at}' \
+                   > "$part" 2>/dev/null; then
+                cat "$part" >> "$prs"
+              else
+                rc=1
+              fi
+            done
+          done
+          for page in 1 2 3; do
+            if gh api --method GET "repos/$GITHUB_REPOSITORY/issues" -f state=all -f per_page=100 \
+                 -f sort=created -f direction=desc -f page="$page" \
+                 --jq '.[] | select(.pull_request == null and .user.login == "github-actions[bot]") | (.body // "") as $b | select($b | test("skills-evals:retire-(skill|guidance):")) | ($b | capture("skills-evals:retire-(?<target>skill|guidance):(?<subject>[A-Za-z0-9][A-Za-z0-9._:-]*)")) as $m | {number: .number, state: .state, labels: [.labels[].name], created_at: .created_at, closed_at: .closed_at, body_markers: {target: $m.target, subject: $m.subject, kind: (if ($b | contains("skills-evals:retirement-issue:withdrawal")) then "withdrawal" elif ($b | contains("skills-evals:retirement-issue:proposal")) then "proposal" else "legacy" end)}}' \
+                 > "$part" 2>/dev/null; then
+              cat "$part" >> "$issues"
+            else
+              rc=1
+            fi
+          done
+          # Who closed each pull request the loop could have withdrawn (it
+          # opened it, it carries the `loop-withdrawn` label, it is closed and
+          # unmerged): scripts/retire_skill.py `loop_withdrawn` reads the
+          # closer from the issue record, which the listing lacks.
+          closers="$RUNNER_TEMP/removal-closers.jsonl"
+          : > "$closers"
+          while read -r repo number; do
+            [ -n "$number" ] || continue
+            if closer=$(gh api "repos/$repo/issues/$number" --jq '.closed_by.login // ""' 2>/dev/null); then
+              jq -nc --arg repo "$repo" --argjson number "$number" --arg closer "$closer" \
+                '{repo: $repo, number: $number, closed_by: $closer}' >> "$closers"
+            else
+              rc=1
+            fi
+          done < <(jq -r 'select(.state == "closed" and (.merged | not) and .author == "skills-evals-improve[bot]" and (.labels | index("loop-withdrawn") != null)) | "\(.repo) \(.number)"' "$prs")
+          if [ "$rc" -eq 0 ]; then
+            jq -n --slurpfile prs "$prs" --slurpfile issues "$issues" --slurpfile closers "$closers" \
+              '{prs: [$prs[] | . as $p | . + {closed_by: ([$closers[] | select(.repo == $p.repo and .number == $p.number) | .closed_by] | first)}], issues: $issues}' > "$out.tmp" 2>/dev/null \
+              && mv "$out.tmp" "$out" || rc=$?
+          fi
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out" "$out.tmp"
+            echo "removal state unavailable (exit $rc)"
+          fi
+          exit 0
+
       # Lessons from two more sources (Adam, 2026-11-03), with the job token
       # (`issues: read`): the memory curation routine's `Memory promotion`
       # issues across both fleet owners, each kept only when its repository
@@ -546,7 +621,7 @@ jobs:
             lessons+=(--draft-prs "$RUNNER_TEMP/draft-prs.json")
           fi
           public=()
-          for name in public-repos activity lesson-funnel; do
+          for name in public-repos activity lesson-funnel removal-state; do
             if [ -f "$RUNNER_TEMP/$name.json" ]; then
               public+=("--$name" "$RUNNER_TEMP/$name.json")
             fi

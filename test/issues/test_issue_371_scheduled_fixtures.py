@@ -107,9 +107,6 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
                     "evals/consumer-repo-provisioning")},
     **{path: (_FLEET_574, _FLEET_574)
        for path in ("evals/ci-job-performance/browser-cache",
-                    *(f"evals/debug-github-workflows/{name}"
-                      for name in ("git-identity", "secret-name",
-                                   "swallowed-failure", "wrong-branch")),
                     *(f"evals/vendor-release-impact-issues/{name}"
                       for name in ("closed-duplicate", "closing-keywords",
                                    "issue-hygiene", "stamps-skip-quotes")))},
@@ -185,8 +182,6 @@ ADOPTED = frozenset({
     "evals/ci-job-performance/browser-cache",
     "evals/cms-stuck-pr-triage",
     "evals/consumer-repo-provisioning",
-    *(f"evals/debug-github-workflows/{name}"
-      for name in ("git-identity", "secret-name", "swallowed-failure", "wrong-branch")),
     "evals/post-failure-comment",
     *(f"evals/vendor-release-impact-issues/{name}"
       for name in ("closed-duplicate", "closing-keywords", "issue-hygiene",
@@ -228,11 +223,11 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_twenty_seven_skill_and_twenty_eight_guidance_fixtures(self):
+    def test_the_schedule_names_twenty_three_skill_and_twenty_eight_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 55)
-        self.assertEqual(len(set(paths)), 55)
-        self.assertEqual(len(fixtures()), 27)
+        self.assertEqual(len(paths), 51)
+        self.assertEqual(len(set(paths)), 51)
+        self.assertEqual(len(fixtures()), 23)
         # Guidance fixtures off the schedule (2026-11-03 scope decision) need
         # no unscheduled.yml row; they are simply not scheduled.
         scheduled_guidance = sorted(set(all_fixtures()) - set(fixtures()))

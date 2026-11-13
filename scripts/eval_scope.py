@@ -24,18 +24,45 @@ Rules, each deterministic (thresholds are the constants below):
             The gate keeps a paused fixture's cells as parked `paused` cells
             (decided keep and no-benefit cells still count), so the guard is
             not needed for safety; it keeps a kept subject's fixtures measured.
-  zero-use  a skill with no use over the census's CENSUS_WEEKS weeks, in at
-            least ZERO_USE_MIN_SESSIONS sessions that listed it in full on the
-            surfaces it reaches (`skill_usage.zero_use`; unknown means do
-            nothing; a truncated listing is not a full-listing session). All of its scheduled fixtures are paused. A skill in
-            evals/usage-unknown.yml has unknown use: never paused for zero
-            use, and an earlier zero-use pause of it resumes.
+  zero-use  a skill with no recorded use in real work over the census's
+            CENSUS_WEEKS weeks (`skill_usage.has_recorded_use` is False: a
+            fresh census that tracks the skill by name and counts no use).
+            All of its scheduled fixtures are paused, `stakes: high` skills
+            included, and they resume on its first recorded use. Adam,
+            2026-11-13: "Do we/should we run evals on skills before they have
+            been recorded used in real work? I think we should not." There is
+            no exposure minimum (the earlier 500 full-listing sessions are
+            for an irreversible removal, `harness/removal_policy.py`, not for
+            pausing an eval that comes back). Unknown (a missing or stale
+            census, an untracked skill) does nothing. A skill in
+            evals/usage-unknown.yml keeps being evaluated and an earlier
+            zero-use pause of it resumes: its use cannot be measured, so
+            "no recorded use" says nothing about it, and the eval verdict is
+            its only path to removal.
+  removed   a skill fixture whose skill no longer exists in its registry
+            (Adam, 2026-11-13: "remove it" acts with no approval, and the
+            dashboard shows what happened). The skill's registry is the
+            `registry` field of its explorer entry; its checkout is given with
+            `--registry NAME=PATH` and its layout is harness/registries.yml's.
+            Confirmed absent means: the checkout is a readable directory, the
+            layout matches at least one skill there (so a sparse or empty
+            checkout is never read as "everything was removed"), and none of
+            the visible checkouts has the skill. All of its scheduled fixtures
+            are paused. The fixtures are kept (Adam, 2026-11-12), and they
+            resume when the skill is back. Unknown (no checkout, an
+            unreadable one, an entry naming no registry) does nothing. This
+            reads the checkout rather than the registry's `remove` entry in
+            docs/skill-impact.md: the directory is what the eval would
+            install, so a restored skill resumes with no entry to retract,
+            and an entry written before its removal merges pauses nothing.
   resume    a fixture this pass paused earlier returns when its content digest
             differs from the one recorded at the pause, its subject is now
             kept, or its runs no longer trip the rule per model (ceiling,
-            floor); or when `zero_use` is False (zero-use).
+            floor); when `has_recorded_use` is True (zero-use); or when the
+            skill exists again (removed).
 
-Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures, and
+Never touched: fixtures of `stakes: high` subjects (by ceiling or floor; zero-use
+does pause them), `draft: true` fixtures, and
 any evals/unscheduled.yml row this pass did not write (a human decision
 stands). Every pause is recorded in evals/scope-auto.yml with what resume
 needs. A pause removes the path from evals/scheduled.yml and, for a skill
@@ -44,7 +71,8 @@ a resume reverses all of it.
 
 Usage:
   eval_scope.py plan --repo-root . --explorer E.json --usage U.json \\
-      [--registry-layout plugin_layout.json] --now ISO --out plan.json
+      [--registry-layout plugin_layout.json] [--registry NAME=PATH ...] \\
+      --now ISO --out plan.json
   eval_scope.py apply --plan plan.json [--repo-root .]
   eval_scope.py summary --plan plan.json
 """
@@ -78,12 +106,10 @@ FLOOR_SHARE = 0.10
 #: no-benefit cells still count), so this is not needed for safety; it keeps a
 #: kept subject's fixtures measured.
 KEEP_GUARD = 0.5
-#: Single source: harness/skill_usage.py. A zero needs this many full-listing
-#: sessions on the surfaces the skill reaches over the census's window.
-ZERO_USE_MIN_SESSIONS = skill_usage.ZERO_USE_MIN_SESSIONS
 CENSUS_WEEKS = skill_usage.CENSUS_WEEKS
 LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
-RULES = ("ceiling", "floor", "zero-use")
+RULES = ("ceiling", "floor", "zero-use", "removed")
+REGISTRIES_YML = REPO_ROOT / "harness" / "registries.yml"
 AUTO_PREFIX = "Auto scope ("
 
 SCHEDULED = "evals/scheduled.yml"
@@ -98,10 +124,10 @@ SCOPE_AUTO_HEADER = """\
 # with what it needs to bring each back. Adam, 2026-11-03: decide which
 # fixtures are worth running automatically, and decide often.
 #
-# `rule` is ceiling, floor or zero-use. `fixture_digest` is the sha256 of the
+# `rule` is ceiling, floor, zero-use or removed. `fixture_digest` is the sha256 of the
 # fixture directory when it was paused (sorted relative paths and bytes): a
 # ceiling or floor pause ends when the digest changes, a zero-use pause when
-# the skill is used again. `readiness` is the evals/scheduled.yml note, kept
+# the skill is used again, a removed pause when the skill exists again. `readiness` is the evals/scheduled.yml note, kept
 # so a resume restores it. A skill fixture also has an evals/unscheduled.yml
 # row whose reason starts "Auto scope ("; a guidance fixture has none.
 # test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
@@ -324,6 +350,92 @@ def ceiling_or_floor(m: dict) -> tuple[str, str] | None:
     return None
 
 
+# --- removed skills ------------------------------------------------------
+
+
+def registry_layouts(path: Path = REGISTRIES_YML) -> dict[str, str]:
+    """{registry name: layout glob} from harness/registries.yml."""
+    doc = _load_yaml(path)
+    rows = doc.get("registries") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise ScopeError("harness/registries.yml has no registries list")
+    return {r["name"]: r["layout"] for r in rows
+            if isinstance(r, dict) and isinstance(r.get("name"), str)
+            and isinstance(r.get("layout"), str) and r["layout"].endswith("/*/SKILL.md")}
+
+
+def parse_registry_flags(values: list[str] | None) -> dict[str, Path]:
+    out = {}
+    for value in values or []:
+        name, sep, path = value.partition("=")
+        if not sep or not name or not path:
+            raise ScopeError("--registry must be NAME=PATH")
+        out[name] = Path(path)
+    return out
+
+
+def skill_exists(skill: str, registry: str | None, checkouts: dict[str, Path],
+                 layouts: dict[str, str]) -> bool | None:
+    """True when a visible checkout has the skill, False when it is confirmed
+    gone from its registry, None when that cannot be told (no checkout for the
+    skill's registry, an unreadable or skill-less one, an unknown layout or
+    registry): unknown must never pause anything."""
+    if not skill or "/" in skill or skill.startswith("."):
+        return None
+
+    def probe(name: str):
+        root, layout = checkouts.get(name), layouts.get(name)
+        if root is None or layout is None or not root.is_dir():
+            return None
+        try:
+            base = layout[: -len("*/SKILL.md")]
+            if not any(root.glob(base + "*/SKILL.md")):
+                return None  # an empty or sparse checkout says nothing
+            return any(p.is_file() for p in root.glob(f"{base}{skill}/SKILL.md"))
+        except OSError:
+            return None
+
+    own = probe(registry) if registry else None
+    if own is None:
+        return None
+    if own:
+        return True
+    if any(probe(name) is True for name in checkouts if name != registry):
+        return True
+    return False
+
+
+def registry_names(path: Path = REGISTRIES_YML) -> dict[str, str]:
+    """{registry url: registry name} from harness/registries.yml."""
+    doc = _load_yaml(path)
+    rows = doc.get("registries") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise ScopeError("harness/registries.yml has no registries list")
+    return {r["url"].rstrip("/"): r["name"] for r in rows
+            if isinstance(r, dict) and isinstance(r.get("name"), str)
+            and isinstance(r.get("url"), str)}
+
+
+def fixture_registry(directory: Path, names: dict[str, str]) -> str | None:
+    """The registry a skill fixture names in its own `registry:` field. The
+    fixture outlives the skill, while the explorer's skill list is built from
+    the coverage census and drops a removed skill the next day."""
+    try:
+        doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return None
+    url = doc.get("registry") if isinstance(doc, dict) else None
+    return names.get(url.rstrip("/")) if isinstance(url, str) else None
+
+
+def explorer_registry(explorer: dict, skill: str) -> str | None:
+    for entry in explorer.get("skills") or []:
+        if isinstance(entry, dict) and entry.get("name") == skill and isinstance(
+                entry.get("registry"), str):
+            return entry["registry"]
+    return None
+
+
 # --- plan ----------------------------------------------------------------
 
 
@@ -356,7 +468,8 @@ def _is_draft(directory: Path) -> bool:
 
 
 def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
-               now: datetime) -> dict:
+               now: datetime, checkouts: dict[str, Path] | None = None,
+               layouts: dict[str, str] | None = None) -> dict:
     scheduled = read_rows(root, SCHEDULED, "fixtures")
     auto = read_rows(root, SCOPE_AUTO, "rows")
     table = stakes_file.load(root / "evals" / "stakes.yml", root / "evals")
@@ -365,6 +478,14 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
     unknown_use = usage_unknown(root)
 
     models = roster_models(explorer)
+    checkouts = checkouts or {}
+    layouts = layouts if layouts is not None else registry_layouts()
+
+    names = registry_names()
+
+    def exists(skill: str, directory: Path) -> bool | None:
+        registry = fixture_registry(directory, names) or explorer_registry(explorer, skill)
+        return skill_exists(skill, registry, checkouts, layouts)
 
     resume, resumed = [], set()
     for row in auto:
@@ -391,6 +512,11 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
                                "why": why})
                 resumed.add(path)
+        elif rule == "removed" and subject_kind == "skill" and directory.is_dir():
+            if exists(subject, directory) is True:
+                resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
+                               "why": "the skill exists in its registry again"})
+                resumed.add(path)
         elif rule == "zero-use" and subject_kind == "skill" and directory.is_dir():
             if subject in unknown_use:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
@@ -398,9 +524,9 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                       f"{unknown_use[subject]})"})
                 resumed.add(path)
                 continue
-            used = skill_usage.zero_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
-                                        surfaces=_surfaces(subject, plugins))
-            if used is False:
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+                                               surfaces=_surfaces(subject, plugins))
+            if used is True:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
                                "why": f"the skill was used in the last {CENSUS_WEEKS} weeks"})
                 resumed.add(path)
@@ -410,20 +536,25 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
         path, readiness = entry.get("path"), entry.get("readiness")
         kind, subject = subject_of(path)
         directory = root / path
-        if (path in resumed or not directory.is_dir() or _is_draft(directory)
-                or stakes_file.level_of(table, kind, subject) == "high"):
+        if path in resumed or not directory.is_dir() or _is_draft(directory):
             continue
+        # The high-stakes exemption covers the ceiling and floor rules only:
+        # an eval on a skill nobody has used is not worth running at any stakes.
         found = None
+        # A removed skill is paused first: nothing else about it matters.
+        if kind == "skill" and exists(subject, directory) is False:
+            found = ("removed", "the skill no longer exists in its registry; the fixture is "
+                     "kept, and its evals resume if the skill comes back")
         since = last_commit_time(root, path)
-        if since is not None and not protected(explorer, kind, subject):
+        if (found is None and since is not None and not protected(explorer, kind, subject)
+                and stakes_file.level_of(table, kind, subject) != "high"):
             found = per_model(kind, fixture_runs(explorer, kind, subject, path, since), models)
         if found is None and kind == "skill" and subject not in unknown_use:
-            used = skill_usage.zero_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
-                                        surfaces=_surfaces(subject, plugins))
-            if used is True:
-                found = ("zero-use", f"no recorded use of the skill in {ZERO_USE_MIN_SESSIONS} or more "
-                         f"full-listing sessions over the last {CENSUS_WEEKS} weeks on the "
-                         "surfaces it reaches; it returns when the skill is used again")
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+                                               surfaces=_surfaces(subject, plugins))
+            if used is False:
+                found = ("zero-use", f"no recorded use in real work in the last {CENSUS_WEEKS} weeks; "
+                         "its evals resume on its first recorded use")
         if found is None:
             continue
         pause.append({"path": path, "kind": kind, "subject": subject, "rule": found[0],
@@ -562,6 +693,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--explorer", type=Path, required=True)
     p.add_argument("--usage", type=Path)
     p.add_argument("--registry-layout", type=Path)
+    p.add_argument("--registry", action="append", metavar="NAME=PATH",
+                   help="a registry checkout; the removed rule reads it (repeatable)")
     p.add_argument("--now", required=True)
     p.add_argument("--out", type=Path, required=True)
     a = sub.add_parser("apply")
@@ -577,7 +710,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise ScopeError("the explorer document is not an object")
             usage_doc = skill_usage.load(args.usage) if args.usage else None
             plan = build_plan(args.repo_root.resolve(), explorer, usage_doc,
-                              _skill_plugins(args.registry_layout), _parse_now(args.now))
+                              _skill_plugins(args.registry_layout), _parse_now(args.now),
+                              parse_registry_flags(args.registry))
             args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"count={len(plan['pause']) + len(plan['resume'])}")
         elif args.command == "apply":

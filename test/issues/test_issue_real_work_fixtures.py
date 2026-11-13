@@ -267,18 +267,36 @@ class RealWorkFixtureTests(unittest.TestCase):
                         f"no dependabot.yml entry ignores {where}")
         self.assertGreater(found, 5)
 
+    @staticmethod
+    def install_hint(modules: Path, manager: str) -> str:
+        """What a missing install directory tells the person to run (#987).
+        The npm and Gemfile directories are separate lists, so installing the
+        npm ones alone leaves a bundler directory missing."""
+        command = {
+            "npm": "npm ci --ignore-scripts",
+            "bundler": "BUNDLE_PATH=vendor/bundle BUNDLE_FROZEN=true bundle install",
+        }[manager]
+        return (f"{modules.parent} has no {modules.name} directory. Run "
+                f"`bash scripts/dev_setup.sh` (it installs the npm directories AND "
+                f"the Gemfile directories), or in that directory: `{command}`")
+
+    def test_a_missing_install_names_dev_setup_and_the_exact_command(self):
+        hint = self.install_hint(Path("/x/seed/vendor-dir/vendor"), "bundler")
+        self.assertIn("bash scripts/dev_setup.sh", hint)
+        self.assertIn("BUNDLE_PATH=vendor/bundle BUNDLE_FROZEN=true bundle install", hint)
+        self.assertIn("Gemfile", hint)
+
     def workspace(self, directory: Path, fixture: dict, fixed: bool) -> Path:
         """The seed as the agent would get it, its dependencies already
         installed (symlinked from the seed), and for `fixed` the pull
         request's own fix applied."""
         seed = directory / "seed"
-        installed = {"npm": ("node_modules", "npm ci"),
-                     "bundler": (seed_prep.BUNDLE_PATH, "bundle install")}
+        installed = {"npm": ("node_modules", "npm"),
+                     "bundler": (seed_prep.BUNDLE_PATH, "bundler")}
         for entry in fixture.get("deps", ()):
-            tree, command = installed[entry["manager"]]
+            tree, manager = installed[entry["manager"]]
             modules = seed / entry["dir"] / tree
-            self.assertTrue(modules.is_dir(),
-                            f"Install {modules.parent} with {command} before running the suite")
+            self.assertTrue(modules.is_dir(), self.install_hint(modules, manager))
         owned = tempfile.TemporaryDirectory(prefix="real-work-")
         self.addCleanup(owned.cleanup)
         workspace = Path(owned.name) / "ws"

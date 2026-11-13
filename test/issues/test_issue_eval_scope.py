@@ -380,27 +380,37 @@ class ZeroUseTests(unittest.TestCase):
         doc["generated_at"] = "2026-10-01T00:00:00Z"
         self.assertEqual(self.paused(doc), [])
 
-    def test_a_local_only_plugin_skill_counts_only_local_sessions(self):
-        doc = usage_doc({"beta": 1}, cloud=False, local=600)
-        self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
+    def test_exposure_does_not_matter_for_the_pause(self):
+        """2026-11-13, Adam: no evals before a first recorded use. Little or
+        unknown exposure (5 local sessions, a local-only skill without a
+        cloud source) still pauses when every source it needs is current."""
+        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=5, cloud_sessions=5)),
                          ["evals/alpha/one", "evals/alpha/two"])
-        self.assertEqual(self.paused(doc, {"alpha": "adam-non-coding-local"}),
+        for doc in (usage_doc({"beta": 3}, cloud=False, local=5),
+                    usage_doc({"beta": 3}, cloud=False, local=0)):
+            self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
+                             ["evals/alpha/one", "evals/alpha/two"])
+        self.assertEqual(self.paused(usage_doc({"beta": 3}), {"alpha": "adam-coding-local"}),
                          ["evals/alpha/one", "evals/alpha/two"])
-        # 300 local sessions plus 300 cloud ones: enough for a skill that
-        # reaches both surfaces, not for one that reaches only local.
-        both = usage_doc({"beta": 1})
-        self.assertEqual(self.paused(both, {"alpha": "adam-coding-anywhere"}),
-                         ["evals/alpha/one", "evals/alpha/two"])
-        self.assertEqual(self.paused(both, {"alpha": "adam-coding-local"}), [])
 
-    def test_too_few_full_listing_sessions_is_unknown_not_zero(self):
-        # Truncated listings (700 in the helper) are not full-listing sessions.
-        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=100, cloud_sessions=100)), [])
+    def test_a_missing_cloud_source_for_a_cloud_skill_is_unknown_not_zero(self):
+        """UNKNOWN IS NOT ZERO: no cloud source reads 0 there, so a skill that
+        reaches the cloud is not paused (no plugin layout means both surfaces)."""
+        for plugins in (None, {"alpha": "adam-agentskills"}):
+            self.assertEqual(self.paused(usage_doc({"beta": 3}, cloud=False, local=500), plugins), [])
 
-    def test_the_why_names_the_session_threshold(self):
+    def test_a_skill_the_census_does_not_track_is_not_paused(self):
+        doc = usage_doc({"beta": 3})
+        for source in doc["sources"]:
+            if "skill_keys" in source:
+                source["skill_keys"] = ["beta"]
+        self.assertEqual(self.paused(doc), [])
+
+    def test_the_why_names_no_recorded_use(self):
         plan = plan_for(self.root, explorer(), usage_doc({"beta": 3}))
         why = next(p["why"] for p in plan["pause"] if p["rule"] == "zero-use")
-        self.assertIn("500 or more full-listing sessions over the last 8 weeks", why)
+        self.assertEqual(why, "no recorded use in real work in the last 8 weeks; "
+                              "its evals resume on its first recorded use")
 
 
 class ExclusionTests(unittest.TestCase):
@@ -415,8 +425,23 @@ class ExclusionTests(unittest.TestCase):
                 {"hg": [guidance_run("fx", arm(10), arm(10)) for _ in range(4)]})
             plan = plan_for(root, exp, usage_doc())
             self.assertEqual([p["path"] for p in plan["pause"]], ["evals/ok/one"])
-            # Zero use hits hi and dr too (nothing used) and still skips them.
-            self.assertNotIn("evals/hi/one", [p["path"] for p in plan["pause"]])
+            # Ceiling and floor skip a high-stakes subject; zero use does not
+            # (below), and a draft is skipped by every rule.
+            self.assertNotIn("evals/dr/one", [p["path"] for p in plan["pause"]])
+
+    def test_zero_use_pauses_a_high_stakes_skill_but_not_a_draft(self):
+        """2026-11-13: the high-stakes exemption is for ceiling and floor only."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_repo(tmp, ["evals/hi/one", "evals/dr/one"],
+                             draft=("evals/dr/one",), high_skills=("hi",))
+            doc = usage_doc({"zzz": 1}, cloud=False, local=5)
+            for source in doc["sources"]:
+                if "skill_keys" in source:
+                    source["skill_keys"] = sorted({*source["skill_keys"], "hi", "dr"})
+            plan = plan_for(root, explorer(), doc,
+                            {"hi": "adam-coding-local", "dr": "adam-coding-local"})
+            self.assertEqual([(p["path"], p["rule"]) for p in plan["pause"]],
+                             [("evals/hi/one", "zero-use")])
 
     def test_an_unscheduled_row_the_pass_did_not_write_survives_apply_and_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -435,6 +460,133 @@ class ExclusionTests(unittest.TestCase):
 
 
 # --- apply and resume ----------------------------------------------------
+
+
+class RemovedTests(unittest.TestCase):
+    """2026-11-13, Adam: a skill removed from its registry stops being
+    evaluated with no approval, and its fixtures are kept."""
+
+    LAYOUTS = {"adam-agentskills": "plugins/*/skills/*/SKILL.md",
+               "cms-platform": "skills/*/SKILL.md"}
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        base = Path(self._tmp.name)
+        self.root = self.repo("repo", ["evals/alpha/one", "evals/alpha/two", "evals/beta"])
+        self.cms = base / "cms"
+        write(self.cms, "skills/beta/SKILL.md", "---\nname: beta\n---\n")
+        write(self.cms, "skills/other/SKILL.md", "---\nname: other\n---\n")
+        self.exp = explorer()
+        self.exp["skills"] = [{"name": "alpha", "registry": "cms-platform", "runs": []},
+                              {"name": "beta", "registry": "cms-platform", "runs": []}]
+
+    def repo(self, name, scheduled, **kwargs):
+        path = Path(self._tmp.name) / name
+        path.mkdir()
+        return make_repo(str(path), scheduled, **kwargs)
+
+    def plan(self, checkouts=None, exp=None):
+        return eval_scope.build_plan(self.root, exp or self.exp, None, {}, NOW_DT,
+                                     {"cms-platform": self.cms} if checkouts is None else checkouts,
+                                     self.LAYOUTS)
+
+    def removed(self, plan):
+        return sorted(p["path"] for p in plan["pause"] if p["rule"] == "removed")
+
+    def test_a_skill_confirmed_gone_from_its_registry_is_paused_and_its_fixtures_kept(self):
+        plan = self.plan()
+        self.assertEqual(self.removed(plan), ["evals/alpha/one", "evals/alpha/two"])
+        eval_scope.apply_plan(self.root, plan)
+        self.assertTrue((self.root / "evals/alpha/one/fixture.yaml").is_file())
+        self.assertEqual([r["path"] for r in eval_scope.read_rows(
+            self.root, "evals/scheduled.yml", "fixtures")], ["evals/beta"])
+        reasons = {r["path"]: r["reason"] for r in eval_scope.read_rows(
+            self.root, "evals/unscheduled.yml", "fixtures")}
+        self.assertTrue(reasons["evals/alpha/one"].startswith("Auto scope (removed), 2026-11-03: "))
+
+    def test_it_applies_at_high_stakes(self):
+        root = self.repo("hs", ["evals/alpha/one"], high_skills=("alpha",))
+        plan = eval_scope.build_plan(root, self.exp, None, {}, NOW_DT,
+                                     {"cms-platform": self.cms}, self.LAYOUTS)
+        self.assertEqual(self.removed(plan), ["evals/alpha/one"])
+
+    def test_unknown_does_nothing(self):
+        # No checkout at all, a checkout that is not a directory, an empty
+        # (or sparse) checkout, an entry with no registry, an unknown layout.
+        empty = Path(self._tmp.name) / "empty"
+        empty.mkdir()
+        for checkouts in ({}, {"cms-platform": Path(self._tmp.name) / "nope"},
+                          {"cms-platform": empty}):
+            self.assertEqual(self.removed(self.plan(checkouts)), [], checkouts)
+        no_registry = {"skills": [{"name": "alpha", "runs": []}]}
+        self.assertEqual(self.removed(self.plan(exp=no_registry)), [])
+        plan = eval_scope.build_plan(self.root, self.exp, None, {}, NOW_DT,
+                                     {"cms-platform": self.cms}, {})
+        self.assertEqual(self.removed(plan), [])
+
+    def test_the_fixtures_own_registry_finds_a_skill_the_explorer_no_longer_lists(self):
+        # The review of #1016's F1: the explorer's skill list comes from the
+        # coverage census, which drops a removed skill the next day. The
+        # fixture's own `registry:` field still names where it lived.
+        for path in ("evals/alpha/one", "evals/alpha/two"):
+            write(self.root, f"{path}/fixture.yaml",
+                  "draft: false\nregistry: https://github.com/Adam-S-Daniel/cms-platform\n")
+        gone = {**self.exp, "skills": [s for s in self.exp["skills"] if s["name"] != "alpha"]}
+        self.assertEqual(self.removed(self.plan(exp=gone)), ["evals/alpha/one", "evals/alpha/two"])
+        # Back in the registry, the same fixtures resume with no explorer entry.
+        plan = self.plan(exp=gone)
+        eval_scope.apply_plan(self.root, plan)
+        write(self.cms, "skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
+        self.assertEqual(sorted(r["path"] for r in self.plan(exp=gone)["resume"]),
+                         ["evals/alpha/one", "evals/alpha/two"])
+        # A registry URL harness/registries.yml does not know is unknown.
+        write(self.root, "evals/alpha/one/fixture.yaml",
+              "draft: false\nregistry: https://example.com/nope\n")
+        (self.cms / "skills/alpha/SKILL.md").unlink()
+        self.assertNotIn("evals/alpha/one", self.removed(self.plan(exp=gone)))
+
+    def test_a_skill_present_in_its_registry_or_another_visible_one_is_kept(self):
+        write(self.cms, "skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
+        self.assertEqual(self.removed(self.plan()), [])
+        (self.cms / "skills/alpha/SKILL.md").unlink()
+        other = Path(self._tmp.name) / "agentskills"
+        write(other, "plugins/p/skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
+        self.assertEqual(self.removed(self.plan({"cms-platform": self.cms,
+                                                 "adam-agentskills": other})), [])
+
+    def test_it_resumes_when_the_skill_reappears_and_stays_when_unknown(self):
+        eval_scope.apply_plan(self.root, self.plan())
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "pause")
+        self.assertEqual(self.plan()["resume"], [])
+        self.assertEqual(self.plan({})["resume"], [])
+        write(self.cms, "skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
+        plan = self.plan()
+        self.assertEqual(sorted((r["path"], r["rule"]) for r in plan["resume"]),
+                         [("evals/alpha/one", "removed"), ("evals/alpha/two", "removed")])
+        eval_scope.apply_plan(self.root, plan)
+        self.assertEqual(eval_scope.read_rows(self.root, "evals/scope-auto.yml", "rows"), [])
+        self.assertIn("evals/alpha/one", [r["path"] for r in eval_scope.read_rows(
+            self.root, "evals/scheduled.yml", "fixtures")])
+
+    def test_guidance_fixtures_are_never_removed_by_this_rule(self):
+        root = self.repo("g", ["evals/guidance/alpha/fx"])
+        plan = eval_scope.build_plan(root, self.exp, None, {}, NOW_DT,
+                                     {"cms-platform": self.cms}, self.LAYOUTS)
+        self.assertEqual(self.removed(plan), [])
+
+    def test_the_command_line_takes_registry_checkouts(self):
+        out = Path(self._tmp.name) / "plan.json"
+        exp = Path(self._tmp.name) / "exp.json"
+        exp.write_text(json.dumps(self.exp), encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            code = eval_scope.main(["plan", "--repo-root", str(self.root), "--explorer", str(exp),
+                                    "--registry", f"cms-platform={self.cms}", "--now", NOW,
+                                    "--out", str(out)])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.removed(json.loads(out.read_text())),
+                         ["evals/alpha/one", "evals/alpha/two"])
 
 
 class ApplyAndResumeTests(unittest.TestCase):
@@ -676,6 +828,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('startswith("eval-scope/")', scope)
         self.assertIn("evals/scheduled.yml|evals/unscheduled.yml|evals/scope-auto.yml", scope)
         self.assertNotIn("app_token", scope)
+
+    def test_the_removed_rule_sees_all_three_public_registries(self):
+        steps = self.doc["jobs"]["plan"]["steps"]
+        repos = {s["with"]["repository"]: s["with"] for s in steps
+                 if str(s.get("uses", "")).startswith("actions/checkout")
+                 and "repository" in s.get("with", {})}
+        for name in ("adam-agentskills", "cms-platform", "adamdaniel.ai"):
+            self.assertIn(f"Adam-S-Daniel/{name}", repos)
+        layouts = {r["name"]: r["layout"]
+                   for r in yaml.safe_load((ROOT / "harness/registries.yml").read_text())["registries"]}
+        run = next(s["run"] for s in steps if s.get("id") == "plan")
+        for name, path in (("adam-agentskills", "registry-agentskills"), ("cms-platform", "registry-cms"),
+                           ("adamdaniel.ai", "registry-site")):
+            self.assertIn(f'--registry "{name}=$GITHUB_WORKSPACE/ctx/{path}"', run)
+            sparse = repos[f"Adam-S-Daniel/{name}"]
+            # Sparse and read-only, and the sparse pattern is the layout.
+            self.assertEqual(sparse["path"], f"ctx/{path}")
+            self.assertIs(sparse["persist-credentials"], False)
+            self.assertEqual(sparse["sparse-checkout"], "/" + layouts[name])
 
     def test_the_agents_md_row_exists(self):
         text = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")

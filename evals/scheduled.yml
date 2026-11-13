@@ -2,14 +2,6 @@
 # record: from the fixture's pins at skills-evals c1bf71c, or for the unpinned
 # fixture from the roster's first arm and judge at fc7e1cf.
 fixtures:
-  - path: evals/embeddable-tool-pages
-    readiness: "Isolation pair, unpinned (the committed roster then named arm claude-sonnet-5 and judge claude-fable-5-1). Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
-  - path: evals/review-bash-ci-reliability/release-pipeline
-    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 8/11 vs without 5.67/11; judge 6.05 vs 4.95."
-  - path: evals/skills-doctor/bucketed-account-store
-    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
-  - path: evals/github-actions-sha-pinning
-    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-5). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8.67/10 vs without 8.0/10; judge 7.93 vs 3.1, ranges 6.8-8.5 vs 0.9-4.4."
   - path: evals/writing-adrs/bootstrap
     readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8/9 vs without 2.33/9; judge 9.03 vs 1.17, ranges 8.9-9.3 vs 0.4-1.9."
   - path: evals/disarm-inherited-reach
@@ -60,20 +52,8 @@ fixtures:
     readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#84)."
   - path: evals/post-failure-comment
     readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#86)."
-  - path: evals/consumer-repo-provisioning
-    readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#91)."
   - path: evals/platform-release-and-bump
     readiness: "In-place pair on adamdaniel.ai, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: test scores the seed and the reference fix (#93)."
-  - path: evals/ci-job-performance/browser-cache
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/git-identity
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/secret-name
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/swallowed-failure
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/wrong-branch
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/closed-duplicate
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/closing-keywords
@@ -82,34 +62,12 @@ fixtures:
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/stamps-skip-quotes
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/github-actions-repo-settings/drift-diagnosis
-    readiness: "In-place pair on repo-settings, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled until the eval runner routine cloned repo-settings (2026-11-01); hermetic checks exercised by test."
-  - path: evals/review-bash-ci-reliability/drift-report-capture
-    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/review-bash-ci-reliability/nightly-snapshot
-    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/review-bash-ci-reliability/test-runner-assertions
-    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/skills-doctor/personal-copy-outranks-repo
-    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/fan-out-triage/keyword-lookalikes
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/fan-out-triage/shifted-draft
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/fan-out-triage/single-file
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/fan-out-triage/three-files
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/companion-skip-pair
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/workflow-doc-in-step
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/writing-adrs/existing-convention
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/red-ci-adamdaniel-ai/paths-required
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/red-ci-adamdaniel-ai/timeout-wall
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
   - path: evals/guidance/git-practices/stale-branch-pull-request
@@ -120,36 +78,12 @@ fixtures:
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arms claude-sonnet-5-5 and claude-opus-5-5 and judge claude-fable-5-1). Harder fixture for a section whose first fixture sat at the ceiling or could not run (set A, 2026-11-07). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them in the workspace the harness builds (test_issue_124_guidance_gates.py, 2026-11-07)."
   - path: evals/guidance/subagent-delegation/contradicting-report
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arms claude-sonnet-5-5 and claude-opus-5-5 and judge claude-fable-5-1). Harder fixture for a section whose first fixture sat at the ceiling or could not run (set A, 2026-11-07). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them in the workspace the harness builds (test_issue_124_guidance_gates.py, 2026-11-07)."
-  - path: evals/review-bash-ci-reliability/pages-temp-repo-commit
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/tool-powershell/robocopy-exit-one
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 83aa8e87a1ad (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/fan-out-triage/indirect-surfaces
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/required-by-unseen-ruleset
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/required-gate-salience
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/ci-job-performance/fast-suite-sharding
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/ci-job-performance/spawn-per-test
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/ci-job-performance/sharded-required-check
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/ci-job-performance/act-local-loop
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/red-ci-adamdaniel-ai/release-bump-blocked
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 0e3957f01bd9 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/skills-doctor/laptop-double-delivery
-    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adam-agentskills at eccda739064b (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/writing-adrs/pr-body-outgrows-itself
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/tool-powershell/spaced-path-silent-exit
-    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/tool-powershell/two-strikes-unreachable-host
-    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/tool-powershell/installer-exit-3010
-    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/guidance/turn-lessons-into-checks/generated-doc-edit
     readiness: "Added by a fixture pull request for skills-evals#852: an owner correction about a hand-edited generated doc; the capture is a local.sh check. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: the seed and the fix-only change fail the capture checks, a fix plus check passes."
   - path: evals/guidance/turn-lessons-into-checks/bom-export
@@ -204,5 +138,7 @@ fixtures:
     readiness: "Added by a fixture pull request for skills-evals#923: four tasks to split across subagents (a log search, a specified implementation, a fresh-context correctness review, a security review); the section routes each to a model and an effort. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a routing that follows the section passes every check, and one that sends everything to one model at high effort fails three of five."
   - path: evals/guidance/automation-vs-branch-protection/docs-only-required-check
     readiness: "Added by a fixture pull request for skills-evals#932: a required test check asked to skip docs-only pull requests; the section says a required check cannot use on.paths and wants the change detected in an early step. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a paths-ignore filter on the trigger fails two of the three text checks, and an early detect step gating the test steps passes all three."
+  - path: evals/guidance/automation-vs-branch-protection/new-job-required-check
+    readiness: "Added by a fixture pull request for skills-evals#993: a request to add a lint job to ci.yml, with the ruleset checked in beside it; the section says every CI job on pull requests is a required check, shipped with its ruleset change in one pull request, and a required job takes no path filter or concurrency group. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a ci.yml with the job but a ruleset that still lists only test fails the required-check item, and one that adds lint to the ruleset beside test passes all five."
   - path: evals/guidance/two-github-connectors/org-connector-merge
     readiness: "Added by a fixture pull request for skills-evals#940: a session with only the org connector (github-mcp) is asked to enable auto-merge and resolve review threads, then to merge instead; the section says those belong to mcp__github__ only, that the org connector still merges (synchronously) so both get_check_runs and get_status are read first, and that fewer tools is not less dangerous. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a reply that merges without naming mcp__github__, the synchronous merge or both CI reads fails three of four, and one that names all of them passes."
