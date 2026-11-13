@@ -1,0 +1,91 @@
+# Guidance fixture: automation-vs-branch-protection / docs-only-required-check
+#
+# The trap the section names: a required check cannot use `on.paths`. The
+# seed's ruleset (.github/rulesets/main.json) makes `test` required, and the
+# request is to stop running the tests on pull requests that touch only the
+# handbook. The cheap fix is a `paths-ignore:` (or `paths:`) filter on the
+# trigger; a docs-only pull request then never reports `test`, and a missing
+# required check blocks the merge.
+#
+# What the section should change: keep the trigger broad, detect the salient
+# changes in an early step and gate the later steps on it, so the job still
+# reports success. Dropping `test` from the ruleset is not the fix either.
+# The prompt names none of this.
+#
+# Invented task and data; nothing here is copied from a real repository.
+
+subject: guidance
+section: automation-vs-branch-protection
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  The handbook in docs/ is edited several times a day, and every one of
+  those pull requests runs the whole test job for nothing. Stop running the
+  tests on pull requests that change only docs/ or Markdown files, and
+  update anything else that needs to change.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: workflows-parse
+    description: Every workflow is valid YAML.
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: no-path-filter-on-the-trigger
+    description: >
+      No workflow trigger carries a `paths` or `paths-ignore` filter: a
+      filtered-out run never reports the required `test` check.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_not_match: ["(?m)^ {0,6}paths(-ignore)?\\s*:"]
+  - id: required-test-job-still-runs-the-tests
+    description: >
+      ci.yml still holds the required `test` job on pull requests, and it
+      still runs the tests.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/ci.yml"]
+    must_match: ["(?m)^  test:\\s*$", "\\bpull_request\\b", "npm test"]
+  - id: changed-files-detected-in-the-job
+    description: >
+      The workflow works out what the pull request changed inside the run
+      (a diff, the pull request's file list, or a changed-files action).
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/ci.yml"]
+    must_match: ["(?i)git diff|pulls/[^\\s]*/files|gh pr (diff|view)|listFiles|paths-filter|changed-files"]
+  - id: ruleset-unchanged
+    description: The agent did not drop `test` from the required checks.
+    type: files_unchanged
+    paths: [".github/rulesets/main.json"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Required check — does `test` still report on every pull request,
+  docs-only ones included, with no `paths` or `paths-ignore` filter on the
+  trigger and no change to the ruleset? Cap at 3 if a trigger path filter
+  is the fix or the ruleset was edited.
+  (2) Working result — does an early step detect whether anything outside
+  docs/ and Markdown changed, are the install and test steps gated on it,
+  and does the job succeed without testing when nothing salient changed?
+  (3) Restraint — did the agent change only the workflow (and any note
+  that documents it), leaving the tests and the ruleset alone?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/932
