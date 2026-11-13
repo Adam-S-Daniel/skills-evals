@@ -1839,6 +1839,18 @@ await test('the loop thresholds come from the data: an absent policy shows unkno
   eq(hookNext({ verdict: null, since: 0 }, null, 1).key, 'unknown', 'no window length, no due date');
 });
 
+await test('a check page says what its totals hold beyond the published rows (hidden private repos)', async () => {
+  const { hiddenPrivate } = await import('../src/views/hooks.js');
+  const w = { from: '2026-09-21', to: '2026-11-13', weeks: 8 };
+  const use = [{ week: '2026-11-09', surface: 'local', repo: 'Adam-S-Daniel/open-one', invocations: 8, blocked: 0, overridden: null },
+    { week: '2026-09-14', surface: 'local', repo: 'Adam-S-Daniel/open-one', invocations: 5, blocked: 2, overridden: null }];
+  const it = (t) => ({ use, raw: { window_totals: t } });
+  const held = hiddenPrivate(it({ invocations: 1111, invocations_counted: 1111, blocked: 1095 }), w);
+  eq(JSON.stringify(held), JSON.stringify({ runs: 1103, blocked: 1095 }), 'the difference, with the week before the window left out');
+  eq(hiddenPrivate(it({ invocations: 8, invocations_counted: 8, blocked: 0 }), w), null, 'nothing held back');
+  eq(hiddenPrivate(it(null), w), null, 'no totals');
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);

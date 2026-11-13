@@ -28,8 +28,9 @@ field again before the document is written.
     `private: false`; every other one, and the producers' own `other` and
     `private` folds, become PRIVATE_BUCKET, whose rows are published only when
     at least `min_private_repos` distinct named non-public repositories fed it
-    (so with the producers' folds alone it never shows). The verdicts follow
-    evals/hook-policy.yml.
+    (so with the producers' folds alone it never shows). A hidden bucket still
+    counts in each check's `window_totals` and verdict, which name no
+    repository. The verdicts follow evals/hook-policy.yml.
   * `lesson_funnel`: how lessons ended (a check, a skill, guidance, nothing,
     still open), counted over public issues and pull requests only.
   * `activity`: the last ACTIVITY_DAYS of pull requests (open, or merged in the
@@ -394,8 +395,11 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
     if not shown:
         checks.pop((REPO_LOCAL, PRIVATE_BUCKET), None)
 
-    def rows_of(cells: dict) -> list:
-        out = [c for c in cells.values() if shown or c["repo"] != PRIVATE_BUCKET]
+    def rows_of(cells: dict, hidden: bool = False) -> list:
+        """The cells, newest first; the private bucket only when it is shown,
+        or when `hidden` asks for every cell (a verdict's input, never
+        published row by row)."""
+        out = [c for c in cells.values() if shown or hidden or c["repo"] != PRIVATE_BUCKET]
         return sorted(out, key=lambda c: (c["week"], c["surface"], c["repo"] or ""), reverse=True)
 
     start = min(timeweeks.week_monday(label)
@@ -403,7 +407,11 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
     entries = []
     for key, entry in sorted(checks.items(), key=lambda kv: (kv[0][1] or "", kv[0][0])):
         mine = rows_of(use.get(key, {})) if rows is not None else None
-        entry.update(use=mine, **verdict(mine, start, policy))
+        # The verdict and its window totals count the hidden private bucket
+        # too: like `totals`, they are sums that name no repository. Leaving
+        # it out read every block in a private repository as no block at all.
+        every = rows_of(use.get(key, {}), hidden=True) if rows is not None else None
+        entry.update(use=mine, **verdict(every, start, policy))
         entries.append(entry)
     out = {"window": {"weeks": policy["window_weeks"], "from": start,
                        "to": now.date().isoformat()},

@@ -105,6 +105,23 @@ export function checkWeeks(it) {
   return out.sort((a, b) => (a.week < b.week ? -1 : 1));
 }
 
+/* What the check's window totals hold beyond its published rows: the
+   private repos the data counts but does not list (too few to show as a
+   row), or null when nothing is held back. */
+export function hiddenPrivate(it, w) {
+  const t = it.raw.window_totals;
+  if (!t || typeof t !== 'object' || !w || typeof w.from !== 'string') return null;
+  let runs = 0, blocked = 0;
+  for (const u of it.use) {
+    if (u.week < w.from) continue;
+    if (Number.isInteger(u.invocations)) runs += u.invocations;
+    blocked += Number(u.blocked) || 0;
+  }
+  const r = Number.isInteger(t.invocations_counted) ? t.invocations_counted - runs : 0;
+  const b = Number.isInteger(t.blocked) ? t.blocked - blocked : 0;
+  return r > 0 || b > 0 ? { runs: Math.max(r, 0), blocked: Math.max(b, 0) } : null;
+}
+
 export function hookPage(doc, name, ctx) {
   const refMs = parseTime(doc.generated_at);
   const it = hookItems(doc).find((x) => x.name === name);
@@ -123,6 +140,7 @@ export function hookPage(doc, name, ctx) {
     r.blocked += Number(u.blocked) || 0;
   }
   const extra = ctx && ctx.ext && ctx.ext.hookPage ? ctx.ext.hookPage(ctx, it) : null;
+  const hidden = hiddenPrivate(it, doc.hooks && doc.hooks.window);
   return h('div', null, back,
     h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(it.name)), hookVerdict(it)),
@@ -134,7 +152,8 @@ export function hookPage(doc, name, ctx) {
       h('p', { class: 'meta' }, STRINGS.colRuns + ': ', runsCell(it), '. '
         + STRINGS.colBlocked + ': ' + blockedCell(it) + '. ' + STRINGS.colOverrides + ': ',
         overrides(it), '.'),
-      it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote)),
+      it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote),
+      hidden ? h('p', { class: 'note' }, STRINGS.hookPrivateHidden(hidden.runs > 0 ? fmtCount(hidden.runs) : null, fmtCount(hidden.blocked))) : null),
     panel(STRINGS.hookByWeek, weeks.length ? [
       weekChart(weeks.map((w) => ({ label: fmtDayKey(w.week, refMs), short: fmtDayKey(w.week, refMs), a: w.localBlocked + (cloud ? w.cloudBlocked : 0), b: w.ciBlocked })),
         [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),

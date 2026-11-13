@@ -20,5 +20,5 @@ window_weeks: 8
 # Overridden over blocked, as a fraction.
 max_override_rate: 0.20
 # Distinct named non-public repositories needed before the folded
-# `private repos` bucket is published at all.
+# `private repos` bucket is published as rows (it always counts in verdicts).
 min_private_repos: 3
