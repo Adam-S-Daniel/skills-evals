@@ -241,7 +241,7 @@ current-rest run can now confirm it) or
 time is evidence at the gate's level, so it votes; the pause reads only a
 pooled sample of the without arm and must not hide it), and is otherwise
 `paused`, recording `class_before_pause`: parked, so it neither votes nor
-lets a removal beside it be automatic. A subject whose every counted cell
+stands beside it. A subject whose every counted cell
 is parked is `ceiling` only when each cell shows the ceiling on its own runs
 (`_shows_ceiling`: a ceiling class, or a ceiling pause of a cell that was a
 ceiling class, or whose no-harm test had rejected with a without arm
@@ -262,18 +262,14 @@ HEADROOM cells are the `no-benefit` and `no-clear-effect` ones. First match:
     one shows it on its own runs (above): the subject needs a fixture with
     headroom, not more runs, and is never removed for it; otherwise
     `insufficient`;
-  * otherwise `retire`, with `removal`:
-      - `auto` when there are at least AUTO_MIN_HEADROOM_CELLS (2) headroom
-        cells and every one is `no-benefit`: two cells with independent run
-        noise make the per-cell 10% about 1% realized;
-        No parked cell may stand beside them (the review's C1): a cell
-        that did not vote leaves the subject's case incomplete;
-      - `proposal` otherwise (one headroom cell only, a cell that hit the
-        cap with no clear effect, or a parked cell): a human decides,
-        whatever
-        `retirement_mode` says (scripts/retire_skill.py lowers auto to a
-        proposal, and re-derives auto from the cells rather than trusting
-        the field).
+  * otherwise `retire`, and its `removal` is always `auto` (2026-11-13: the
+    owner wants removals to happen without his intervention). `removal_reason`
+    still describes the evidence (the dashboard shows it): every headroom cell
+    `no-benefit`, only one cell with headroom, a cell that reached the run cap
+    with no clear effect, or parked cells that did not vote. Whether the bot
+    can open the removal pull request itself, or files an `agent-ready` issue
+    for the fleet worker, is scripts/retire_skill.py's business, not the
+    verdict's.
 
 No roster model means no cell, never a retirement. scripts/compute_gates.py
 then lets one skill retire per evaluation. A standing retirement's
@@ -972,9 +968,6 @@ def prime(runs: list) -> None:
 # ---------------------------------------------------------------------------
 # Cells.
 
-#: Headroom cells, every one `no-benefit`, a subject needs before its
-#: removal may be automatic (module docstring, THE VERDICT).
-AUTO_MIN_HEADROOM_CELLS = 2
 #: The least without-arm mean at which a high cell may stop at
 #: `max_runs_high_cell` pairs as `ceiling-unconfirmed` (round 3's M2).
 HIGH_STOP_MIN_WITHOUT = 0.90
@@ -2320,6 +2313,15 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
                 "parked, and a cell the eval scope pass paused does not show a ceiling on "
                 "its own runs (or was paused for a floor or no use): no fixture is "
                 "measuring the subject"}
+    if any(c["class"] == "paused" and c.get("scope_paused") == "zero-use" for c in counted):
+        # A fixture the eval scope pass paused for no recorded use never
+        # voted: with every retire automatic (2026-11-13), the cells that did
+        # vote must not remove a never-used skill beside it. It stays
+        # `insufficient` until those fixtures run again (the skill is used);
+        # an unused skill leaves through harness/removal_policy.py instead.
+        # A ceiling or floor pause keeps the parked-cell behavior below.
+        return {"verdict": "insufficient", "reason": "a fixture paused for no recorded use "
+                "of the skill has not voted, so the other cells do not remove it"}
     if not headroom or not classes <= PARKED_CLASSES | {"no-benefit", "no-clear-effect"}:
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.
@@ -2328,26 +2330,21 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
     parked = " (cells parked or with a broken fixture do not vote)" \
         if len(headroom) < len(cells) else ""
     ceilings = sum(c["class"] in PARKED_CLASSES for c in counted)
+    # Every retire is `auto` (2026-11-13); `removal_reason` keeps the evidence.
     if clear and ceilings:
-        # The review's C1: a parked cell is evidence that did not vote, so a
-        # removal beside one is for a person to make.
-        return {"verdict": "retire", "removal": "proposal",
-                "reason": f"every cell with headroom shows no benefit{parked}",
-                "removal_reason": f"{ceilings} parked cell(s) (at the ceiling, or paused "
-                                  "by the eval scope pass) did not vote"}
-    if clear and len(headroom) >= AUTO_MIN_HEADROOM_CELLS:
-        return {"verdict": "retire", "removal": "auto",
-                "reason": f"every cell with headroom shows no benefit{parked}",
-                "removal_reason": f"{len(headroom)} cells with headroom, every one "
-                                  "no-benefit"}
-    if clear:
-        why = (f"only {len(headroom)} cell with headroom; an automatic removal needs "
-               f"{AUTO_MIN_HEADROOM_CELLS}")
+        why = f"{ceilings} parked cell(s) (at the ceiling, or paused by the eval " \
+              "scope pass) did not vote"
+        reason = f"every cell with headroom shows no benefit{parked}"
+    elif clear and len(headroom) >= 2:
+        why = f"{len(headroom)} cells with headroom, every one no-benefit"
+        reason = f"every cell with headroom shows no benefit{parked}"
+    elif clear:
+        why = f"only {len(headroom)} cell with headroom"
         reason = f"the one cell with headroom shows no benefit{parked}"
     else:
         why = "a cell reached the run cap with no clear effect"
         reason = f"no cell with headroom shows benefit, and one has no clear effect{parked}"
-    return {"verdict": "retire", "removal": "proposal", "reason": reason,
+    return {"verdict": "retire", "removal": "auto", "reason": reason,
             "removal_reason": why}
 
 
@@ -2460,8 +2457,10 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     THE UNFINISHED ALONE PAIR (2026-11-03): the alone pair runs only for a
     section leaning toward removal (scripts/plan_week.py, THE ALONE PAIR),
     so a `retire` whose alone pair is unfinished (`alone_unfinished`) could
-    still turn into shorten-or-merge. Its `removal` is then `proposal`,
-    never `auto`, with ALONE_UNFINISHED_REASON.
+    still turn into shorten-or-merge. Its verdict is then `insufficient`
+    with ALONE_UNFINISHED_REASON (2026-11-13: neither a removal nor an owner
+    proposal; the scheduler runs the alone arm), and `in_situ_verdict` stays
+    `retire`.
 
     The in-situ cells are `retirement` with `strata`: by the policy's
     `rest_policy`, the runs beside the rest on main only (`current`), or
@@ -2484,9 +2483,12 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
                            "guidance, but a cell shows benefit alone (section vs "
                            "none): the rest of the guidance covers it")
         extra = {}
-    elif verdict == "retire" and extra.get("removal") == "auto" \
-            and alone_unfinished(alone["cells"]):
-        extra = {**extra, "removal": "proposal", "removal_reason": ALONE_UNFINISHED_REASON}
+    elif verdict == "retire" and alone_unfinished(alone["cells"]):
+        # Not a removal and not a proposal for a person: the evidence is
+        # incomplete. `in_situ_verdict` stays `retire`, so the planner still
+        # fires the alone pair (scripts/plan_week.py `leans_to_removal`).
+        verdict, reason = "insufficient", ALONE_UNFINISHED_REASON
+        extra = {}
     return {"verdict": verdict, "reason": reason, "in_situ_verdict": in_situ["verdict"],
             **extra, "cells": in_situ["cells"],
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],

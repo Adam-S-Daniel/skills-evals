@@ -764,16 +764,16 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   `ceiling-unconfirmed`, which does not vote either, but only once the
   no-harm test has rejected and the without arm averages at least 0.90
   (`HIGH_STOP_MIN_WITHOUT`); otherwise it is fired on to the cap. A retire
-  verdict beside either is only a proposal.
+  verdict beside either still removes automatically (2026-11-13).
 - *Harm.* A cell whose without arm is high is also tested for harm (D below
   0 at 90%), and is `no-benefit` once that test decides: it needs no
   headroom to show harm. A harm beyond the margin is parked only at the
   no-harm test's error rate; a milder one can still end parked or, at the
-  cap, `no-clear-effect` (a proposal at most). A fixture the eval scope
+  cap, `no-clear-effect`. A fixture the eval scope
   pass pauses stops being fired, so a harm it had not yet decided stays
   undecided (`paused`, below); the subject is then `insufficient`, not
-  `ceiling`, when every cell is parked, and otherwise a `retire` proposal
-  (a parked cell beside decided `no-benefit` cells), never automatic.
+  `ceiling`, when every cell is parked, and otherwise a `retire`
+  (a parked cell beside decided `no-benefit` cells).
 - *The cap.* A cell still undecided after 20 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
@@ -782,13 +782,16 @@ pending, and `harness/gates.py`'s docstring is the full statement):
 - *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
   cells in the verdict: a `benefit` cell still keeps, a `no-benefit` cell
   (a harm or no-benefit its test decided before the pause) still votes, and
-  any other is `paused`, parked, so it does not vote and a removal beside it
-  is only a proposal. A subject whose every cell is parked is `ceiling` only
+  any other is `paused`, parked, so it does not vote. A subject whose every cell is parked is `ceiling` only
   when each shows the ceiling on its own runs: a ceiling class, or a cell
   paused for the ceiling that was a ceiling class or whose no-harm test had
   rejected with a without arm averaging 0.90 or more. The pause reads only
   a pooled sample of the without arm, which is not that evidence. Otherwise
-  (and for a floor or zero-use pause) the subject is `insufficient`, and the
+  (and for a floor or zero-use pause) the subject is `insufficient`, and a
+  cell parked by a zero-use pause keeps its subject `insufficient` even beside
+  cells that show no benefit: a never-used skill is not removed by the cells
+  that voted while its other fixtures never did (an unused skill leaves by
+  the removal policy instead), and the
   planner lists it as a `paused-unmeasured` work item: a paused fixture is
   off the schedule, so it has no planner cell to carry a `fixture-ceiling`
   item. A `ceiling` subject with a paused cell among its cells (round 6's
@@ -802,11 +805,13 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   `routine-outage`, `needs-fixtures`, `needs-harder-fixtures` and
   `needs-trigger-set`).
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
-  no-clear-effect, none undecided. It may be automatic only with two or
-  more such cells, every one no-benefit; one headroom cell, or any
-  no-clear-effect or parked cell, makes it a proposal (`removal: proposal`
-  in the verdict), and `scripts/retire_skill.py` re-derives that from the
-  cells rather than trusting the field. A removal decides at the first pair
+  no-clear-effect, none undecided. Every `retire` removal is automatic
+  (`removal: auto`; Adam, 2026-11-13: "I want removals to occur without
+  requiring my intervention/approval"): `removal_reason` records the
+  evidence (one headroom cell, a cell at the run cap with no clear effect,
+  parked cells that did not vote), and when the bot cannot open the pull
+  request itself for a reason an agent can fix, `scripts/retire_skill.py`
+  files an `agent-ready` issue for the fleet worker. A removal decides at the first pair
   where its test is at its level and the pairs so far span two Claude Code
   versions, and a skill cell with an agent-errored trial supports no
   removal at all.
@@ -838,7 +843,12 @@ adam-agentskills ADR 0021, and the
 The committed value is `auto` again: Adam set it to `proposal` on
 2026-11-03 ("Resume, auto-removal off") and pre-approved turning it back on
 once a loop withdrawal was hardened (PR #740, skills-evals#645). A
-`removal: proposal` verdict files the issue whatever the mode. Each removal also files an `agent-authored`
+verdict never lowers a removal to an issue (2026-11-13: every retire is
+automatic); a skill the bot cannot open a pull request for, where an agent can
+fix the reason (a copy in cms-platform or adamdaniel.ai, a last skill, a
+layout, waiver or citing test, or no write token), gets an `agent-ready`
+issue for the fleet worker (`AGENT_STAMP`), and only a removal
+plugin-runtime-review would hold stays a proposal for the owner. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
@@ -852,18 +862,21 @@ checks read — the skill gone, the plugin's major version raised, a
 locked, a `skills.lock` re-pin — produced by the registry's own generators
 rather than reimplemented here. The job checks out the registry with full
 history (the lock re-pin reads the commit the lock pins) and writes with the
-improvement gate's GitHub App token. Without that token, or for a skill whose
+improvement gate's GitHub App token. Without that token, for a skill whose
+copy is in cms-platform or adamdaniel.ai, or when the mechanical path refuses
+(the skill is its plugin's last, the layout does not list it, a waiver, a
+citing test), it files the `agent-ready` issue for the fleet worker described
+above. For a skill whose
 removal plugin-runtime-review would hold (the skill has its own `hooks/` or
 `bin/`, or a hook of its plugin names a path in it), it falls
 back to `proposal`: one skills-evals issue that is filed or updated and that
-a human acts on; once that issue is closed, the skill is not proposed
+the owner acts on; once that issue is closed, the skill is not proposed
 again. In `auto` mode no removal is opened for it either: the proposal path
 stamps the issue it files, and a closed one with that stamp (or one older
 than the stamps, which has none) declines the removal for good, whatever the
 close reason ("completed" and "not planned" alike), even once
-the reason it was only a proposal is gone (a `removal: proposal` verdict
-that firms up to `auto`, the token coming back, or the mode switched from
-`proposal` to `auto`). A closed issue the withdrawal path filed carries its
+the reason it was only a proposal is gone (the token coming back, or the
+mode switched from `proposal` to `auto`). A closed issue the withdrawal path filed carries its
 own stamp and declines nothing until the pause cap (below); while `auto` is
 lowered to a proposal short of the cap, it does not count as already
 decided either, so a fresh proposal issue is filed for a person to decline.
@@ -902,8 +915,7 @@ bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
 
 The pull request is withdrawn when the verdict no longer supports an
 automatic removal: `keep`, `insufficient` (a roster model just added
-included), a `retire` lowered to a proposal (for a section, also an
-unfinished section-alone pair), or a `retire-pending` that was not a
+included, and a section whose alone pair is unfinished), or a `retire-pending` that was not a
 supported `retire` before
 `finalize` ranked it. A `retire-pending` whose raw verdict is a supported
 `retire` keeps its pull request, since only one subject retires per
@@ -1307,9 +1319,9 @@ block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
 guidance already covers it. A `retire` whose alone check has not finished
-(no alone cell yet, or one still undecided) is only ever proposed, never
-removed automatically, since the alone check could still turn it into
-`shorten-or-merge`. The Evals Explorer shows a section's alone results only
+(no alone cell yet, or one still undecided) is `insufficient`, neither
+removed nor proposed to the owner (2026-11-13), since the alone check could
+still turn it into `shorten-or-merge`; the planner fires the alone arm. The Evals Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
 whole-guidance headline still pools every run with no guidance, and each
 section card's trend, help-per-word order and early sign use the in-situ

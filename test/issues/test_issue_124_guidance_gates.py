@@ -1573,7 +1573,7 @@ class GuidanceVerdictTests(unittest.TestCase):
 class UnfinishedAlonePairTests(unittest.TestCase):
     """THE UNFINISHED ALONE PAIR (2026-11-03): the alone pair runs only for a
     section leaning toward removal, so a `retire` whose alone pair has not
-    decided is a proposal, never an automatic removal."""
+    decided is `insufficient`: neither a removal nor an owner proposal."""
 
     def verdict(self, alone_classes, in_situ=None):
         in_situ = in_situ or {"verdict": "retire", "removal": "auto",
@@ -1591,15 +1591,17 @@ class UnfinishedAlonePairTests(unittest.TestCase):
             return gates.guidance_verdict({"runs": []}, ["model-a", "model-b"], "sec",
                                           TEST_POLICY, EXPECT)
 
-    def test_no_alone_cell_or_an_undecided_one_makes_it_a_proposal(self):
+    def test_no_alone_cell_or_an_undecided_one_makes_it_insufficient(self):
         for classes in ((), ("insufficient", "insufficient"), ("missing",),
                         ("no-benefit", "insufficient"), ("cannot-discriminate",),
                         ("paused", "no-benefit")):
             with self.subTest(classes=classes):
                 v = self.verdict(classes)
-                self.assertEqual((v["verdict"], v["removal"]), ("retire", "proposal"))
-                self.assertEqual(v["removal_reason"], gates.ALONE_UNFINISHED_REASON)
-                self.assertIn("section-alone check has not finished", v["removal_reason"])
+                self.assertEqual(v["verdict"], "insufficient")
+                self.assertNotIn("removal", v)
+                self.assertEqual(v["in_situ_verdict"], "retire")
+                self.assertEqual(v["reason"], gates.ALONE_UNFINISHED_REASON)
+                self.assertIn("section-alone check has not finished", v["reason"])
 
     def test_a_decided_alone_pair_leaves_the_automatic_removal(self):
         for classes in (("no-benefit", "no-benefit"), ("no-clear-effect", "ceiling")):
@@ -1615,7 +1617,8 @@ class UnfinishedAlonePairTests(unittest.TestCase):
         self.assertNotIn("removal", v)
 
     def test_a_proposal_keeps_its_own_reason(self):
-        v = self.verdict((), in_situ={"verdict": "retire", "removal": "proposal",
+        v = self.verdict(("no-benefit", "no-benefit"),
+                         in_situ={"verdict": "retire", "removal": "proposal",
                                       "reason": "r", "removal_reason": "own reason",
                                       "cells": [], "runs_used": []})
         self.assertEqual((v["removal"], v["removal_reason"]), ("proposal", "own reason"))
@@ -1954,7 +1957,7 @@ class GuidancePlanTests(unittest.TestCase):
     def test_an_unfinished_alone_pair_is_never_an_automatic_removal(self):
         # The verdict says auto, but its alone pair has not decided: the
         # removal path re-checks the cells, as it does the in-situ ones, and
-        # lowers it to a proposal (THE UNFINISHED ALONE PAIR).
+        # waits and files nothing (THE UNFINISHED ALONE PAIR).
         for alone in ({}, {"model-a": "insufficient", "model-b": "no-benefit"},
                       {"model-a": "missing", "model-b": "missing"}):
             with self.subTest(alone=alone):
@@ -1964,8 +1967,9 @@ class GuidancePlanTests(unittest.TestCase):
                               rs.guidance_proposal_only(verdict))
                 plan = rs.guidance_plan(guidance_gates(mode="auto", alone_classes=alone),
                                         None, FakeGh(), allowed=("auto", "proposal"))
-                self.assertEqual((plan["action"], plan["mode"]), ("create-issue", "proposal"))
-                self.assertIn("section-alone check has not finished", plan["mode_reason"])
+                # 2026-11-13: incomplete evidence files nothing for the owner.
+                self.assertEqual(plan["action"], "none")
+                self.assertIn("section-alone check has not finished", plan["reason"])
         self.assertIsNone(rs.guidance_proposal_only(
             guidance_gates(mode="auto")["guidance"]["bravo"]))
         broken = guidance_gates(mode="auto")["guidance"]["bravo"]
@@ -2208,25 +2212,28 @@ class GuidanceRemovalTests(unittest.TestCase):
             os.environ.update(old)
         self.assertEqual(rc, 2)
 
-    def test_fallback_to_proposal_files_the_issue_when_auto_is_not_allowed(self):
+    def test_no_credential_files_nothing_and_fails_the_run(self):
+        # Adam, 2026-11-13: an infrastructure failure is not the owner's
+        # decision. Nothing is filed or opened; the run exits 1 so the
+        # scheduled-run health audit flags it.
         root = guidance_repo(self)
         rc, gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root,
                                             allow=("proposal",), fallback=True)
-        self.assertEqual(rc, 0, out)
+        self.assertEqual(rc, 1, out)
         self.assertEqual(pushed, [])
         self.assertEqual(self.registry.calls, [])
-        self.assertEqual(gh.calls[-1][0][:4], ["issue", "create", "-R", rs.EVALS_REPO])
-        self.assertIn(rs.GUIDANCE_NO_CREDENTIAL, gh.calls[-1][1])
+        self.assertEqual([c for c in gh.calls if c[0][0] != "api"], [])
+        self.assertIn(rs.GUIDANCE_NO_CREDENTIAL_FAILURE, out)
         self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(), ["*", "main"])
         rc, _gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root,
                                               allow=("proposal",), fallback=True, dry=True)
-        self.assertEqual(json.loads(out)["mode_reason"], rs.GUIDANCE_NO_CREDENTIAL)
+        self.assertEqual(json.loads(out)["failure"], rs.GUIDANCE_NO_CREDENTIAL_FAILURE)
 
-    def test_a_proposal_only_guidance_verdict_files_the_issue_in_auto_mode(self):
-        # The review's surviving mutation (round 1): guidance's `removal !=
-        # "auto"` lowering was untested. A verdict that says proposal, or
-        # says auto over cells that do not allow it (round 1's m3), files
-        # the issue and pushes nothing, with auto allowed.
+    def test_every_guidance_retire_verdict_is_removed_in_auto_mode(self):
+        # Adam, 2026-11-13: removals occur without his approval. A parked
+        # cell, a no-clear-effect cell or a `removal` field that says
+        # proposal no longer lowers a guidance removal to an issue; only an
+        # unfinished alone pair does (harness/gates.py, `alone_unfinished`).
         for doc in (guidance_gates(mode="auto", removal="proposal"),
                     guidance_gates(mode="auto", classes={"model-b": "no-clear-effect"}),
                     guidance_gates(mode="auto", classes={"model-b": "ceiling"})):
@@ -2235,12 +2242,8 @@ class GuidanceRemovalTests(unittest.TestCase):
                 root = guidance_repo(self)
                 rc, gh, pushed, out = self.run_main(doc, root, allow=("auto", "proposal"))
                 self.assertEqual(rc, 0, out)
-                self.assertEqual(pushed, [])
-                self.assertEqual(gh.calls[-1][0][:4], ["issue", "create", "-R", rs.EVALS_REPO])
-                self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(),
-                                 ["*", "main"])
-        # Both cells no-benefit and `removal: auto`: the auto path stands.
-        self.assertIsNone(rs.proposal_only(guidance_gates(mode="auto")["guidance"]["bravo"]))
+                self.assertNotEqual(pushed, [])
+        self.assertIsNone(rs.guidance_proposal_only(guidance_gates(mode="auto")["guidance"]["bravo"]))
 
     def test_without_fallback_auto_not_allowed_still_exits_2(self):
         root = guidance_repo(self)

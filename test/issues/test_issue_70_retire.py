@@ -479,6 +479,11 @@ class AutoTests(Base):
                 body = fake.calls[-1][1]
                 self.assertIn("`retirement_mode: auto`, but", body)
                 self.assertIn("plugin-runtime-review holds", body)
+                # The owner's approval is a standing rule there: a proposal for
+                # a person, never the agent route.
+                self.assertIn(retire_skill.PROPOSAL_STAMP, body)
+                self.assertNotIn(retire_skill.AGENT_STAMP, body)
+                self.assertNotIn("--label", writes[0])
                 self.assertEqual(fake.pushes, [])
                 self.assertEqual(git(registry, "branch", "--show-current").strip(), "main")
 
@@ -519,15 +524,53 @@ class AutoTests(Base):
         self.assertIn("falls back to proposal", err)
         self.assertEqual(fake.writes(), [])
 
-    def test_no_credential_falls_back_to_the_issue(self):
+    def test_no_credential_files_the_agent_issue(self):
+        # Adam, 2026-11-13: an auto-eligible skill with no registry credential
+        # this run goes to the fleet worker, not to a person.
         code, _, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
                                            "--fallback-to-proposal")
         self.assertEqual(code, 0, err)
-        self.assertIn("lowered to proposal", err)
-        self.assertEqual([w[:2] for w in fake.writes()], [["issue", "create"]])
-        self.assertIn("no write credential for adam-agentskills", fake.calls[-1][1])
+        writes = fake.writes()
+        self.assertEqual([w[:2] for w in writes], [["issue", "create"]])
+        self.assertEqual(writes[0][writes[0].index("--label") + 1], "agent-ready")
+        body = fake.calls[-1][1]
+        self.assertIn(retire_skill.AGENT_STAMP, body)
+        self.assertNotIn(retire_skill.PROPOSAL_STAMP, body)
+        self.assertNotIn("a human removes", body)
+        self.assertIn("no write credential for adam-agentskills", body)
+        self.assertIn(f"`plugins/{PLUGIN}/skills/{SKILL}`", body)
         self.assertEqual(fake.pushes, [])
         self.assertUntouched()
+
+    def test_no_credential_agent_route_respects_a_person_closing_the_removal(self):
+        # Review finding: the agent route skipped the auto path's "already
+        # decided" refusal, so a declined skill still got an agent issue.
+        fake = FakeGitHub(closed=[{"number": 8, "head": f"retire-skill/{SKILL}", "url":
+                                   "https://github.com/Adam-S-Daniel/adam-agentskills/pull/8"}])
+        code, out, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
+                                             "--fallback-to-proposal", fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already decided", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_no_credential_agent_route_files_nothing_beside_an_open_removal_pr(self):
+        fake = FakeGitHub(prs=[{"number": 3, "head": f"retire-skill/{SKILL}", "url":
+                                "https://github.com/Adam-S-Daniel/adam-agentskills/pull/3"}])
+        code, out, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
+                                             "--fallback-to-proposal", fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already open", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_an_open_agent_issue_keeps_the_auto_path_from_opening_a_second_removal(self):
+        body = (f"{retire_skill.ISSUE_MARKER.format(skill=SKILL)}\n"
+                f"{retire_skill.AGENT_STAMP}\n")
+        fake = FakeGitHub(issues=[issue(41, body)])
+        code, out, err, fake = self.run_main(gates_doc("auto"), *BOTH, fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("the fleet worker holds", out)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(fake.writes(), [])
 
     def test_the_fallback_does_not_touch_a_proposal_or_an_allowed_auto(self):
         code, _, err, fake = self.run_main(gates_doc("proposal"), "--allow-mode", "proposal",
@@ -714,48 +757,46 @@ class VerdictTests(Base):
         self.assertEqual(code, 0, err)
         self.assertEqual([w[:2] for w in fake.writes()], [["issue", "create"]])
 
-    def test_a_proposal_only_verdict_lowers_auto_to_the_issue(self):
-        # 2026-11-03: one cell with headroom, or a capped cell, is only ever
-        # proposed, whatever retirement_mode says; a verdict without
-        # `removal` is treated the same.
-        registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
-        for removal in ("proposal", None):
-            with self.subTest(removal=removal):
-                doc = gates_doc("auto")
-                doc["skills"][SKILL].pop("removal")
-                doc["skills"][SKILL]["removal_reason"] = "only 1 cell with headroom"
-                if removal:
-                    doc["skills"][SKILL]["removal"] = removal
-                action = retire_skill.plan(doc, registries, FakeGitHub().gh,
-                                           allowed=("auto", "proposal"))
-                self.assertEqual((action["action"], action["mode"]),
-                                 ("create-issue", "proposal"))
-                self.assertIn("only 1 cell with headroom", action["mode_reason"])
-                self.assertIn("only 1 cell with headroom", action["body"])
+    def test_a_no_clear_effect_retire_is_auto(self):
+        # Adam, 2026-11-13: "I want removals to occur without requiring my
+        # intervention/approval". A cell at the run cap with no clear effect,
+        # one cell with headroom or a parked cell no longer make a proposal.
+        def cells_of(*classes):
+            return [{"class": c, "ceiling_at": None} for c in classes]
+        cases = {
+            "a cell reached the run cap with no clear effect":
+                cells_of("no-benefit", "no-clear-effect"),
+            "only 1 cell with headroom": cells_of("no-benefit"),
+            "1 parked cell(s) (at the ceiling": cells_of("no-benefit", "no-benefit", "ceiling"),
+            "2 cells with headroom, every one no-benefit": cells_of("no-benefit", "no-benefit"),
+        }
+        for reason, cells in cases.items():
+            with self.subTest(reason):
+                verdict = gates_module._verdict(cells, True)
+                self.assertEqual((verdict["verdict"], verdict["removal"]), ("retire", "auto"))
+                self.assertIn(reason, verdict["removal_reason"])
 
-    def test_removal_auto_is_rederived_from_the_cells(self):
-        # Round 1's m3: a gates file that says `removal: auto` over cells
-        # that do not allow it (a no-clear-effect cell, a ceiling cell, or
-        # one headroom cell) is lowered to the issue, never trusted.
+    def test_a_retire_is_removed_whatever_its_removal_field_or_cells_say(self):
+        # The verdict's `removal` and cells are no longer re-derived into a
+        # proposal (retire_skill.plan): every retire opens the removal.
         registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
-        # The auto rule's cell count is the gates' own constant (round 2).
-        self.assertIs(retire_skill.AUTO_MIN_HEADROOM_CELLS, gates_module.AUTO_MIN_HEADROOM_CELLS)
-        for swap in ("no-clear-effect", "ceiling", "ceiling-unconfirmed", "one", "lone"):
-            with self.subTest(swap=swap):
-                doc = gates_doc("auto")
-                cells = doc["skills"][SKILL]["cells"]
-                if swap in ("one", "lone"):
-                    # One headroom cell beside a ceiling, or beside broken
-                    # fixtures only: under AUTO_MIN_HEADROOM_CELLS either way.
-                    for c in cells[1:]:
-                        c["class"] = "ceiling" if swap == "one" else "cannot-discriminate"
-                else:
-                    cells[0]["class"] = swap
-                action = retire_skill.plan(doc, registries, FakeGitHub().gh,
-                                           allowed=("auto", "proposal"))
-                self.assertEqual((action["action"], action["mode"]),
-                                 ("create-issue", "proposal"))
-                self.assertIn("its cells allow only a proposal", action["mode_reason"])
+        for removal in ("proposal", None, "auto"):
+            for swap in (None, "no-clear-effect", "ceiling", "one"):
+                with self.subTest(removal=removal, swap=swap):
+                    doc = gates_doc("auto")
+                    entry = doc["skills"][SKILL]
+                    entry.pop("removal")
+                    if removal:
+                        entry["removal"] = removal
+                    if swap == "one":
+                        for c in entry["cells"][1:]:
+                            c["class"] = "ceiling"
+                    elif swap:
+                        entry["cells"][0]["class"] = swap
+                    action = retire_skill.plan(doc, registries, FakeGitHub().gh,
+                                               allowed=("auto", "proposal"))
+                    self.assertEqual((action["action"], action["mode"]), ("removal", "auto"))
+                    self.assertNotIn("mode_reason", action)
 
     def test_two_retire_verdicts_are_refused(self):
         cells = [cell("basic", m) for m in MODELS]
@@ -785,6 +826,122 @@ class VerdictTests(Base):
 
 
 BOTH = ("--allow-mode", "auto", "--allow-mode", "proposal")
+
+
+class AgentRouteTests(Base):
+    """Adam, 2026-11-13: removals occur without his approval. A removal the
+    bot cannot open itself, for a reason an agent can fix, is an
+    `agent-ready` issue for the fleet worker, not a refusal or a proposal."""
+
+    def setUp(self):
+        super().setUp()
+        # The skill's one copy is cms-platform's, not adam-agentskills'.
+        self.ag = make_registry(self.tmp / "ag", skills=((PLUGIN, KEPT), (PLUGIN, "third")))
+        self.cms = self.tmp / "cms"
+        (self.cms / "skills" / SKILL).mkdir(parents=True)
+        (self.cms / "skills" / SKILL / "SKILL.md").write_text("x\n")
+        self.flags = [f"adam-agentskills={self.ag}", f"cms-platform={self.cms}"]
+
+    def run_agent(self, *extra, fake=None, doc=None):
+        return self.run_main(doc or gates_doc("auto"), *BOTH, *extra, env=AUTO_ENV,
+                             registries=self.flags, fake=fake)
+
+    def label_posts(self, fake, number):
+        return [a for a, _ in fake.calls if a[:3] == ["api", "-X", "POST"]
+                and a[3] == f"repos/Adam-S-Daniel/skills-evals/issues/{number}/labels"]
+
+    def test_a_cms_platform_skill_is_planned_as_the_agent_issue(self):
+        code, out, err, fake = self.run_agent("--dry-run")
+        self.assertEqual(code, 0, err)
+        plan = json.loads(out)
+        self.assertEqual((plan["action"], plan["mode"], plan["label"]),
+                         ("create-issue", "agent", "agent-ready"))
+        body = plan["body"]
+        self.assertIn(retire_skill.ISSUE_MARKER.format(skill=SKILL), body)
+        self.assertIn(retire_skill.AGENT_STAMP, body)
+        self.assertNotIn("a human removes", body)
+        self.assertNotIn("not located", body)
+        self.assertIn("is **retire** as of", body)
+        self.assertIn("Registry: `Adam-S-Daniel/cms-platform`, path `skills/%s`" % SKILL, body)
+        self.assertIn("The bot did not open the removal pull request itself", body)
+        self.assertIn("The fleet worker removes it (Adam-S-Daniel/_agent-guidance "
+                      'docs/reference/agent-issue-worker.md, "Skill removal issues"): a pull '
+                      f"request from branch `retire-skill/{SKILL}` in that repository that "
+                      "closes this issue.", body)
+        self.assertIn("--label", plan["would_run"][0])
+        self.assertEqual(fake.writes(), [])
+
+    def test_a_cms_platform_skill_files_the_agent_issue(self):
+        code, _, err, fake = self.run_agent()
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("not exactly once", err)
+        writes = fake.writes()
+        self.assertEqual([w[:2] for w in writes], [["issue", "create"]])
+        self.assertEqual(writes[0][writes[0].index("--label") + 1], "agent-ready")
+        self.assertIn(retire_skill.AGENT_STAMP, fake.calls[-1][1])
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(git(self.ag, "branch", "--show-current").strip(), "main")
+
+    def test_an_open_proposal_issue_is_converted_in_place(self):
+        old = (f"{retire_skill.ISSUE_MARKER.format(skill=SKILL)}\n{retire_skill.PROPOSAL_STAMP}\n"
+               "a human removes it\n")
+        fake = FakeGitHub(issues=[issue(998, old)])
+        code, _, err, fake = self.run_agent(fake=fake)
+        self.assertEqual(code, 0, err)
+        edits = [a for a in fake.writes() if a[:3] == ["issue", "edit", "998"]]
+        self.assertEqual(len(edits), 1)
+        self.assertEqual([w[:2] for w in fake.writes()], [["issue", "edit"]])
+        body = [stdin for a, stdin in fake.calls if a[:3] == ["issue", "edit", "998"]][0]
+        self.assertIn(retire_skill.AGENT_STAMP, body)
+        self.assertNotIn(retire_skill.PROPOSAL_STAMP, body)
+        self.assertNotIn("a human removes", body)
+        posts = self.label_posts(fake, 998)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0][-1], "labels[]=agent-ready")
+
+    def test_the_label_is_not_added_over_a_worker_or_a_hold(self):
+        old = (f"{retire_skill.ISSUE_MARKER.format(skill=SKILL)}\n"
+               f"{retire_skill.AGENT_STAMP}\nold\n")
+        for label in ("agent-working", "agent-blocked", "on-hold"):
+            with self.subTest(label):
+                fake = FakeGitHub(issues=[{**issue(5, old), "labels": [label, "other"]}])
+                code, _, err, fake = self.run_agent(fake=fake)
+                self.assertEqual(code, 0, err)
+                self.assertEqual([w[:3] for w in fake.writes()], [["issue", "edit", "5"]])
+                self.assertEqual(self.label_posts(fake, 5), [])
+        fake = FakeGitHub(issues=[{**issue(5, old), "labels": ["other"]}])
+        code, _, err, fake = self.run_agent(fake=fake)
+        self.assertEqual(len(self.label_posts(fake, 5)), 1)
+
+    def test_a_closed_agent_issue_decides_the_skill(self):
+        # Removed by the worker, or a person declined: either way it is decided.
+        old = (f"{retire_skill.ISSUE_MARKER.format(skill=SKILL)}\n"
+               f"{retire_skill.AGENT_STAMP}\nold\n")
+        fake = FakeGitHub(issues=[issue(5, old, state="closed")])
+        code, out, err, fake = self.run_agent(fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already decided", out)
+        self.assertEqual(fake.writes(), [])
+        self.assertEqual(self.label_posts(fake, 5), [])
+
+    def test_no_credential_files_the_agent_issue_for_a_cms_platform_skill(self):
+        code, _, err, fake = self.run_main(
+            gates_doc("auto"), "--allow-mode", "proposal", "--fallback-to-proposal",
+            env=AUTO_ENV, registries=self.flags)
+        self.assertEqual(code, 0, err)
+        writes = fake.writes()
+        self.assertEqual([w[:2] for w in writes], [["issue", "create"]])
+        self.assertIn("agent-ready", writes[0])
+        self.assertIn(retire_skill.AGENT_STAMP, fake.calls[-1][1])
+
+    def test_a_private_or_unlocated_copy_is_still_refused(self):
+        # Never a target: a copy found nowhere stays a refusal (the 0 and 2+
+        # cases are in test_basename_must_be_found_exactly_once).
+        code, _, err, fake = self.run_main(
+            gates_doc("auto"), *BOTH, env=AUTO_ENV,
+            registries=[f"adam-agentskills={self.ag}"])
+        self.assertEqual(code, 2)
+        self.assertEqual(fake.writes(), [])
 
 
 class DryRunTests(Base):
@@ -1394,6 +1551,17 @@ class RegistryCheckTests(AutoTests):
     The registry's own generators produce the first and the last; nothing here
     reimplements them."""
 
+    def assertAgentIssue(self, fake, reason):
+        """The refusal an agent can fix filed one `agent-ready` issue and
+        pushed nothing."""
+        writes = fake.writes()
+        self.assertEqual([w[:2] for w in writes], [["issue", "create"]])
+        self.assertIn("agent-ready", writes[0])
+        body = fake.calls[-1][1]
+        self.assertIn(retire_skill.AGENT_STAMP, body)
+        self.assertIn(reason, body)
+        self.assertEqual(fake.pushes, [])
+
     def plan_for(self, registry=None, mode="auto"):
         doc = gates_doc(mode)
         path = self.write_gates(doc)
@@ -1467,17 +1635,16 @@ class RegistryCheckTests(AutoTests):
         self.assertEqual(fake.pushes, [])
         self.assertEqual(calls(shallow), [])
 
-    def test_a_plugins_last_skill_is_refused(self):
+    def test_a_plugins_last_skill_files_the_agent_issue(self):
         registry = make_registry(self.tmp / "only", skills=((PLUGIN, SKILL),))
         code, _, err, fake = self.run_main(gates_doc("auto"),
                                            registries=[f"adam-agentskills={registry}"])
-        self.assertEqual(code, 2)
-        self.assertIn("last skill", err)
-        self.assertEqual(fake.pushes, [])
+        self.assertEqual(code, 0, err)
+        self.assertAgentIssue(fake, "last skill")
         self.assertEqual(calls(registry), [])
         self.assertTrue((registry / "plugins" / PLUGIN / "skills" / SKILL).is_dir())
 
-    def test_a_layout_file_that_does_not_list_the_skill_is_refused(self):
+    def test_a_layout_file_that_does_not_list_the_skill_files_the_agent_issue(self):
         for broken in ({"plugins": {PLUGIN: {"defaultEnabled": True, "skills": [KEPT]}}},
                        {"plugins": {}}, {"plugins": [PLUGIN]}, []):
             with self.subTest(repr(broken)[:40]):
@@ -1487,9 +1654,8 @@ class RegistryCheckTests(AutoTests):
                 git(registry, "commit", "-qam", "break the layout")
                 code, _, err, fake = self.run_main(
                     gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
-                self.assertEqual(code, 2)
-                self.assertIn("plugin_layout.json", err)
-                self.assertEqual(fake.pushes, [])
+                self.assertEqual(code, 0, err)
+                self.assertAgentIssue(fake, "plugin_layout.json")
 
     def test_a_missing_layout_file_is_refused(self):
         registry = make_registry(self.tmp / "nolayout")
@@ -1674,7 +1840,7 @@ class RegistryCheckTests(AutoTests):
                                         registries=[f"adam-agentskills={registry}"])
         self.assertEqual(code, 0, err)
 
-    def test_a_waiver_under_the_skill_is_refused(self):
+    def test_a_waiver_under_the_skill_files_the_agent_issue(self):
         registry = make_registry(self.tmp / "waived")
         (registry / "scripts" / "skills_waivers.yml").write_text(
             "# A comment naming %s, which is not a waiver.\nwaivers:\n"
@@ -1685,9 +1851,8 @@ class RegistryCheckTests(AutoTests):
         git(registry, "commit", "-qm", "a waiver under the skill")
         code, _, err, fake = self.run_main(gates_doc("auto"),
                                            registries=[f"adam-agentskills={registry}"])
-        self.assertEqual(code, 2)
-        self.assertIn("skills_waivers.yml", err)
-        self.assertEqual(fake.pushes, [])
+        self.assertEqual(code, 0, err)
+        self.assertAgentIssue(fake, "skills_waivers.yml")
         self.assertEqual(calls(registry), [])
 
     def test_waivers_elsewhere_and_an_empty_list_do_not_refuse(self):
@@ -1737,7 +1902,7 @@ class RegistryCheckTests(AutoTests):
         git(registry, "commit", "-qm", name)
         return registry
 
-    def test_a_citation_of_a_test_only_the_skill_defines_is_refused(self):
+    def test_a_citation_of_a_test_only_the_skill_defines_files_the_agent_issue(self):
         # adam-agentskills' test_every_test_this_repo_cites_by_name_exists
         # fails on a non-test source citing a test nothing defines. Measured:
         # removing skills-doctor leaves .claude/hooks/skills-bootstrap.sh
@@ -1748,10 +1913,9 @@ class RegistryCheckTests(AutoTests):
                                      "# test_only_the_skill_defines_this pins this.\n")
                 code, _, err, fake = self.run_main(
                     gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
-                self.assertEqual(code, 2)
-                self.assertIn(rel, err)
-                self.assertIn("test_only_the_skill_defines_this", err)
-                self.assertEqual(fake.pushes, [])
+                self.assertEqual(code, 0, err)
+                self.assertAgentIssue(fake, rel)
+                self.assertIn("test_only_the_skill_defines_this", fake.calls[-1][1])
                 self.assertEqual(calls(registry), [])
 
     def test_citations_that_survive_the_removal_do_not_refuse(self):

@@ -729,13 +729,13 @@ class VerdictTests(unittest.TestCase):
 
     def test_ceiling_cells_do_not_vote_and_all_ceiling_is_ceiling(self):
         # The review's C2 (2026-11-03): a ceiling cell is parked, never a
-        # vote for removal; the other cells decide. Round 1's C1: evidence
-        # that did not vote makes the removal a proposal, never automatic.
+        # vote for removal; the other cells decide. Adam, 2026-11-13: every
+        # retire is automatic, so the parked cell only shows in the reason.
         runs = [r for m in self.MODELS[1:] for r in self.flat(m)] + self.ceiling("model-a")
         result = self.verdict(runs)
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["ceiling", "no-benefit", "no-benefit"])
-        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "auto"))
         self.assertIn("parked cell(s) (at the ceiling", result["removal_reason"])
         # Every cell at the ceiling: the subject needs a fixture, and is never
         # removed for it.
@@ -1794,11 +1794,11 @@ class ComputeGatesTests(unittest.TestCase):
                           d["judge"].update(overall=v))
         _, doc = self.run_gates("a.json")
         # Decided, not caught: the judge figures are reported only, and the
-        # objective is flat. One cell with headroom can only propose.
+        # objective is flat. One cell with headroom still retires, automatically.
         flat = doc["skills"]["flat"]
         self.assertEqual((flat["verdict"], flat["reason"], flat["removal"]),
                          ("retire", "the one cell with headroom shows no benefit",
-                          "proposal"))
+                          "auto"))
         self.assertTrue(all(math.isfinite(v) for v in
                             (flat["cells"][0]["judge"]["benefit_lower"],
                              flat["cells"][0]["judge"]["retire_upper"])))

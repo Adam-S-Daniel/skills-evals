@@ -93,10 +93,9 @@ class PausedHarmTests(unittest.TestCase):
         runs = pairs("a", 40, 99, 99, model=MODELS[0]) \
             + pairs("a", 40, 75, 75, start=1000, model=MODELS[1])
         v = verdict(runs, expect("a", paused="a"))
-        self.assertEqual((v["verdict"], v["removal"]), ("retire", "proposal"), v["reason"])
+        self.assertEqual((v["verdict"], v["removal"]), ("retire", "auto"), v["reason"])
         self.assertEqual([c["class"] for c in v["cells"]], ["paused", "no-benefit"])
         self.assertEqual(v["cells"][0]["class_before_pause"], "ceiling")
-        self.assertFalse(retire_skill.cells_allow_auto(v))
 
     def test_a_section_with_real_headroom_is_not_called_ceiling(self):
         # The real `watch-finished-is-not-ci-passed` shape: one cell at 4
@@ -293,11 +292,11 @@ class ComputeScopePauseTests(unittest.TestCase):
         self.assertEqual([(c["class"], c["scope_paused"]) for c in a],
                          [("benefit", "ceiling")] * 2)
 
-    def test_a_pause_before_the_keep_never_frees_an_auto_removal(self):
+    def test_a_pause_before_the_keep_parks_its_cells_beside_an_auto_removal(self):
         got = self.compute(3)
-        self.assertEqual((got["verdict"], got.get("removal")), ("retire", "proposal"),
+        self.assertEqual((got["verdict"], got.get("removal")), ("retire", "auto"),
                          got["reason"])
-        self.assertFalse(retire_skill.cells_allow_auto(got))
+        self.assertIn("parked cell", got["removal_reason"])
         self.assertEqual({c["class"] for c in got["cells"] if c["fixture"] == "a"},
                          {"paused"})
 
