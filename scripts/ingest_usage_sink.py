@@ -192,7 +192,7 @@ SETUP_ID_RE = re.compile(r"[0-9a-f]{32}", re.ASCII)
 SHA256_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
 COMMIT_RE = re.compile(r"[0-9a-f]{40}", re.ASCII)
 SETUP_SOURCES = ("checkout", "download")
-SETUP_GUIDANCE_STATES = ("installed", "current", "skipped", "")
+SETUP_GUIDANCE_STATES = ("installed", "current", "skipped", "failed", "")
 
 #: Phase 1's uploaded line: `phase1()` in guidance-load-record.sh.
 GUIDANCE_KEYS = frozenset({

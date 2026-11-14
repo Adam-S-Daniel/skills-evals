@@ -797,6 +797,11 @@ class SetupRecordTests(SinkCase):
         self.assertEqual(self.apply().returncode, 0)
         self.assertEqual(len(self.stored()), 1)
 
+    def test_a_failed_guidance_install_is_a_valid_state(self):
+        self.put(KEY, self.setup_only(setup(fleet_guidance="failed", fleet_guidance_commit="")))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+
     def test_a_version_3_envelope_still_passes(self):
         self.put(KEY, drop(None, [], hooks=[hook()]))
         self.put(KEY2, drop())
