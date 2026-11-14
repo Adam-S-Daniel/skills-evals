@@ -80,6 +80,17 @@ def hook(**overrides) -> dict:
     return record
 
 
+def setup(**overrides) -> dict:
+    """One setup record, as a cloud environment's setup script sends it."""
+    record = {"id": "0123456789abcdef0123456789abcdef", "ts": "2026-09-02T10:07:00Z",
+              "launcher_version": 3, "launcher_sha256": "a" * 64,
+              "script_source": "checkout", "script_sha256": "b" * 64,
+              "script_commit": "c" * 40, "fleet_pin_commit": "d" * 40,
+              "fleet_guidance_commit": "e" * 40, "fleet_guidance": "installed"}
+    record.update(overrides)
+    return record
+
+
 def drop(guidance_records=None, skills=None, **overrides) -> dict:
     doc = {"v": 1, "kind": "usage-drop", "sent": "2026-09-02T10:10:00Z",
            "guidance": [guidance()] if guidance_records is None else guidance_records,
@@ -352,7 +363,7 @@ class ApplyTests(SinkCase):
         proc = self.apply(unreadable=[KEY, KEY3])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.index("rejected"),
-                         [f"{KEY3} unreadable v3", f"{KEY} unreadable v3"])
+                         [f"{KEY3} unreadable v4", f"{KEY} unreadable v4"])
         self.assertEqual(self.index("ingested"), [])
         self.assertIn("1 planned but missing", proc.stdout)
         self.assertIn("rejected by reason: unreadable 2", proc.stdout)
@@ -388,7 +399,7 @@ class EnvelopeTests(SinkCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.events(), [], "nothing from a rejected object is written")
         self.assertEqual(self.index("ingested"), [])
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v3"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
         self.assertIn("rejected by reason: bad-envelope 1", proc.stdout)
 
     def test_control_the_valid_object_is_accepted(self):
@@ -534,7 +545,7 @@ class VersionTests(SinkCase):
         self.assertEqual([line.split(" ")[0] for line in self.index("ingested")], [KEY])
         self.assertEqual(self.index("rejected"),
                          [f"{KEY} bad-skill-record", f"{KEY2} bad-envelope v1"])
-        self.assertEqual(sink.VALIDATOR_VERSION, 3)
+        self.assertEqual(sink.VALIDATOR_VERSION, 4)
 
 
 class DedupeTests(SinkCase):
@@ -734,12 +745,12 @@ class HookLineTests(SinkCase):
                 self.setUp()
                 self.put(KEY, drop(None, [], hooks=bad))
                 self.assertEqual(self.apply().returncode, 0)
-                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v3"])
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
                 self.assertEqual(self.events(), [])
 
     def test_hooks_beyond_the_cap_are_dropped(self):
         lines = [hook(id=f"{i:016x}") for i in range(sink.MAX_HOOKS + 3)]
-        guidance_records, skills, kept, dropped = sink.split_records(
+        guidance_records, skills, kept, setups, dropped = sink.split_records(
             drop(None, [], hooks=lines), MODIFIED_AT)
         self.assertEqual((len(kept), dropped), (sink.MAX_HOOKS, 3))
 
@@ -757,6 +768,152 @@ class HookLineTests(SinkCase):
         self.assertEqual(proc.stderr, "")
         self.assertNotIn(SID, proc.stdout)
         self.assertNotIn("example/repo", proc.stdout)
+
+
+class SetupRecordTests(SinkCase):
+    """The optional `setups` list of the envelope: cloud setup-script runs."""
+
+    def stored(self, month="2026-09"):
+        path = self.store / f"events/{month}/cloud-setup.jsonl"
+        return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+    def setup_only(self, *records):
+        return drop([], [], setups=list(records))
+
+    def test_a_setup_only_envelope_is_ingested(self):
+        self.put(KEY, self.setup_only(setup()))
+        proc = self.apply()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("1 setup records added", proc.stdout)
+        self.assertEqual(self.stored(), [json.dumps(setup(), separators=(",", ":"))])
+        self.assertEqual(self.events(), ["events/2026-09/cloud-setup.jsonl"])
+        self.assertEqual(self.index("rejected"), [])
+        self.assertNotIn("partial", "".join(self.index("ingested")))
+
+    def test_empty_optional_values_are_valid(self):
+        record = setup(launcher_sha256="", script_commit="", fleet_pin_commit="",
+                       fleet_guidance_commit="", fleet_guidance="", script_source="download")
+        self.put(KEY, self.setup_only(record))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+
+    def test_failed_and_degraded_guidance_states_are_valid(self):
+        for state in ("failed", "degraded"):
+            self.assertTrue(sink.setup_record_ok(setup(fleet_guidance=state, fleet_guidance_commit="")))
+        self.put(KEY, self.setup_only(setup(fleet_guidance="failed", fleet_guidance_commit="")))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+
+    def test_a_version_3_envelope_still_passes(self):
+        self.put(KEY, drop(None, [], hooks=[hook()]))
+        self.put(KEY2, drop())
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.index("rejected"), [])
+        self.assertEqual(self.stored(), [])
+
+    def test_setups_beside_guidance_skills_and_hooks(self):
+        self.put(KEY, drop(None, None, hooks=[hook()], setups=[setup()]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+        self.assertEqual(self.index("rejected"), [])
+
+    def test_the_same_id_is_not_appended_again_and_a_rerun_changes_no_byte(self):
+        self.put(KEY, self.setup_only(setup()))
+        self.put(KEY2, self.setup_only(setup(), ) | {"sent": "2026-09-02T10:10:01Z"})
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+        before = tree_digest(self.store)
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(tree_digest(self.store), before)
+
+    def test_files_under_the_month_of_its_ts(self):
+        self.put(KEY, self.setup_only(setup(ts="2026-08-31T23:00:00Z")))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored("2026-08")), 1)
+        self.assertEqual(self.stored(), [])
+
+    def test_each_bad_record_is_dropped_and_counted(self):
+        missing = setup()
+        del missing["fleet_guidance"]
+        far = (MODIFIED_AT - timedelta(hours=48, seconds=1)).strftime(sink.ISO)
+        cases = {
+            "short id": setup(id="a" * 31), "uppercase id": setup(id="A" * 32),
+            "short script sha": setup(script_sha256="b" * 63),
+            "uppercase sha": setup(script_sha256="B" * 64),
+            "bad launcher sha": setup(launcher_sha256="a" * 40),
+            "short commit": setup(script_commit="c" * 39),
+            "uppercase commit": setup(fleet_pin_commit="D" * 40),
+            "long guidance commit": setup(fleet_guidance_commit="e" * 64),
+            "extra key": setup(extra=1), "missing key": missing,
+            "bool launcher_version": setup(launcher_version=True),
+            "zero launcher_version": setup(launcher_version=0),
+            "big launcher_version": setup(launcher_version=10000),
+            "str launcher_version": setup(launcher_version="3"),
+            "bad source": setup(script_source="cache"),
+            "bad guidance state": setup(fleet_guidance="full"),
+            "non-ascii digits": setup(ts="\u0662\u0660\u0662\u0666-09-02T10:07:00Z"),
+            "ts far before": setup(ts=far),
+            "ts after": setup(ts="2026-09-02T10:21:00Z"),
+            "fractional ts": setup(ts="2026-09-02T10:07:00.5Z"),
+            "not a dict": "text", "null": None}
+        for name, bad in cases.items():
+            with self.subTest(name):
+                self.assertFalse(sink.setup_record_ok(bad, MODIFIED_AT))
+        self.assertTrue(sink.setup_record_ok(setup(), MODIFIED_AT))
+        self.assertTrue(sink.setup_record_ok(setup()))
+        for name, bad in cases.items():
+            with self.subTest(name, end_to_end=True):
+                self.setUp()
+                self.put(KEY, self.setup_only(bad))
+                self.assertEqual(self.apply().returncode, 0)
+                self.assertEqual(self.stored(), [])
+                self.assertEqual(self.events(), [])
+                self.assertTrue(self.index("ingested")[0].endswith(" partial=1"))
+                self.assertEqual(self.index("rejected"), [])
+
+    def test_a_bad_record_loses_only_itself(self):
+        self.put(KEY, drop([], [], setups=[setup(extra=1)]) | {"hooks": [hook()]})
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.stored(), [])
+        self.assertTrue(self.index("ingested")[0].endswith(" partial=1"))
+        self.assertEqual(len([e for e in self.events() if "cloud-hooks" in e]), 1)
+
+    def test_more_than_one_setup_rejects_the_envelope(self):
+        self.put(KEY, self.setup_only(setup(), setup(id="1" * 32)))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+        self.assertEqual(self.events(), [])
+
+    def test_setups_must_be_a_list(self):
+        for bad in (None, {}, "x", 3):
+            with self.subTest(setups=bad):
+                self.setUp()
+                self.put(KEY, drop([], [], setups=bad))
+                self.assertEqual(self.apply().returncode, 0)
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+                self.assertEqual(self.events(), [])
+
+    def test_an_empty_setups_list_is_valid(self):
+        self.put(KEY, drop([], [], setups=[]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.index("ingested")), 1)
+
+    def test_a_linked_setup_file_is_refused(self):
+        target = self.base / "elsewhere.jsonl"
+        target.write_text("")
+        month = self.store / "events" / "2026-09"
+        month.mkdir(parents=True)
+        (month / "cloud-setup.jsonl").symlink_to(target)
+        self.put(KEY, self.setup_only(setup()))
+        self.assertEqual(self.apply().returncode, 1)
+        self.assertEqual(target.read_text(), "")
+        self.assertEqual(self.index("ingested"), [])
+
+    def test_no_setup_content_reaches_stdout_or_stderr(self):
+        self.put(KEY, self.setup_only(setup(script_commit="marker-skill")))
+        proc = self.apply()
+        self.assertEqual(proc.stderr, "")
+        self.assertNotIn("0123456789abcdef0123", proc.stdout)
 
 
 class OutputTests(SinkCase):
