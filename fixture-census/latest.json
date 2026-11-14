@@ -1,19 +1,24 @@
 {
   "fixture_readiness": {
-    "context_declared": 76,
-    "context_missing": 93,
+    "context_declared": 72,
+    "context_missing": 95,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 169
+    "total": 167
   },
-  "generated_at": "2026-11-13T13:24:43Z",
+  "generated_at": "2026-11-14T12:28:59Z",
   "include_private_names": false,
   "problems": [
     {
       "kind": "orphan_fixture",
-      "registry": "adam-agentskills",
-      "skill": "debug-github-workflows"
+      "registry": "cms-platform",
+      "skill": "consumer-repo-provisioning"
+    },
+    {
+      "kind": "orphan_fixture",
+      "registry": "cms-platform",
+      "skill": "github-actions-sha-pinning"
     }
   ],
   "registries": [
@@ -217,10 +222,10 @@
     },
     {
       "counts": {
-        "covered": 10,
+        "covered": 8,
         "gap": 0,
         "skipped": 3,
-        "total": 13
+        "total": 11
       },
       "layout": "skills/*/SKILL.md",
       "name": "cms-platform",
@@ -280,23 +285,7 @@
           "fixtures": 1,
           "reason": null,
           "registry": "cms-platform",
-          "skill": "consumer-repo-provisioning",
-          "status": "covered"
-        },
-        {
-          "bundle": null,
-          "fixtures": 1,
-          "reason": null,
-          "registry": "cms-platform",
           "skill": "editorial-label-audit",
-          "status": "covered"
-        },
-        {
-          "bundle": null,
-          "fixtures": 1,
-          "reason": null,
-          "registry": "cms-platform",
-          "skill": "github-actions-sha-pinning",
           "status": "covered"
         },
         {
@@ -372,10 +361,10 @@
   "schema": 2,
   "status": "complete",
   "totals": {
-    "covered": 27,
+    "covered": 25,
     "gap": 3,
     "skipped": 10,
-    "total": 40
+    "total": 38
   },
   "unresolved": []
 }

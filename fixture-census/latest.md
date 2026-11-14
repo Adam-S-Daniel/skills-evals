@@ -3,10 +3,10 @@
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
 | adam-agentskills | 23 | 15 | 7 | 1 |
-| cms-platform | 13 | 10 | 3 | 0 |
+| cms-platform | 11 | 8 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 3 | 1 | 0 | 2 |
-| **Total** | 40 | 27 | 10 | 3 |
+| **Total** | 38 | 25 | 10 | 3 |
 
 ## adam-agentskills
 
@@ -46,9 +46,7 @@
 |  | ci-watcher-loops | covered | 1 |  |
 |  | cms-stuck-pr-triage | covered | 1 |  |
 |  | code-quality | covered | 1 |  |
-|  | consumer-repo-provisioning | covered | 1 |  |
 |  | editorial-label-audit | covered | 1 |  |
-|  | github-actions-sha-pinning | covered | 1 |  |
 |  | platform-release-and-bump | covered | 1 |  |
 |  | post-failure-comment | covered | 1 |  |
 |  | preview-environments | skipped | 0 | rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform&#x27;s e2e/skill-references-fresh.test.js and adam-agentskills&#x27; scheduled scripts/check\_skill\_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02 |
@@ -66,10 +64,11 @@ Skill names withheld for this private registry; counts above. `--include-private
 
 ## Problems
 
-- orphan_fixture: adam-agentskills `debug-github-workflows`
+- orphan_fixture: cms-platform `consumer-repo-provisioning`
+- orphan_fixture: cms-platform `github-actions-sha-pinning`
 
 ## Fixture metadata readiness
 
-- Fixtures: 169; draft: 11.
-- Context declared: 76; missing: 93; guidance unproven: 0.
+- Fixtures: 167; draft: 11.
+- Context declared: 72; missing: 95; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
