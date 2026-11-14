@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-13T14:56:47Z",
+  "generated_at": "2026-11-14T13:49:46Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-21T00:00:00Z",
-      "to": "2026-11-13T14:56:47Z",
+      "to": "2026-11-14T13:49:46Z",
       "repos_scanned": 23
     }
   ],
@@ -4152,7 +4152,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 46,
+      "invocations": 112,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4164,7 +4164,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/acsi-kit",
       "surface": "ci",
-      "invocations": 38,
+      "invocations": 55,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4176,7 +4176,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "ci",
-      "invocations": 58,
+      "invocations": 98,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4188,7 +4188,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 121,
+      "invocations": 168,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4224,7 +4224,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 29,
+      "invocations": 66,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4248,7 +4248,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 14,
+      "invocations": 22,
       "sessions": null,
       "blocked": 2,
       "overridden": 2,
@@ -4296,7 +4296,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 108,
+      "invocations": 152,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4308,7 +4308,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/verify-actions-lock",
       "surface": "ci",
-      "invocations": 7,
+      "invocations": 8,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4320,7 +4320,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/wsl-automation",
       "surface": "ci",
-      "invocations": 20,
+      "invocations": 26,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4332,7 +4332,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/jodidaniel.com",
       "surface": "ci",
-      "invocations": 18,
+      "invocations": 30,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4368,7 +4368,7 @@
       "name": "agent-checks",
       "repo": "private",
       "surface": "ci",
-      "invocations": 15,
+      "invocations": 19,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4385,12 +4385,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 34,
-        "prs_merged": 29,
-        "prs_closed_unmerged": 1,
+        "prs_opened": 61,
+        "prs_merged": 56,
+        "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 23,
-        "ci_red_after": 2
+        "agent_prs_merged": 48,
+        "ci_red_after": 4
       }
     },
     {
@@ -4404,11 +4404,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 24,
-        "prs_merged": 18,
-        "prs_closed_unmerged": 3,
+        "prs_opened": 35,
+        "prs_merged": 29,
+        "prs_closed_unmerged": 4,
         "prs_reverted": 0,
-        "agent_prs_merged": 17,
+        "agent_prs_merged": 28,
         "ci_red_after": 7
       }
     },
@@ -4423,11 +4423,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 17,
-        "prs_merged": 15,
+        "prs_opened": 30,
+        "prs_merged": 28,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 15,
+        "agent_prs_merged": 28,
         "ci_red_after": 0
       }
     },
@@ -4442,12 +4442,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 103,
-        "prs_merged": 82,
-        "prs_closed_unmerged": 19,
+        "prs_opened": 141,
+        "prs_merged": 114,
+        "prs_closed_unmerged": 25,
         "prs_reverted": 0,
-        "agent_prs_merged": 4,
-        "ci_red_after": 3
+        "agent_prs_merged": 5,
+        "ci_red_after": 7
       }
     },
     {
@@ -4462,7 +4462,7 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 5,
-        "prs_merged": 4,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
@@ -4481,7 +4481,7 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 5,
-        "prs_merged": 4,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
@@ -4499,11 +4499,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 23,
-        "prs_merged": 15,
+        "prs_opened": 34,
+        "prs_merged": 33,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 5,
+        "agent_prs_merged": 16,
         "ci_red_after": 0
       }
     },
@@ -4519,7 +4519,7 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 6,
-        "prs_merged": 5,
+        "prs_merged": 6,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 2,
@@ -4537,8 +4537,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 13,
-        "prs_merged": 10,
+        "prs_opened": 21,
+        "prs_merged": 19,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
         "agent_prs_merged": 2,
@@ -4613,12 +4613,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 64,
-        "prs_merged": 65,
-        "prs_closed_unmerged": 0,
+        "prs_opened": 88,
+        "prs_merged": 89,
+        "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 61,
-        "ci_red_after": 10
+        "agent_prs_merged": 84,
+        "ci_red_after": 11
       }
     },
     {
@@ -4633,10 +4633,10 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 7,
-        "prs_merged": 5,
+        "prs_merged": 7,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 3,
         "ci_red_after": 0
       }
     },
@@ -4651,11 +4651,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 14,
-        "prs_merged": 12,
-        "prs_closed_unmerged": 0,
+        "prs_opened": 18,
+        "prs_merged": 17,
+        "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 9,
+        "agent_prs_merged": 13,
         "ci_red_after": 0
       }
     },
@@ -4670,11 +4670,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 16,
-        "prs_merged": 11,
-        "prs_closed_unmerged": 1,
+        "prs_opened": 28,
+        "prs_merged": 22,
+        "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 3,
         "ci_red_after": 1
       }
     },
@@ -4690,7 +4690,7 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 5,
-        "prs_merged": 4,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
@@ -4727,11 +4727,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 15,
-        "prs_merged": 13,
+        "prs_opened": 19,
+        "prs_merged": 18,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 10,
+        "agent_prs_merged": 14,
         "ci_red_after": 0
       }
     }
