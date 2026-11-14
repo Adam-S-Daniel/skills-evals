@@ -797,7 +797,9 @@ class SetupRecordTests(SinkCase):
         self.assertEqual(self.apply().returncode, 0)
         self.assertEqual(len(self.stored()), 1)
 
-    def test_a_failed_guidance_install_is_a_valid_state(self):
+    def test_failed_and_degraded_guidance_states_are_valid(self):
+        for state in ("failed", "degraded"):
+            self.assertTrue(sink.setup_record_ok(setup(fleet_guidance=state, fleet_guidance_commit="")))
         self.put(KEY, self.setup_only(setup(fleet_guidance="failed", fleet_guidance_commit="")))
         self.assertEqual(self.apply().returncode, 0)
         self.assertEqual(len(self.stored()), 1)
