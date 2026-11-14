@@ -217,6 +217,9 @@ against the shapes this census reads and against the object's S3
 `LastModified` (a record stamped more than 48 hours before it, or 10 minutes
 after, is dropped), so the census reads them with no change. An object with a
 bad envelope is rejected whole; otherwise only its bad records are dropped.
+The same objects may also carry one setup record (optional key `setups`, sent
+once by a cloud environment's setup script), appended to
+`events/<YYYY-MM>/cloud-setup.jsonl`; the census has no reader for it yet.
 
 ## Loaded skill copies (`skill-digest` rows)
 
