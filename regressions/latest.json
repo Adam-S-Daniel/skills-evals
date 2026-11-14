@@ -1,5 +1,5 @@
 {
-  "as_of": "20261113T150243Z",
+  "as_of": "20261114T135504Z",
   "policy": {
     "guidance": {
       "judge_drop": 1.0,
@@ -27820,11 +27820,11 @@
           },
           "without": {
             "current": {
-              "checks_passed": 20,
-              "checks_total": 21,
-              "judge_mean": 8.200000000000001,
+              "checks_passed": 34,
+              "checks_total": 35,
+              "judge_mean": 8.133333333333335,
               "runs": 3,
-              "trials": 3
+              "trials": 5
             },
             "previous": {
               "checks_passed": 19,
@@ -27836,7 +27836,7 @@
           }
         },
         "delta": {
-          "current": -0.09523809523809534,
+          "current": -0.1269841269841271,
           "previous": 0.04761904761904767
         },
         "judge": {
