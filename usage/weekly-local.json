@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-15T17:37:11Z",
+  "generated_at": "2026-11-15T20:06:00Z",
   "rows": [
     {
       "blocked": null,
@@ -120,6 +120,19 @@
     },
     {
       "blocked": null,
+      "invocations": 2,
+      "kind": "skill-read",
+      "name": "other",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 2,
+      "surface": "local",
+      "week": "2026-09-21"
+    },
+    {
+      "blocked": null,
       "invocations": null,
       "kind": "guidance",
       "name": "full",
@@ -219,6 +232,32 @@
       "repo": null,
       "runner": null,
       "sessions": 5,
+      "surface": "local",
+      "week": "2026-09-28"
+    },
+    {
+      "blocked": null,
+      "invocations": 1,
+      "kind": "skill-read",
+      "name": "embeddable-tool-pages",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 1,
+      "surface": "local",
+      "week": "2026-09-28"
+    },
+    {
+      "blocked": null,
+      "invocations": 2,
+      "kind": "skill-read",
+      "name": "other",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 2,
       "surface": "local",
       "week": "2026-09-28"
     },
@@ -336,6 +375,19 @@
       "repo": null,
       "runner": null,
       "sessions": 3,
+      "surface": "local",
+      "week": "2026-10-05"
+    },
+    {
+      "blocked": null,
+      "invocations": 4,
+      "kind": "skill-read",
+      "name": "other",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 4,
       "surface": "local",
       "week": "2026-10-05"
     },
@@ -2377,7 +2429,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 49,
+      "sessions": 50,
       "surface": "local",
       "week": "2026-11-09"
     },
@@ -2630,7 +2682,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 281,
+      "invocations": 325,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -2695,7 +2747,7 @@
     },
     {
       "blocked": 1,
-      "invocations": 420,
+      "invocations": 459,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -2968,7 +3020,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 10,
       "kind": "hook",
       "name": "gha-template-injection",
       "outcome": null,
@@ -3111,7 +3163,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 23,
+      "invocations": 27,
       "kind": "hook",
       "name": "gha-template-injection",
       "outcome": null,
@@ -3163,7 +3215,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 6,
       "kind": "hook",
       "name": "gha-template-injection",
       "outcome": null,
@@ -3293,7 +3345,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 33,
+      "invocations": 40,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -3514,7 +3566,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 67,
+      "invocations": 82,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -3579,7 +3631,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -3618,7 +3670,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 377,
+      "invocations": 416,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -3657,7 +3709,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 33,
+      "invocations": 40,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -3878,7 +3930,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 67,
+      "invocations": 82,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -3943,7 +3995,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -3982,7 +4034,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 377,
+      "invocations": 416,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -4021,7 +4073,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 140,
+      "invocations": 170,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -4086,7 +4138,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 61,
+      "invocations": 72,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -4320,7 +4372,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 140,
+      "invocations": 170,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -4385,7 +4437,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 15,
+      "invocations": 17,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -4424,7 +4476,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 382,
+      "invocations": 421,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -4463,7 +4515,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 61,
+      "invocations": 72,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -4697,7 +4749,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 140,
+      "invocations": 170,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -4775,7 +4827,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 15,
+      "invocations": 17,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -4827,7 +4879,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 382,
+      "invocations": 421,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -4866,7 +4918,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 61,
+      "invocations": 72,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -5100,7 +5152,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 140,
+      "invocations": 170,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -5178,7 +5230,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 15,
+      "invocations": 17,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -5230,7 +5282,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 382,
+      "invocations": 421,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -5269,7 +5321,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 33,
+      "invocations": 40,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -5490,7 +5542,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 67,
+      "invocations": 82,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -5555,7 +5607,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -5594,7 +5646,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 377,
+      "invocations": 416,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -5653,7 +5705,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 56,
+      "sessions": 57,
       "surface": "local",
       "week": "2026-11-09"
     },
@@ -5717,7 +5769,7 @@
     {
       "from": "2026-09-21T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2963,
+      "sessions_scanned": 2964,
       "skill_keys": [
         "add-from-address",
         "add-received-from-addresses",
@@ -5758,14 +5810,14 @@
         "writing-adrs"
       ],
       "surface": "local",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     },
     {
       "from": "2026-09-21T00:00:00Z",
-      "runs_scanned": 6862,
+      "runs_scanned": 6901,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
@@ -5773,28 +5825,28 @@
       "records_scanned": 824,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     },
     {
       "from": "2026-11-09T00:00:00Z",
-      "records_scanned": 575,
+      "records_scanned": 619,
       "scope": "hook-records",
       "surface": "cloud",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     },
     {
       "events_scanned": 0,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     },
     {
       "events_scanned": 5,
       "from": "2026-11-02T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-15T17:37:11Z"
+      "to": "2026-11-15T20:06:00Z"
     }
   ]
 }
