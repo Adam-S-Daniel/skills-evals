@@ -216,17 +216,15 @@ class GuardReserveTests(unittest.TestCase):
             self.assertRefused("points_per_week")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class WorkflowsCheckOutTheReserve(unittest.TestCase):
     """Every workflow whose steps reach allowance_guard.account() must check
     out spend/ with this repo's persistent/eval-results, or the guard reads
     no reserve and refuses every fire (review of #1063)."""
 
-    GUARDED = ("routine-eval-fire.yml", "routine-draft-skill.yml",
-               "routine-fixture-supply.yml", "routine-eval-weekly.yml")
+    # routine-fixture-supply.yml's checkout feeds only `promote`, which never
+    # calls the guard; `pick` runs in routine-eval-fire.yml's scaffold mode.
+    GUARDED = ("routine-eval-fire.yml", "routine-draft-skill.yml", "routine-eval-weekly.yml")
 
     def test_own_results_checkouts_include_spend(self):
         import yaml
@@ -244,3 +242,7 @@ class WorkflowsCheckOutTheReserve(unittest.TestCase):
                     if sparse:
                         self.assertIn("spend", str(sparse).split(), f"{name}: {step.get('name')}")
             self.assertGreater(seen, 0, name)
+
+
+if __name__ == "__main__":
+    unittest.main()
