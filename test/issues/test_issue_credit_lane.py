@@ -5,7 +5,7 @@ shape of .github/workflows/credit-lane.yml.
 Deterministic: every case builds its own results tree, fixtures, window file
 and eval.yml run list in a temporary directory and passes `now`.
 
-    python3 -m pytest test/issues/test_credit_lane.py -q
+    python3 -m pytest test/issues/test_issue_credit_lane.py -q
 """
 from __future__ import annotations
 
