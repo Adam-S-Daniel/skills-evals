@@ -235,6 +235,45 @@ class ReportTests(unittest.TestCase):
         self.assertIn("skills-evals/fixture-queue-stale-request-3",
                       [f["finding_id"] for f in exact["findings"]])
 
+    def test_a_held_guidance_section_has_no_unused_fixture_finding(self):
+        # A guidance fixture with no run past the threshold is a finding,
+        # unless its section's eval-coverage.yml row is skipped: the weekly
+        # plan holds it out of scope (plan_week.scope_holds), so no run is the
+        # design. An unreadable manifest holds nothing.
+        self.w.repo.add("evals/guidance/held-section/fx",
+                        "subject: guidance\n" + origin(issue=3), 3)
+        fid = "skills-evals/fixture-queue-unused-fixture-guidance-held-section-fx"
+        ids = lambda held: [f["finding_id"] for f in fq.build_report(
+            self.issues, self.pulls, fq.origin_fixtures(self.w.repo.root),
+            *fq.fixture_runs(self.w.tree.tree, self.w.repo.root / "evals",
+                             NOW.strftime("%Y%m%dT%H%M%SZ")),
+            self.w.tree.tree, NOW, held)["findings"]]
+        self.assertIn(fid, ids(frozenset()))
+        self.assertIn(fid, ids(frozenset({"example-section"})))
+        held = ids(frozenset({"held-section"}))
+        self.assertNotIn(fid, held)
+        self.assertIn("skills-evals/fixture-queue-unused-fixture-writing-adrs-never-ran", held)
+
+        guidance = self.w.tree.root / "agent-guidance"
+        (guidance / "agents-md").mkdir(parents=True)
+        files = self.w.tree.root
+        (files / "issues.json").write_text(json.dumps(self.issues))
+        (files / "pulls.json").write_text(json.dumps(self.pulls))
+        out = files / "held.json"
+        args = ["report", "--issues", str(files / "issues.json"),
+                "--pulls", str(files / "pulls.json"), "--repo", str(self.w.repo.root),
+                "--results-tree", str(self.w.tree.tree), "--now", "2026-11-20T12:00:00Z",
+                "--out", str(out), "--guidance", str(guidance)]
+        import contextlib
+        for manifest, present in (("- id: held-section\n  status: skipped\n", False),
+                                  ("- id: held-section\n  status: covered\n", True),
+                                  ("{", True)):
+            (guidance / "agents-md" / "eval-coverage.yml").write_text(manifest)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(fq.main(args), 0)
+            got = [f["finding_id"] for f in json.loads(out.read_text())["findings"]]
+            self.assertEqual(fid in got, present, manifest)
+
     def test_a_merged_pr_quiets_a_stale_request(self):
         pulls = [*self.pulls, pull(107, 3, state="closed", opened=4, merged=5)]
         ids = [f["finding_id"] for f in self.w.report(self.issues, pulls)["findings"]]
