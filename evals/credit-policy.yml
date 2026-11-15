@@ -1,0 +1,45 @@
+# The monthly API-credit lane (.github/workflows/credit-lane.yml,
+# scripts/credit_lane.py). Adam, 2026-11-15: spend the monthly $200 Claude
+# Platform credit grant on eval.yml dispatches automatically instead of by
+# hand. Every key is required; scripts/credit_lane.py refuses a missing or
+# mistyped one and has no defaults of its own. A change here is a spending
+# decision: it is Adam's.
+
+# UTC day of the month the lane may start dispatching: the day the grant is
+# dated (Adam's Console, 2026-11-15: the November grant is dated the 4th and
+# expires about 33 days later, 2026-12-07 00:00 UTC). Starting on or after
+# it keeps the lane from spending purchased credit before the grant lands
+# (the 2026-11-15 hand-run spent about $5.50 of purchased credit when the
+# tally said money was left).
+grant_day: 4
+
+# Days from `grant_day` the lane may dispatch. The grant expires about 33
+# days after it is dated; stopping well before that leaves margin for a late
+# grant and for runs still in flight, and the lane never spans two grants.
+window_days: 20
+
+# The most this lane spends in one window, in API-equivalent dollars summed
+# from the eval.yml results it published. Below the $200 grant because the
+# same organization credit also pays the removal review, the local credit
+# lane and media discovery.
+soft_cap_usd: 170
+
+# The arm models the lane alternates between, by roster arm id
+# (evals/roster.yml). A tie goes to the first listed.
+models:
+  - claude-opus-5-5
+  - claude-sonnet-5-5
+
+# Trials per arm for each dispatch (eval.yml's `trials` input, 1 to 3).
+trials: 1
+
+# Fixtures per dispatch: eval.yml's own limit for its `fixture` input.
+group_max: 20
+
+# Estimated dollars per fixture run, by model, used to size a dispatch so the
+# window's spend plus the estimate stays under `soft_cap_usd`. The mean of
+# November 2026's eval.yml guidance runs (agent, judge and guard calls; about
+# 240 per model), rounded up.
+est_usd_per_fixture:
+  claude-opus-5-5: 0.95
+  claude-sonnet-5-5: 0.40
