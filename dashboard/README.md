@@ -108,14 +108,22 @@ tokens and cost $5.43, for a task that fires twice a day.
    `{id: {enabled, cron_expression, next_run_at, last_run, created_at}}` for every non-retired
    trigger row. `refresh.sh` fills a row's missing `added` date from `created_at`. Also refresh
    `inputs/trigger_list.json` (one-shot tasks; drop ones that have run).
-   - **Fire cost ledger.** For each of those rows whose `last_run.session_id` is not yet in
-     `watch/routine-fires.jsonl` and whose `last_run.finished_at` is set, read the session's final
+   - **Fire cost ledger.** The ledger is `spend/routine-fires.jsonl` on the private
+     `persistent/usage-events` branch of `Adam-S-Daniel/adam-agentskills-private` (attach it
+     with `add_repo`, push access): it names private tasks and session ids, so it never goes in
+     this public repository. Shallow-clone that branch (`git clone --depth 1 --branch
+     persistent/usage-events ...`) and export `ROUTINE_FIRES_LEDGER=<clone>/spend/routine-fires.jsonl`.
+     For each of the rows above whose `last_run.session_id` is not yet in the ledger and whose
+     `last_run.finished_at` is set, read the session's final
      cost: `list_events` with `kinds: ["result"]`, `limit: 100`, no cursor, and take
      `total_cost_usd` from the newest result; also `get_session` (`session_` prefix) for
      `external_metadata.usage.cost_usd` and `last_served_model`. Append with
      `python3 -I dashboard/refresh/append_routine_fires.py '<json list of {trigger_id, name, fired_at, finished_at, status, session_id, total_cost_usd, session_usage_cost_usd, last_served_model}>'`;
-     it skips session ids already present. Only `last_run` is visible, so a task that fires more
-     than once between refreshes loses the fires in between. acsi-kit's plan model reads this ledger.
+     it skips session ids already present. When it appended any, commit only that file
+     (noreply identity, message `spend: routine fires`) and push with
+     `bash scripts/push_with_rebase_retry.sh origin persistent/usage-events` from the clone.
+     Only `last_run` is visible, so a task that fires more than once between refreshes loses
+     the fires in between. acsi-kit's plan model and `scripts/automatic_spend.py` read this ledger.
 6. **Run console.** `python3 -I dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
    It keeps 7 days of workflow runs from `site.json` `run_console_repos` and of scheduled-task
    runs in `inputs/run_stream.json`.
@@ -195,7 +203,7 @@ Each dump lives in `$DASHBOARD_HOME/inputs/` (shapes in `inputs.example/`):
 | `owner_messages.jsonl` | One line per message the owner wrote in the project, from `read_project_chat` and `read_thread` on threads active since the last refresh: `v`, `message_id`, `sent_at`, `thread_id`. The owner's own messages only, ids and times only, never text |
 | `loop_prs.json` | Written by `refresh/loop_prs.sh`: pull requests in `site.json` `loop_pr_repos` whose head branch starts with a loop prefix (`eval-improve/`, `draft-skill/`, `retire-skill/`, `eval-guidance-improve/`, `retire-guidance/`) |
 
-`session_costs.jsonl`, `owner_messages.jsonl` and `watch/routine-fires.jsonl` are ledgers,
+`session_costs.jsonl`, `owner_messages.jsonl` and the routine fire ledger are ledgers,
 not dumps: append, never rewrite. A missing optional dump builds as empty. Never paste a
 credential into a dump.
 

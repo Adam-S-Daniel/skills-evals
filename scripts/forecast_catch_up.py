@@ -39,6 +39,12 @@ results tree (or `--arrivals`), counted daily from git history by
 scripts/target_arrivals.py; a stale document or an incomplete kind is not
 used. The assumptions file and `--set` override it. Every value the run
 used is echoed in the output, with its source (`assumption_sources`).
+
+`--automatic-spend` (scripts/automatic_spend.py) breaks the non-eval meter
+use down by category (`non_eval_points_breakdown`): each category's meter
+dollars at the mid $/point, plus `interactive_points_per_week` for people's
+own threads and local sessions; their sum is non_eval_points_per_week unless
+that is set.
 """
 from __future__ import annotations
 
@@ -87,7 +93,10 @@ ASSUMPTION_KEYS = {
                                             "current rest, so each guidance keep must be re-proved"),
     "non_eval_points_per_week": (None, "meter points a week used by everything but evals "
                                        "(threads, routines, local sessions); with budget.yml's "
-                                       "account stop it can cap the eval points"),
+                                       "account stop it can cap the eval points; default with "
+                                       "--automatic-spend: its jobs plus interactive_points_per_week"),
+    "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
+                                          "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
 }
 
@@ -307,7 +316,8 @@ def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
 def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              batch: dict | None, assumptions: dict,
              skipped_sections: frozenset = frozenset(),
-             stakes_table: dict | None = None) -> dict:
+             stakes_table: dict | None = None,
+             automatic: dict | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
     central figure with a low-high range, and every input with its source."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
@@ -318,6 +328,18 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     low_rate = a["usd_per_point_low"] or rate
     high_rate = a["usd_per_point_high"] or low_rate
     cap_points = budget["weekly_cap"] * 100
+    # Non-eval meter use by category (scripts/automatic_spend.py): each
+    # automatic category's meter dollars at the mid $/point, plus people's
+    # own use. It sets non_eval_points_per_week unless that is given.
+    breakdown = None
+    if automatic is not None:
+        mid = (low_rate + high_rate) / 2
+        breakdown = {c["label"]: c["meter_usd_per_week"] / mid
+                     for c in automatic.get("categories") or [] if c.get("meter_usd_per_week")}
+        if a["interactive_points_per_week"] is not None:
+            breakdown["Interactive threads and local sessions"] = a["interactive_points_per_week"]
+            if a["non_eval_points_per_week"] is None:
+                a["non_eval_points_per_week"] = sum(breakdown.values())
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
@@ -407,6 +429,11 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "pairs_per_cell_prior": prior_pairs,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,
             "assumptions": a, "batch_rates": rates,
+            "non_eval_points_breakdown": breakdown,
+            "automatic_spend_as_of": (automatic or {}).get("as_of"),
+            # A count, not names: job names can be private, and this
+            # document is committed to a public repository.
+            "automatic_unmeasured_jobs": len((automatic or {}).get("unmeasured") or []),
         },
         "subjects": rows,
         "paused_subjects": {f"{k}:{n}": r for (k, n), r in sorted(paused_subjects(gates).items())},
@@ -435,6 +462,8 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--arrivals", type=Path, default=None,
                    help="arrivals document (scripts/target_arrivals.py); default: "
                         "arrivals/targets.json in --results-tree")
+    p.add_argument("--automatic-spend", type=Path, default=None,
+                   help="breakdown from scripts/automatic_spend.py: non-eval points by category")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
@@ -475,7 +504,14 @@ def main(argv: list | None = None) -> int:
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
     table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
-    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table)
+    automatic = json.loads(args.automatic_spend.read_text(encoding="utf-8")) \
+        if args.automatic_spend else None
+    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
+                   automatic)
+    if automatic is not None and "non_eval_points_per_week" not in assumptions \
+            and assumptions.get("interactive_points_per_week") is not None:
+        sources["non_eval_points_per_week"] = \
+            "--automatic-spend categories + interactive_points_per_week"
     doc["inputs"]["assumption_sources"] = sources
     # Why an arrival rate fell back, so a reader can tell a default from data.
     doc["inputs"]["arrivals_status"] = (

@@ -123,6 +123,34 @@ class Forecast(unittest.TestCase):
                                {"fire_overhead_usd": 0.0, **assumptions},
                                frozenset({"skipped-one"}))
 
+    def test_automatic_spend_breaks_down_non_eval_points(self):
+        automatic = {"as_of": "2026-11-15T18:00:00+00:00", "unmeasured": ["Job x"],
+                     "categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15},
+                                    {"label": "Evals", "meter_usd_per_week": 0.0}]}
+        budget = {**self.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, budget, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "interactive_points_per_week": 50.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        # $20/0.15 a week at $1/0.15 a point is 20 points; a $0 category is left out.
+        self.assertEqual(doc["inputs"]["non_eval_points_breakdown"],
+                         {"Dashboard": 20.0, "Interactive threads and local sessions": 50.0})
+        self.assertAlmostEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 70.0)
+        # The account stop (80) less 70 points of other use leaves evals 10 of their 25.
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertEqual(doc["inputs"]["automatic_unmeasured_jobs"], 1)
+
+    def test_given_non_eval_points_win_over_the_breakdown(self):
+        automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 3.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "non_eval_points_per_week": 5.0,
+                               "interactive_points_per_week": 50.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        self.assertEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 5.0)
+
     def test_backlog_capacity_and_weeks(self):
         doc = self.run_forecast(new_skills_per_week=0.0, new_sections_per_week=0.0)
         # $1 a pair: subject a keeps at 4 pairs, subject b needs both cells (20).
