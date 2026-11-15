@@ -402,7 +402,7 @@ function buildStrings(you) {
   sectionsBarAria: (n) => 'States of ' + n + ' guidance sections.',
   tileAlerts: 'Alerts',
   tileAlertsNote: 'open, listed under Needs you.',
-  summaryLead: 'Git hooks, skills and guidance: measured, then kept or cut.',
+  summaryLead: 'Git hooks, skills and guidance: harvested from real work, measured, improved, then kept or cut.',
 
   hooksHeading: 'Does each git hook check earn its place?',
   hooksNote: (weeks, from, to) => 'Each check runs before a commit or push on ' + W.whose + ' computers (git hooks) and again in CI. Counts cover the ' + weeks + ' weeks from ' + from + ' to ' + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
