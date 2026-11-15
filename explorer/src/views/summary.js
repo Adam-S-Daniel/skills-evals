@@ -1,6 +1,6 @@
 /* Summary: the front page's headline tiles. */
 import { STRINGS } from '../core/strings.js';
-import { parseTime, fmtDateTime, fmtCount, fmtUtcDay, fmtDay, fmtTime } from '../core/format.js';
+import { parseTime, fmtDateTime, fmtCount, fmtUtcDay, fmtDayKey, fmtTime, etDayKey, dayKeyOf } from '../core/format.js';
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, wholeGuidance } from '../core/items.js';
@@ -18,13 +18,20 @@ import { isTrending } from '../core/stats.js';
    day first, and what was read at build time. */
 export function asOfLine(doc, refMs) {
   const newest = parseTime(doc.newest_run);
+  // Grouped by calendar day key: an Eastern day for a timed source, the
+  // source's own day for one dated by a day only (lessons). Newest day first;
+  // within a day, newest time first and day-only sources last.
   const groups = new Map();
-  sourceTimes(doc, TIME_KEYS).sort((a, b) => b.ms - a.ms).forEach((t) => {
-    const day = t.day ? fmtUtcDay(t.ms, refMs) : fmtDay(t.ms, refMs);
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(t.day ? t.label : t.label + ' ' + fmtTime(t.ms));
+  for (const t of sourceTimes(doc, TIME_KEYS)) {
+    const key = t.day ? dayKeyOf(t.ms) : etDayKey(t.ms);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  const rows = Array.from(groups.keys()).sort().reverse().map((key) => {
+    const items = groups.get(key).sort((a, b) => (a.day - b.day) || (b.ms - a.ms));
+    return h('li', null, h('b', null, fmtDayKey(key, refMs)), ' ' + items.map((t) => (t.day ? t.label : t.label + ' ' + fmtTime(t.ms))).join(' \u00b7 '));
   });
-  const rows = Array.from(groups, ([day, items]) => h('li', null, h('b', null, day), ' ' + items.join(' \u00b7 ')));
   rows.push(h('li', null, h('b', null, STRINGS.timesAtBuild), ' ' + STRINGS.timesAtBuildList));
   return h('div', { class: 'asof' },
     h('p', { class: 'src asof-line' }, defn('dataBuilt'), ' ' + fmtDateTime(refMs), ' \u00b7 ', defn('newestRun'), ' ' + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet)),

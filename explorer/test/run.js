@@ -474,6 +474,16 @@ await test('times line: the summary dates every source by its own time, and a pa
   const old = textOf(renderRoute(doc({ generated_at: '2026-11-15T00:37:06Z', hooks: Object.assign({}, d.hooks, { read_at: undefined }) }), { name: 'hooks', id: null }, {})).replace(/\s+/g, ' ');
   ok(old.includes('carries no time of its own; the results document was built Nov 14, 2026, 7:37 PM ET.'), 'undated hook counts are not stamped with the build time as if it were theirs: ' + old);
 });
+await test('data times fold: newest day first even when a day-only source (lessons) mixes with Eastern times', () => {
+  const rows = (extra) => findAll(renderRoute(doc(Object.assign({ generated_at: '2026-11-15T02:00:00Z' }, extra)), { name: 'summary', id: null }, {}),
+    (n) => n.tag === 'li' && n.children && findAll(n, (x) => x.tag === 'b').length).map((n) => textOf(n).replace(/\s+/g, ' ').trim());
+  // A run at 01:00Z on Nov 15 is Nov 14 in Eastern time; lessons dated Nov 15 is the newer day.
+  const a = rows({ newest_run: '2026-11-15T01:00:00Z', lessons: Object.assign({}, doc().lessons, { date: '2026-11-15' }) });
+  ok(a[0].startsWith('Nov 15 lessons') && a[1].startsWith('Nov 14 newest eval run 8:00 PM'), a.join(' | '));
+  // Same day: the timed source first, the day-only one last.
+  const c = rows({ newest_run: '2026-11-14T20:00:00Z', lessons: Object.assign({}, doc().lessons, { date: '2026-11-14' }) });
+  ok(c[0] === 'Nov 14 newest eval run 3:00 PM \u00b7 lessons', c.join(' | '));
+});
 await test('times line: a subject page dates its own newest run, not the fleet\'s', () => {
   const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
     skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [{ at: '2026-11-03T15:00:00Z' }, { at: '2026-11-05T15:00:00Z' }] }] });

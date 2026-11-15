@@ -55,6 +55,13 @@ export function fmtDateTime(ms) {
   return s + ' ' + STRINGS.et;
 }
 
+/* The US Eastern calendar day of a moment, as a 'YYYY-MM-DD' key. */
+export function etDayKey(ms) {
+  if (!isFinite(ms)) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  return /^\d{4}-\d{2}-\d{2}$/.test(parts) ? parts : null;
+}
+
 /* A clock time alone, '7:39 PM', for a list already grouped by day. */
 export function fmtTime(ms) {
   if (!isFinite(ms)) return STRINGS.unknown;
