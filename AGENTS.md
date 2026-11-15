@@ -56,7 +56,7 @@ read; only in replies to the user.
   `unshare --user --map-current-user --pid --fork --mount-proc --`.
 
 - **The full suite in a cloud container fails tens of tests on clean `main`
-  too** (tests that need `bwrap` or a local machine). Judge a change by
+  too** (tests that need `bwrap` where it is missing, or a local machine). Judge a change by
   comparing the failing test IDs with a run on `main`, never by the failure
   count: a real failure can hide inside an unchanged count.
 

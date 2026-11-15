@@ -152,8 +152,8 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   the git identity through `env:` (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`). The
   harness's baseline commit lands on whatever branch `setup:` leaves checked
   out, and fails if nothing is left uncommitted. In a fixture meant for
-  routine runs, avoid `command_succeeds` checks: they need `bwrap`, which
-  cloud containers lack, so the check fails closed in every arm. Prefer
+  routine runs, avoid `command_succeeds` checks: they need `bwrap`, and
+  where it is missing (`command -v bwrap`) the check fails closed. Prefer
   `file_matches` on files the agent leaves behind (reflogs, stand-in
   records). `file_matches` reads in text mode and cannot see a carriage
   return.
