@@ -19,6 +19,14 @@
 #   * scripts/plan_scheduled_evals.py plans only as many weekly fires as fit
 #     under `weekly_cap` (routine-eval-weekly.yml).
 #
+# The loop's own automatic scheduled jobs share this cap (Adam, 2026-11-15:
+# every automated part of the continuous improvement system fits inside the
+# 25%). scripts/allowance_guard.py therefore reserves their measured weekly
+# meter use out of `weekly_cap` before any fire: the dashboard refresh writes
+# it to spend/weekly.json's `loop_jobs` (scripts/automatic_spend.py), and the
+# guard refuses, saying so, when that figure is missing or older than 3 days.
+# Nothing is typed in here for it.
+#
 # harness/budget.py validates it strictly: exactly these four keys, each a
 # number above 0 and at most 1, and `per_run_cap` no larger than
 # `weekly_cap`. A change here is a spending decision: it is Adam's.

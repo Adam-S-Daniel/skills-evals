@@ -242,7 +242,9 @@ jobs:
           ref: persistent/eval-results
           path: eval-results-branch
           persist-credentials: false
-          sparse-checkout: routine-results
+          sparse-checkout: |
+            routine-results
+            spend
 
       # One fire must fit under the weekly cap (#68), as the weekly caller
       # plans; `fits` prints numbers only and exits 1 when the spend cannot

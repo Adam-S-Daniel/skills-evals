@@ -1639,7 +1639,7 @@ def load(name: str) -> dict:
 class WorkflowTests(unittest.TestCase):
 
     RESULTS_CHECKOUT = {"ref": "persistent/eval-results", "path": "eval-results-branch",
-                        "persist-credentials": False, "sparse-checkout": "routine-results"}
+                        "persist-credentials": False, "sparse-checkout": "routine-results\nspend\n"}
 
     def assert_results_checkout(self, step, workflow: str) -> None:
         self.assertTrue(step["uses"].startswith("actions/checkout@"))
