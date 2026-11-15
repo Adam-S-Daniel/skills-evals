@@ -43,20 +43,25 @@ const TIMES = {
 };
 export const TIME_KEYS = Object.keys(TIMES);
 
+/* [{key, label, ms, day}] for the named sources the document dates, in the
+   order given; `day` marks a source dated by a UTC day only (lessons). */
+export function sourceTimes(doc, keys) {
+  const d = doc || {};
+  const out = [];
+  for (const k of keys) {
+    const ms = parseTime(TIMES[k] ? TIMES[k](d) : null);
+    if (isFinite(ms)) out.push({ key: k, label: STRINGS.timeLabels[k], ms, day: k === 'lessons' });
+  }
+  return out;
+}
+
 /* The page's line naming each source it shows with that source's own time
    ("Data times: newest eval run Nov 11, 9:26 PM ET · skills census ..."),
    so no single range claims to cover data it does not. `extra` adds
    [{label, ms}] rows a page dates itself (one subject's newest run). */
 export function timesLine(doc, keys, extra) {
   const d = doc || {};
-  const parts = [];
-  for (const k of keys) {
-    const at = TIMES[k] ? TIMES[k](d) : null;
-    const ms = parseTime(at);
-    if (!isFinite(ms)) continue;
-    const day = k === 'lessons';
-    parts.push(STRINGS.timeLabels[k] + ' ' + (day ? fmtUtcDay(ms, parseTime(d.generated_at)) : fmtDateTime(ms)));
-  }
+  const parts = sourceTimes(d, keys).map((t) => t.label + ' ' + (t.day ? fmtUtcDay(t.ms, parseTime(d.generated_at)) : fmtDateTime(t.ms)));
   for (const e of extra || []) {
     if (e && isFinite(e.ms)) parts.push(e.label + ' ' + fmtDateTime(e.ms));
   }

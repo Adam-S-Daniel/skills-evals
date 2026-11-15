@@ -1011,7 +1011,7 @@ test('every chart has a title above it and every legend item is a definition but
 });
 test('the top of the summary has one line saying what each time refers to', () => {
   const line = sp(P.textOf(P.asOfLine(fixture, Date.parse(fixture.generated_at))));
-  ok(/Results data built .* ET . newest eval run .* ET/.test(line), line);
+  ok(/^Built .* ET . newest eval run .* ET/.test(line), line);
   const t = sp(P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {})));
   ok(!t.includes(P.STRINGS.srcLine(P.STRINGS.srcDoc, '').slice(0, 8)) || true);
   ok(!/Data as of/.test(t), 'the separate Data as of tile is gone');
