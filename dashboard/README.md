@@ -235,7 +235,9 @@ With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one.
 `loop_jobs` (`as_of`, `points_per_week`, `usd_per_week`) is the loop's own automatic jobs'
 weekly meter use from `scripts/automatic_spend.py`, over `inputs/triggers.json`, the
-`ROUTINE_FIRES_LEDGER` fires and `--workflows-root`; it is left out when the ledger is unset, and
+`ROUTINE_FIRES_LEDGER` fires and `--workflows-root`; it is left out when either is unset (the
+allowance guard then refuses evals rather than guess), an in-loop task with no fire on its current
+model yet is priced at its dearest recorded fire, and
 `scripts/explorer_public.py` never copies it. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when

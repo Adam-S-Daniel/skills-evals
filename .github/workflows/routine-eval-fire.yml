@@ -707,14 +707,17 @@ jobs:
 
       # The ingested routine runs the allowance guard charges (#68). Data
       # only: the bot-written branch is untrusted, nothing from it runs, and
-      # only routine-results/ is checked out.
+      # only routine-results/ and spend/ (the loop reserve, spend/weekly.json)
+      # are checked out.
       - name: Check out persistent/eval-results (the ingested runs)
         uses: actions/checkout@v7.0.1
         with:
           ref: persistent/eval-results
           path: eval-results-branch
           persist-credentials: false
-          sparse-checkout: routine-results
+          sparse-checkout: |
+            routine-results
+            spend
 
       # Private-skill evals push their results to adam-agentskills-private
       # (Adam, 2026-10-31), whose own ingest writes its persistent/eval-results.

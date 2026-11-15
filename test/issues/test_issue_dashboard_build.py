@@ -787,7 +787,7 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual([w["week"] for w in got["weeks"]], ["2026-10-26", "2026-10-19"], "the public export reads it whole")
 
     def test_spend_carries_loop_jobs_only_with_a_fire_ledger(self):
-        """--spend adds `loop_jobs` when ROUTINE_FIRES_LEDGER names a ledger, and omits it otherwise."""
+        """--spend adds `loop_jobs` when ROUTINE_FIRES_LEDGER names a ledger (with --workflows-root), and omits it otherwise."""
         import os
         from unittest import mock
         now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
@@ -800,7 +800,8 @@ class DashboardBuildTests(unittest.TestCase):
                     os.environ.pop("ROUTINE_FIRES_LEDGER", None)
                 build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
                             "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"),
-                            "--now", now.isoformat(), "--spend", str(spend)])
+                            "--now", now.isoformat(), "--spend", str(spend),
+                            "--workflows-root", str(self.tmp)])
             doc = json.loads(spend.read_text())
             if env:
                 self.assertEqual(set(doc["loop_jobs"]), {"as_of", "points_per_week", "usd_per_week"})

@@ -59,6 +59,8 @@ class ProducerTests(unittest.TestCase):
                    {"t1": {"enabled": True, "cron_expression": "0 9 * * *"}})
         write_json(self.config / "routines.json",
                    [{"name": "Dashboard refresh", "source": {"kind": "trigger", "id": "t1"}}])
+        self.workflows = self.tmp / "workflows"
+        self.workflows.mkdir()
         self.ledger = self.tmp / "routine-fires.jsonl"
         row = {"trigger_id": "t1", "name": "Dashboard refresh", "fired_at": "2026-11-15T09:00:00Z",
                "finished_at": "2026-11-15T09:30:00Z", "status": "success",
@@ -66,21 +68,33 @@ class ProducerTests(unittest.TestCase):
         self.ledger.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
     def test_loop_jobs_is_the_measured_meter_use_in_points(self):
-        got = build.loop_jobs(self.inputs, self.config, None, NOW, str(self.ledger))
+        got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
         # One daily fire at $2 is $14 a week; 0.0015 of the allowance per dollar is 2.1 points.
         self.assertEqual(got["as_of"], iso(NOW))
         self.assertAlmostEqual(got["usd_per_week"], 14.0)
         self.assertAlmostEqual(got["points_per_week"], 2.1)
 
     def test_without_a_ledger_there_is_no_block(self):
-        self.assertIsNone(build.loop_jobs(self.inputs, self.config, None, NOW, None))
-        self.assertIsNone(build.loop_jobs(self.inputs, self.config, None, NOW,
+        self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, None))
+        self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW,
                                           str(self.tmp / "missing.jsonl")))
+
+    def test_without_the_workflows_there_is_no_block(self):
+        # A job fired by a workflow would have no rate and read as $0: omit, never undercount.
+        self.assertIsNone(build.loop_jobs(self.inputs, self.config, None, NOW, str(self.ledger)))
+
+    def test_a_model_change_prices_the_job_at_its_dearest_fire(self):
+        # The task now runs model-b with no fire on it yet: price it at the $2 model-a fire, not $0.
+        write_json(self.inputs / "triggers.json",
+                   {"t1": {"enabled": True, "cron_expression": "0 9 * * *", "model": "model-b",
+                           "updated_at": "2026-11-15T10:00:00Z"}})
+        got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
+        self.assertAlmostEqual(got["usd_per_week"], 14.0)
 
     def test_the_block_passes_the_schema_and_the_ingest_gate(self):
         import jsonschema
         doc = spend_doc()
-        doc["loop_jobs"] = build.loop_jobs(self.inputs, self.config, None, NOW, str(self.ledger))
+        doc["loop_jobs"] = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
         jsonschema.validate(doc, SCHEMA["$defs"]["spend_file"],
                             cls=jsonschema.validators.validator_for(SCHEMA))
         ingest.check_spend(doc, json.dumps(doc), "built")
@@ -188,3 +202,29 @@ class GuardReserveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkflowsCheckOutTheReserve(unittest.TestCase):
+    """Every workflow whose steps reach allowance_guard.account() must check
+    out spend/ with this repo's persistent/eval-results, or the guard reads
+    no reserve and refuses every fire (review of #1063)."""
+
+    GUARDED = ("routine-eval-fire.yml", "routine-draft-skill.yml",
+               "routine-fixture-supply.yml", "routine-eval-weekly.yml")
+
+    def test_own_results_checkouts_include_spend(self):
+        import yaml
+        root = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        for name in self.GUARDED:
+            doc = yaml.safe_load((root / name).read_text(encoding="utf-8"))
+            seen = 0
+            for job in doc["jobs"].values():
+                for step in job.get("steps", []):
+                    w = step.get("with") or {}
+                    if w.get("ref") != "persistent/eval-results" or w.get("repository"):
+                        continue
+                    seen += 1
+                    sparse = w.get("sparse-checkout")
+                    if sparse:
+                        self.assertIn("spend", str(sparse).split(), f"{name}: {step.get('name')}")
+            self.assertGreater(seen, 0, name)

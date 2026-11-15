@@ -783,7 +783,9 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14):
     as scripts/forecast_catch_up.py converts them."""
     import yaml
     import automatic_spend
-    if not ledger or not os.path.isfile(ledger):
+    if not ledger or not os.path.isfile(ledger) or not workflows_root:
+        # Without the workflows, a task fired through `fired_by` (the fleet
+        # worker) has no rate and would read as $0: omit, never undercount.
         return None
     wrapped = load(os.path.join(inputs, "triggers.json"), {})
     rows = wrapped.get("data", wrapped) if isinstance(wrapped, dict) else wrapped
@@ -799,10 +801,21 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14):
         row.setdefault("name", names.get(row.get("id")) or row.get("id"))
         triggers[row["id"]] = row
     cfg = yaml.safe_load(open(REPO / "evals" / "automatic-spend.yml"))
-    workflows = automatic_spend.scan_workflows(Path(workflows_root)) if workflows_root else []
+    workflows = automatic_spend.scan_workflows(Path(workflows_root))
     doc = automatic_spend.breakdown(cfg, triggers, automatic_spend.load_fires([ledger]), workflows,
                                     [], now, window_days)
     usd = doc["loop_meter_usd_per_week"]
+    # An in-loop task with a rate but no fire on its current model yet is
+    # priced at its dearest recorded fire on any model, so a model change
+    # never drops it to $0. A job with no recorded fire at all stays unpriced.
+    fires = automatic_spend.load_fires([ledger])
+    for j in doc["jobs"]:
+        if (j.get("in_loop") and j["lane"] == "meter" and j["usd_per_week"] is None
+                and j.get("fires_per_week")):
+            costs = [c for c in (automatic_spend._cost(r) for r in fires
+                                 if r.get("trigger_id") == j["id"]) if c is not None]
+            if costs:
+                usd += j["fires_per_week"] * max(costs)
     ppu = yaml.safe_load(open(REPO / "evals" / "budget.yml"))["points_per_usd"]
     return {"as_of": iso(now), "points_per_week": usd * ppu * 100, "usd_per_week": usd}
 
