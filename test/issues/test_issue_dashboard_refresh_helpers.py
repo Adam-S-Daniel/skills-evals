@@ -65,6 +65,22 @@ class RefreshHelpers(unittest.TestCase):
             for bad in ("/mnt/", "/home/user", "project-files"):
                 self.assertNotIn(bad, text, f.name)
 
+    def test_missed_run_threshold_follows_build_py_interval(self):
+        """The MISSED line fires one hour past build.py's REFRESH_INTERVAL_HOURS,
+        not a number of its own: the refresh went from every 12 hours to every
+        24 on 2026-11-15, and a hard-coded 13 would flag every run as missed."""
+        import re
+        every = int(re.search(r"^REFRESH_INTERVAL_HOURS = (\d+)$",
+                              (REPO / "dashboard" / "build.py").read_text(), re.M).group(1))
+        (self.home / "inputs" / "threads.json").write_text(json.dumps(
+            [{"thread_id": "t1", "last_activity_at": "2020-01-01T00:00:00Z"}]))
+        (self.home / "inputs" / "owner_messages_read.json").write_text(json.dumps(
+            {"read_through": "2020-01-01T00:00:00Z"}))
+        (self.home / "watch" / "log.md").write_text(
+            "- 2020-01-01T00:00Z 2020-01-01T00:05Z refresh (example): 1 thread\n")
+        r = run_sh("refresh.sh", self.home)
+        self.assertIn(f"MISSED: the last refresh logged was 2020-01-01T00:00Z, over {every + 1} hours ago", r.stdout)
+
     def test_routine_fire_ledger_appends_once_per_session(self):
         items = [
             {"trigger_id": "trig_a", "name": "Worker", "fired_at": "2026-01-05T10:00:00Z",
