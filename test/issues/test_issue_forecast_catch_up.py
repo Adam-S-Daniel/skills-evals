@@ -169,9 +169,6 @@ class Forecast(unittest.TestCase):
         self.assertAlmostEqual(doc["capacity_usd_per_week"]["plan_central"], 25 / 0.15)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Arrivals(unittest.TestCase):
     """The arrival rates come from arrivals/targets.json (scripts/
@@ -207,6 +204,15 @@ class Arrivals(unittest.TestCase):
                                                 self.NOW), {})
         self.assertEqual(fc.arrival_assumptions(None, self.NOW), {})
         self.assertEqual(fc.arrival_assumptions(self.doc(schema=2), self.NOW), {})
+        future = self.doc(as_of="2026-11-17T00:00:00Z")
+        self.assertEqual(fc.arrival_assumptions(future, self.NOW), {})
+        self.assertEqual(fc.arrival_assumptions(self.doc(as_of="2026-11-15T10:00:00"),
+                                                self.NOW), {})
+
+    def test_a_non_number_rate_is_left_out(self):
+        doc = self.doc()
+        doc["rates"]["git-hook"]["added_per_week"] = True
+        self.assertNotIn("new_hooks_per_week", fc.arrival_assumptions(doc, self.NOW))
 
     def test_the_run_overrides_and_sources_are_recorded(self):
         merged, sources = fc.merge_assumptions({"new_skills_per_week": 2.0},
@@ -221,3 +227,7 @@ class Arrivals(unittest.TestCase):
         import target_arrivals
         self.assertEqual({kind for kind, _ in fc.ARRIVAL_KEYS.values()},
                          set(target_arrivals.KINDS))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -434,11 +434,19 @@ def main(argv: list | None = None) -> int:
     try:
         arrivals_doc = json.loads(arrivals_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError):
+        if args.arrivals:
+            p.error(f"--arrivals {args.arrivals}: not a readable JSON file")
         arrivals_doc = None
-    assumptions, sources = merge_assumptions(assumptions, arrival_assumptions(arrivals_doc, now))
+    from_arrivals = arrival_assumptions(arrivals_doc, now)
+    assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped)
     doc["inputs"]["assumption_sources"] = sources
+    # Why an arrival rate fell back, so a reader can tell a default from data.
+    doc["inputs"]["arrivals_status"] = (
+        "missing" if arrivals_doc is None
+        else "unused: stale, malformed or no complete kind" if not from_arrivals
+        else "used for " + ", ".join(sorted(from_arrivals)))
     doc["inputs"]["arrivals_as_of"] = arrivals_doc.get("as_of") \
         if isinstance(arrivals_doc, dict) and any(v == "arrivals/targets.json"
                                                   for v in sources.values()) else None
