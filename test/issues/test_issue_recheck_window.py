@@ -367,10 +367,10 @@ class PolicyAndPlumbingTests(unittest.TestCase):
                                         "policy": {**ON, "recheck_window_fire": False}}, due)
         self.assertFalse(any(held.values()))
 
-    def test_the_fire_switch_is_checked_and_held_in_both_blocks(self):
+    def test_the_fire_switch_is_checked_and_on_in_both_blocks(self):
         committed = gates.load_gate_policy()
-        self.assertIs(committed["skills"]["recheck_window_fire"], False)
-        self.assertIs(committed["guidance"]["recheck_window_fire"], False)
+        self.assertIs(committed["skills"]["recheck_window_fire"], True)
+        self.assertIs(committed["guidance"]["recheck_window_fire"], True)
         base = "".join(f"  {k}: {v}\n" for k, v in TEST_POLICY.items()
                        if k != "recheck_window_fire")
         self.assertIs(gates.parse_gate_policy(f"skills:\n{base}")["skills"]

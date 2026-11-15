@@ -163,7 +163,7 @@
       ]
     },
     "gate-policy.yml#guidance.recheck_window_fire": {
-      "value": false,
+      "value": true,
       "source": "evals/gate-policy.yml",
       "key": "guidance.recheck_window_fire",
       "names": [
@@ -368,7 +368,7 @@
       ]
     },
     "gate-policy.yml#skills.recheck_window_fire": {
-      "value": false,
+      "value": true,
       "source": "evals/gate-policy.yml",
       "key": "skills.recheck_window_fire",
       "names": [
