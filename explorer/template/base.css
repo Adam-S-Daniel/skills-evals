@@ -301,7 +301,11 @@
   border-radius: 0; background: var(--surface); color: var(--ink); cursor: pointer; }
 .ex .defbox-close:hover { background: var(--ink); color: var(--page); }
 .ex .chart-title { font-size: 0.94rem; font-weight: 700; color: var(--ink-2); margin: 10px 0 2px; }
-.ex .asof-line { margin: 0 0 8px; }
+.ex .asof-line { margin: 0 0 4px; }
+.ex .asof-times { margin: 0 0 12px; }
+.ex .asof-times > summary { cursor: pointer; color: var(--ink-2); font-size: 0.9rem; }
+.ex .asof-times ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.ex .asof-times li { margin: 2px 0; }
 .ex .trending-table td ul { margin: 0; padding-left: 0; }
 @media (forced-colors: active) { .ex .term { text-decoration: underline; } .ex .defbox { border-color: CanvasText; } }
 

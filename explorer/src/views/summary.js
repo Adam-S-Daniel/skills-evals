@@ -1,27 +1,34 @@
 /* Summary: the front page's headline tiles. */
 import { STRINGS } from '../core/strings.js';
-import { parseTime, fmtDateTime, fmtCount, fmtUtcDay } from '../core/format.js';
+import { parseTime, fmtDateTime, fmtCount, fmtUtcDay, fmtDay, fmtTime } from '../core/format.js';
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, wholeGuidance } from '../core/items.js';
 import { hookTile } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
 import { term, defn } from '../core/terms.js';
-import { tile, srcTip, panel, timesLine, TIME_KEYS } from './bits.js';
+import { tile, srcTip, panel, sourceTimes, TIME_KEYS } from './bits.js';
 import { alertsView, firesFigures } from './alerts.js';
 import { trendingView } from './trending.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
 import { isTrending } from '../core/stats.js';
 
-/* What each time on the page refers to: when the data was built and the
-   newest eval run, then every dated source with its own time, and a note
-   that the undated rest was read at build time. */
+/* The build time and newest eval run on one line, then a fold (shut by
+   default) listing every dated source grouped by its Eastern day, newest
+   day first, and what was read at build time. */
 export function asOfLine(doc, refMs) {
   const newest = parseTime(doc.newest_run);
+  const groups = new Map();
+  sourceTimes(doc, TIME_KEYS).sort((a, b) => b.ms - a.ms).forEach((t) => {
+    const day = t.day ? fmtUtcDay(t.ms, refMs) : fmtDay(t.ms, refMs);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(t.day ? t.label : t.label + ' ' + fmtTime(t.ms));
+  });
+  const rows = Array.from(groups, ([day, items]) => h('li', null, h('b', null, day), ' ' + items.join(' \u00b7 ')));
+  rows.push(h('li', null, h('b', null, STRINGS.timesAtBuild), ' ' + STRINGS.timesAtBuildList));
   return h('div', { class: 'asof' },
     h('p', { class: 'src asof-line' }, defn('dataBuilt'), ' ' + fmtDateTime(refMs), ' \u00b7 ', defn('newestRun'), ' ' + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet)),
-    timesLine(doc, TIME_KEYS.filter((k) => k !== 'runs')),
-    h('p', { class: 'src' }, STRINGS.timesRest));
+    h('details', { class: 'asof-times' }, h('summary', null, STRINGS.timesFold), h('ul', { class: 'src' }, rows)));
 }
 
 /* Every skill's state, counted: [{key, n, label}] in chip order, then the

@@ -55,6 +55,12 @@ export function fmtDateTime(ms) {
   return s + ' ' + STRINGS.et;
 }
 
+/* A clock time alone, '7:39 PM', for a list already grouped by day. */
+export function fmtTime(ms) {
+  if (!isFinite(ms)) return STRINGS.unknown;
+  return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+}
+
 /* The only place this page reads or writes a calendar field of a date. A view
    never calls toISOString, getUTC* or Intl.DateTimeFormat itself: the ET guard
    in test/run.js fails the build if it does. A day or week key is the
