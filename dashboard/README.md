@@ -9,7 +9,7 @@ load live through the GitHub connector. The rest are JSON snapshots that
 
 ## One app, three builds
 
-The page is the private build of the Evals Explorer: `explorer/src` builds
+The page is the private build of the Improvement Loop Explorer: `explorer/src` builds
 `tool/index.html` (the public page, read from `latest.json`),
 `page/index.html` (this page, read from the `explorer` dataset) and
 `explorer/dist/artifact/index.html` (the public page as a claude.ai artifact,

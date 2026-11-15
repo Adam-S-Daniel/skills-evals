@@ -1,4 +1,4 @@
-# Keeps adamdaniel.ai's Evals Explorer current with no human action, and says
+# Keeps adamdaniel.ai's Improvement Loop Explorer current with no human action, and says
 # so when it cannot. Hourly, after every "Site sync" run, and on dispatch,
 # scripts/site_freshness.py checks three things: the design (the site's
 # provenance commit against the newest tool/index.html commit on main, stale

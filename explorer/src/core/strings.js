@@ -12,11 +12,9 @@ function buildStrings(you) {
     ? { who: 'you', Who: 'You', whose: 'your', Whose: 'Your', s: '', obj: 'you', own: 'your own', dont: 'don\'t' }
     : { who: 'the owner', Who: 'The owner', whose: 'the owner\'s', Whose: 'The owner\'s', s: 's', obj: 'the owner', own: 'their own', dont: 'doesn\'t' };
   return {
-  title: you ? 'Self-improvement project' : 'Evals Explorer',
+  title: you ? 'Self-improvement project' : 'Improvement Loop Explorer',
   voice: you ? 'you' : 'owner',
   loading: 'Loading the latest results…',
-  newestRun: (when) => 'Newest run: ' + when + '.',
-  noRunsYet: 'No runs have been recorded yet.',
   hidden: '[hidden]',
   unknown: 'unknown',
   weekOf: (start) => 'week of ' + start,
@@ -360,7 +358,6 @@ function buildStrings(you) {
     activity: 'GitHub activity', queue: 'fixture queue', spend: 'spend', lessons: 'lessons' },
   subjectNewestRun: 'its newest run',
   timesFold: 'Data times',
-  timesAtBuild: 'Read at build',
   timesAtBuildList: 'removal PRs (opened by "remove" verdicts), lesson funnel, fixture checks',
   srcTip: (source, when) => 'Source: ' + source + '.' + (when ? ' As of ' + when + '.' : ''),
   noValue: '—',
@@ -405,7 +402,7 @@ function buildStrings(you) {
   sectionsBarAria: (n) => 'States of ' + n + ' guidance sections.',
   tileAlerts: 'Alerts',
   tileAlertsNote: 'open, listed under Needs you.',
-  summaryLead: 'Git hooks, skills and guidance, each kept only while it earns its place.',
+  summaryLead: 'Git hooks, skills and guidance: measured, then kept or cut.',
 
   hooksHeading: 'Does each git hook check earn its place?',
   hooksNote: (weeks, from, to) => 'Each check runs before a commit or push on ' + W.whose + ' computers (git hooks) and again in CI. Counts cover the ' + weeks + ' weeks from ' + from + ' to ' + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',

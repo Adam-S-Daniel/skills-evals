@@ -458,14 +458,16 @@ await test('times line: the summary dates every source by its own time, and a pa
     hooks: Object.assign({}, doc().hooks, { read_at: { local: '2026-11-14T17:37:16Z', ci: '2026-11-14T13:49:46Z' } }) });
   const node = renderRoute(d, { name: 'summary', id: null }, {});
   const sum = textOf(node).replace(/\s+/g, ' ');
-  ok(sum.includes('Built Nov 14, 2026, 7:37 PM ET \u00b7 newest eval run Nov 11, 2026, 9:26 PM ET'), sum);
+  ok(!sum.includes('Built Nov 14') && !sum.includes('newest eval run Nov 11, 2026'), 'no built-and-newest-run line above the fold: ' + sum);
   const fold = findAll(node, (n) => n.tag === 'details' && String(n.attrs && n.attrs.class || '').includes('asof-times'))[0];
   ok(fold && !fold.attrs.open, 'the data times fold is shut by default');
   const days = findAll(fold, (n) => n.tag === 'li').map((n) => textOf(n).replace(/\s+/g, ' ').trim());
-  eq(days[0], 'Nov 14 local skill use 12:37 PM \u00b7 local hook counts 12:37 PM \u00b7 CI hook counts 8:49 AM', 'newest Eastern day first, newest time first: ' + days.join(' | '));
+  eq(days[0], 'Nov 14 removal PRs (opened by "remove" verdicts), lesson funnel, fixture checks 7:37 PM \u00b7 local skill use 12:37 PM \u00b7 local hook counts 12:37 PM \u00b7 CI hook counts 8:49 AM', 'newest Eastern day first, newest time first, what the build read merged into its day: ' + days.join(' | '));
   eq(days[1], 'Nov 12 skills census 11:53 AM');
   eq(days[2], 'Nov 11 newest eval run 9:26 PM');
-  ok(/^Read at build /.test(days[3]), days[3]);
+  eq(days.length, 3, 'no "Read at build" row: ' + days.join(' | '));
+  const alone = findAll(renderRoute(doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z' }), { name: 'summary', id: null }, {}), (n) => n.tag === 'li' && /fixture checks/.test(textOf(n))).map((n) => textOf(n).replace(/\s+/g, ' ').trim());
+  ok(alone.length === 1 && /^Nov 14 .*fixture checks 7:37 PM/.test(alone[0]), 'the build day gets a row when no source shares it: ' + alone.join(' | '));
   ok(!sum.includes('Data read between'), sum);
   ok(!sum.includes('cloud hook counts'), 'an undated source is left out, never given the document time: ' + sum);
   const hooks = textOf(renderRoute(d, { name: 'hooks', id: null }, {})).replace(/\s+/g, ' ');
@@ -479,10 +481,10 @@ await test('data times fold: newest day first even when a day-only source (lesso
     (n) => n.tag === 'li' && n.children && findAll(n, (x) => x.tag === 'b').length).map((n) => textOf(n).replace(/\s+/g, ' ').trim());
   // A run at 01:00Z on Nov 15 is Nov 14 in Eastern time; lessons dated Nov 15 is the newer day.
   const a = rows({ newest_run: '2026-11-15T01:00:00Z', lessons: Object.assign({}, doc().lessons, { date: '2026-11-15' }) });
-  ok(a[0].startsWith('Nov 15 lessons') && a[1].startsWith('Nov 14 newest eval run 8:00 PM'), a.join(' | '));
+  ok(a[0].startsWith('Nov 15 lessons') && a[1].startsWith('Nov 14 ') && a[1].endsWith('fixture checks 9:00 PM \u00b7 newest eval run 8:00 PM'), a.join(' | '));
   // Same day: the timed source first, the day-only one last.
   const c = rows({ newest_run: '2026-11-14T20:00:00Z', lessons: Object.assign({}, doc().lessons, { date: '2026-11-14' }) });
-  ok(c[0] === 'Nov 14 newest eval run 3:00 PM \u00b7 lessons', c.join(' | '));
+  ok(c[0].startsWith('Nov 14 ') && c[0].endsWith('fixture checks 9:00 PM \u00b7 newest eval run 3:00 PM \u00b7 lessons'), c.join(' | '));
 });
 await test('times line: a subject page dates its own newest run, not the fleet\'s', () => {
   const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
@@ -1505,7 +1507,7 @@ await test('E11: runName never returns a cron expression', () => {
   eq(runName('47 8 * * *', null), STRINGS.scheduledRun);
   eq(runName('Fix the thing', 'CI'), 'Fix the thing');
   eq(runName('', 'CI'), 'CI');
-  ok(hasCron('scheduled — 47 8 * * *') && !hasCron('PR #4743 — tools: sync Evals Explorer to e805c6e'), 'cron detection');
+  ok(hasCron('scheduled — 47 8 * * *') && !hasCron('PR #4743 — tools: sync Improvement Loop Explorer to e805c6e'), 'cron detection');
 });
 await test('E11: the dashboard runs table has one Run column, starts on problems and the threads list leads with the ones not done', () => {
   const dash = fakeDash({ run_stream: okData([{ key: 'k1', at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'Nightly', title: 'scheduled — 47 8 * * *', state: 'Failed', duration_s: 5, link: 'https://github.com/o/r/actions/runs/1' }]),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Is adamdaniel.ai's Evals Explorer current, and if not, heal it or say so.
+"""Is adamdaniel.ai's Improvement Loop Explorer current, and if not, heal it or say so.
 
 Driven by .github/workflows/site-freshness.yml (hourly, after "Site sync", and
 on dispatch). Three checks decide:
@@ -205,7 +205,7 @@ def plan_issue(failing: list, issue: dict | None, now: datetime,
 
 def issue_body(failing: list, fixes: list, checked_at: datetime, run_url: str | None) -> str:
     lines = ["Kind: broken", "Severity: high", f"Finding-ID: {FINDING_ID}", ISSUE_MARKER, "",
-             "adamdaniel.ai's Evals Explorer (https://adamdaniel.ai/tools/evals/) is not "
+             "adamdaniel.ai's Improvement Loop Explorer (https://adamdaniel.ai/tools/evals/) is not "
              "current. Failing checks:", ""]
     for check in failing:
         links = " ".join(f"<{url}>" for url in check.links)

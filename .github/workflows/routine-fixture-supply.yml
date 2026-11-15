@@ -16,7 +16,7 @@ name: Fixture supply
 # names and data and an `origin:` mapping naming the pull request it came
 # from (scripts/fixture_pr_gate.py requires it). scripts/fixture_queue.py
 # tracks those requests, their pull requests and the fixtures' runs and
-# cost for the Evals Explorer, and files `half-built-or-broken` issues when
+# cost for the Improvement Loop Explorer, and files `half-built-or-broken` issues when
 # the queue stalls (explorer-data.yml). To resume the lane, restore the two
 # jobs from this file's history (the commit that removed them cites
 # skills-evals#656); scripts/

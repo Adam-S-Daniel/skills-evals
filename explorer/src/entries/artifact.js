@@ -1,4 +1,4 @@
-/* The Evals Explorer as a claude.ai artifact (explorer/dist/artifact/index.html,
+/* The Improvement Loop Explorer as a claude.ai artifact (explorer/dist/artifact/index.html,
    published with latest.json beside it). The public entry with one change:
    build.js resolves adapters/web.js to adapters/artifact.js in this bundle,
    so the page reads the relative URL latest.json from its own origin. */

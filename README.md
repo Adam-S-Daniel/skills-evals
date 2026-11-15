@@ -692,7 +692,7 @@ HISTORY.
 
 ## Explorer
 
-[`tool/index.html`](tool/index.html) is the Evals Explorer: one
+[`tool/index.html`](tool/index.html) is the Improvement Loop Explorer: one
 self-contained public page that explains the published results in plain
 language for someone who has never opened a terminal (issues
 [#72](https://github.com/Adam-S-Daniel/skills-evals/issues/72) and
@@ -706,7 +706,7 @@ build writes `explorer/dist/artifact/index.html`, this page for a claude.ai
 artifact that reads `latest.json` beside it (see
 [`dashboard/README.md`](dashboard/README.md), "One app, three builds").
 adamdaniel.ai iframes it once, at `/tools/evals/` (Adam, 2026-11-02: one
-Evals Explorer, not two pages). The
+Improvement Loop Explorer, not two pages). The
 skills view is the default; an on-page toggle switches to the guidance view
 and updates the URL (`?subject=guidance` opens it directly).
 
