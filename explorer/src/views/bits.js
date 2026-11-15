@@ -60,7 +60,7 @@ export function timesLine(doc, keys, extra) {
   for (const e of extra || []) {
     if (e && isFinite(e.ms)) parts.push(e.label + ' ' + fmtDateTime(e.ms));
   }
-  if (!parts.length) return srcLine(STRINGS.srcDoc, blockMs(d, 'doc'));
+  if (!parts.length) return h('p', { class: 'src times-line' }, STRINGS.timesUndated(fmtDateTime(blockMs(d, 'doc'))));
   return h('p', { class: 'src times-line' }, STRINGS.timesLine(parts.join(' \u00b7 ')));
 }
 export function srcTip(source, ms) { return STRINGS.srcTip(source, isFinite(ms) ? fmtDateTime(ms) : ''); }

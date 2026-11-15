@@ -448,12 +448,14 @@ await test('times line: the summary dates every source by its own time, and a pa
   const sum = textOf(renderRoute(d, { name: 'summary', id: null }, {})).replace(/\s+/g, ' ');
   ok(sum.includes('newest eval run Nov 11, 2026, 9:26 PM ET'), sum);
   ok(sum.includes('skills census Nov 12, 2026, 11:53 AM ET'), sum);
-  ok(sum.includes('CI hook counts read through Nov 14, 2026, 8:49 AM ET'), sum);
+  ok(sum.includes('CI hook counts as of Nov 14, 2026, 8:49 AM ET'), sum);
   ok(!sum.includes('Data read between'), sum);
   ok(!sum.includes('cloud hook counts'), 'an undated source is left out, never given the document time: ' + sum);
   const hooks = textOf(renderRoute(d, { name: 'hooks', id: null }, {})).replace(/\s+/g, ' ');
-  ok(hooks.includes('Data times: local hook counts read through Nov 14, 2026, 12:37 PM ET \u00b7 CI hook counts read through Nov 14, 2026, 8:49 AM ET.'), hooks);
+  ok(hooks.includes('Data times: local hook counts as of Nov 14, 2026, 12:37 PM ET \u00b7 CI hook counts as of Nov 14, 2026, 8:49 AM ET.'), hooks);
   ok(!hooks.includes('skills census'), 'the hooks page does not date the census: ' + hooks);
+  const old = textOf(renderRoute(doc({ generated_at: '2026-11-15T00:37:06Z', hooks: Object.assign({}, d.hooks, { read_at: undefined }) }), { name: 'hooks', id: null }, {})).replace(/\s+/g, ' ');
+  ok(old.includes('carries no time of its own; the results document was built Nov 14, 2026, 7:37 PM ET.'), 'undated hook counts are not stamped with the build time as if it were theirs: ' + old);
 });
 await test('times line: a subject page dates its own newest run, not the fleet\'s', () => {
   const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
