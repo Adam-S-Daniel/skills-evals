@@ -116,7 +116,7 @@ identity federation, not the Claude Code subscription. A measured run on
 seconds wall clock and cost **$1.71**: Sonnet 5 arms $0.89, Opus 4.8 judge
 $0.78, Haiku preflight $0.04. The judge is about 45% of a run.
 
-**The monthly API-credit lane** (Adam, 2026-11-15). The organisation gets a
+**The monthly API-credit lane** (Adam, 2026-11-15). The organization gets a
 use-or-lose Claude Platform credit grant each month, and eval.yml is the one
 workflow that spends it in bulk, so `.github/workflows/credit-lane.yml` now
 dispatches it on its own instead of a thread doing it by hand. Every three

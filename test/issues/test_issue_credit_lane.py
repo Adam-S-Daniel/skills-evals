@@ -284,7 +284,7 @@ class Workflow(unittest.TestCase):
             self.assertIs(step["with"]["persist-credentials"], False)
         self.assertIn("persistent/eval-results", [s["with"].get("ref") for s in checkouts])
 
-    def test_no_expression_inside_run_and_dispatch_honours_dry_run(self):
+    def test_no_expression_inside_run_and_dispatch_honors_dry_run(self):
         for step in self.job["steps"]:
             self.assertNotIn("${{", step.get("run", ""), step.get("name"))
         dispatch = next(s for s in self.job["steps"] if s.get("name") == "Dispatch eval.yml")
