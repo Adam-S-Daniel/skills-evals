@@ -73,6 +73,9 @@ ASSUMPTION_KEYS = {
                                        "(restarts their evidence)"),
     "guidance_rest_changes_per_week": (0.0, "agents-md changes per week that move every section's "
                                             "current rest, so each guidance keep must be re-proved"),
+    "non_eval_points_per_week": (None, "meter points a week used by everything but evals "
+                                       "(threads, routines, local sessions); with budget.yml's "
+                                       "account stop it can cap the eval points"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
 }
 
@@ -163,10 +166,15 @@ def subject_usd(subject: dict, costs: dict, overhead_per_pair: float, key: str) 
 
 def open_subjects(ctx: dict, cells: list, prior_pairs: float) -> dict:
     """{(kind, name): subject estimate} for every subject with at least one
-    cell the planner would fire (`plan_week._produces_item`)."""
+    cell the planner would fire (`plan_week._produces_item`). A cell of a
+    subject already kept (not on a provisional keep) is left out: the planner
+    fires it only at its re-check age (`eval_items`), which the re-check
+    keep-up item prices."""
     grouped: dict = {}
     for cell in cells:
         if not plan_week._produces_item(cell):
+            continue
+        if cell.get("verdict") == "keep" and not cell.get("provisional_keep"):
             continue
         kind = "guidance" if cell.get("section") else "skill"
         name = cell.get("section") or cell.get("skill")
@@ -225,6 +233,11 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     low_rate = a["usd_per_point_low"] or rate
     high_rate = a["usd_per_point_high"] or low_rate
     cap_points = budget["weekly_cap"] * 100
+    # The account stop: evals halt once the whole meter passes it, so other
+    # use leaves them at most the stop less that use.
+    stop = budget.get("stop_when_account_above")
+    if a["non_eval_points_per_week"] is not None and stop is not None:
+        cap_points = max(0.0, min(cap_points, stop * 100 - a["non_eval_points_per_week"]))
     costs = pair_usd(gates)
     if a["measured_usd_per_pair"] and costs:
         scale = a["measured_usd_per_pair"] / (sum(costs.values()) / len(costs))
@@ -261,6 +274,10 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
                   if s.get("verdict") == "keep"
                   and not (block == "guidance" and name in skipped_sections))
     recheck_weeks = gates["policy"]["recheck_weeks"]
+    # Under keep_stands_until_recheck (gate-policy.yml) a rest change no
+    # longer reopens a guidance keep; the re-check item prices it instead.
+    stands = bool((gates.get("guidance_policy") or {}).get("keep_stands_until_recheck"))
+    rest_changes = 0.0 if stands else a["guidance_rest_changes_per_week"]
     keep_up_items = {
         "new skills (first use only)": new_skills * first_use * median,
         "new guidance sections": new_sections * evaluated * median,
@@ -268,7 +285,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         * prior_pairs * mean_pair,
         "skill text edits": a["skill_text_edits_per_week"] * median,
         "re-checks of kept subjects": decided * median / recheck_weeks,
-        "guidance keeps re-proved after a rest change": a["guidance_rest_changes_per_week"]
+        "guidance keeps re-proved after a rest change": rest_changes
         * sum(r["usd_central"] for r in rows if r["kind"] == "guidance" and r["route"] == "keep"),
     }
     keep_up = sum(keep_up_items.values())

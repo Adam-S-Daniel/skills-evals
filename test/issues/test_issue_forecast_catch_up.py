@@ -111,14 +111,15 @@ class Forecast(unittest.TestCase):
     BUDGET = {"weekly_cap": 0.25, "points_per_usd": 0.0015}
     BATCH = {"pairs_per_cell": 15, "rates": {"skill": 1.0, "guidance": 1.0}}
 
-    def run_forecast(self, **assumptions):
+    def run_forecast(self, cells=None, gates=None, budget=None, **assumptions):
         def proj(cell, ctx):
             if cell["skill"] == "a":
                 return projection(pairs=4, keep=4, remove=math.inf, remaining=20)
             return projection(pairs=10, keep=math.inf, remove=10, remaining=20)
         with mock.patch.object(fc.plan_week, "pairs_to_verdict", side_effect=proj), \
                 mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
-            return fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+            return fc.forecast(gates or self.GATES, cells or self.CELLS, budget or self.BUDGET,
+                               self.BATCH, None,
                                {"fire_overhead_usd": 0.0, **assumptions},
                                frozenset({"skipped-one"}))
 
@@ -135,6 +136,37 @@ class Forecast(unittest.TestCase):
     def test_never_when_keep_up_exceeds_capacity(self):
         doc = self.run_forecast(new_fixtures_per_week_open=100.0)
         self.assertTrue(math.isinf(doc["scenarios"]["plan_cap_only"]["weeks_central"]))
+
+    def test_a_kept_subjects_open_cells_wait_for_the_recheck(self):
+        cells = self.CELLS + [{"skill": "kept", "model": "m", "pairs": 0,
+                               "class": "insufficient", "verdict": "keep"}]
+        doc = self.run_forecast(new_skills_per_week=0.0, new_sections_per_week=0.0,
+                                cells=cells)
+        self.assertNotIn("kept", {r["subject"] for r in doc["subjects"]})
+        provisional = cells[:-1] + [{**cells[-1], "provisional_keep": True}]
+        doc = self.run_forecast(new_skills_per_week=0.0, new_sections_per_week=0.0,
+                                cells=provisional)
+        self.assertIn("kept", {r["subject"] for r in doc["subjects"]})
+
+    def test_a_standing_keep_needs_no_re_proof_after_a_rest_change(self):
+        guidance_cells = [{"skill": "a", "section": "sec", "model": "m", "pairs": 0,
+                           "class": "insufficient"}]
+        item = "guidance keeps re-proved after a rest change"
+        doc = self.run_forecast(guidance_rest_changes_per_week=1.0, cells=guidance_cells)
+        self.assertGreater(doc["keep_up_items"][item], 0)
+        gates = {**self.GATES, "guidance_policy": {**POLICY, "keep_stands_until_recheck": True}}
+        doc = self.run_forecast(guidance_rest_changes_per_week=1.0, cells=guidance_cells,
+                                gates=gates)
+        self.assertEqual(doc["keep_up_items"][item], 0)
+
+    def test_other_meter_use_can_cap_the_eval_points(self):
+        budget = {**self.BUDGET, "stop_when_account_above": 0.80}
+        doc = self.run_forecast(non_eval_points_per_week=70.0, budget=budget)
+        self.assertAlmostEqual(doc["capacity_usd_per_week"]["plan_central"], 10 / 0.15)
+        doc = self.run_forecast(non_eval_points_per_week=100.0, budget=budget)
+        self.assertEqual(doc["capacity_usd_per_week"]["plan_central"], 0)
+        doc = self.run_forecast(non_eval_points_per_week=20.0, budget=budget)
+        self.assertAlmostEqual(doc["capacity_usd_per_week"]["plan_central"], 25 / 0.15)
 
 
 if __name__ == "__main__":
