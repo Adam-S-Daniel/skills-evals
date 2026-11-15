@@ -368,6 +368,12 @@ class RunAgentLaunchTests(OwnSessionLaunchTests):
         # handling, not about where the CLI lives.
         self.enterContext(mock.patch.object(run_eval.run_canary, "cli_bin",
                                             return_value=self.CLI))
+        # The launch also reads the host's git configuration for `include`
+        # sections, and starts `git` (through the patched Popen) when
+        # `~/.gitconfig` has one. A host with one would add children that
+        # are not the CLI launches counted here (#987).
+        self.enterContext(mock.patch.object(run_eval, "_git_include_targets",
+                                            return_value=[]))
         return run_eval.run_agent(self.root, "prompt",
                                   {"name": "without_skill", "timeout": 30, **arm})
 
