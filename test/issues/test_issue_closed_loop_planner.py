@@ -419,7 +419,9 @@ class TrainEvidenceTests(unittest.TestCase):
 #: The gates document's policy block, as plan_week's context carries it. The
 #: near band orders by run count alone (2026-10-31: no fixed looks), so the
 #: planner reads no threshold from it.
-POLICY = gates.load_gate_policy()["skills"]
+#: Re-checks fire here (the committed policy holds them while the stopping
+#: rules are redesigned, 2026-11-15): these tests are about the bands.
+POLICY = {**gates.load_gate_policy()["skills"], "recheck_window_fire": True}
 
 
 def cell(fixture, model, cls, runs=0, newest=None, usd=None, empty=0, skill=None):

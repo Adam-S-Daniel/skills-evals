@@ -41,6 +41,9 @@
 #                          pairs (it can remove, stops early once the gain
 #                          clears the margin, else runs to max_runs_per_cell);
 #                          false: re-check pairs cannot change a keep.
+#   recheck_window_fire    false: the planner fires no re-check run (held
+#                          2026-11-15 while the stopping rules are redesigned:
+#                          carried evidence, futility, adaptive spacing).
 #   recheck_carry          true: a kept cell's re-checks carry both tests'
 #                          evidence across windows (harness/gates.py THE
 #                          RE-CHECK CARRY): one lifetime removal bound, and
@@ -72,6 +75,7 @@ skills:
   max_removal_pauses: 3
   retirement_mode: auto
   recheck_window: true
+  recheck_window_fire: false
   recheck_carry: true
 guidance:
   objective_margin: 0.15
@@ -89,6 +93,7 @@ guidance:
   max_removal_pauses: 3
   retirement_mode: auto
   recheck_window: true
+  recheck_window_fire: false
   recheck_carry: true
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6

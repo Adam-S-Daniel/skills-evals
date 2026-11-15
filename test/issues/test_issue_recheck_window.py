@@ -33,7 +33,8 @@ from test_issue_70_retirement import FLAT, GAIN, LOSS, TEST_POLICY, series  # no
 
 #: One-week re-checks, so a canned month of hourly runs holds a keep and
 #: its re-check; without THE RE-CHECK CARRY (RecheckCarryTests has it).
-ON = {**TEST_POLICY, "recheck_window": True, "recheck_weeks": 1, "recheck_carry": False}
+ON = {**TEST_POLICY, "recheck_window": True, "recheck_window_fire": True, "recheck_weeks": 1,
+      "recheck_carry": False}
 WEEK = 7 * 24
 
 
@@ -353,6 +354,29 @@ class PolicyAndPlumbingTests(unittest.TestCase):
         self.assertFalse(any(before.values()))
         after, _ = plan_week.eval_items(ctx, due)
         self.assertEqual([i["fixture"] for i in after["recheck"]], ["evals/demo/fx"])
+        # Held while the stopping rules are redesigned (Adam, 2026-11-15).
+        held, _ = plan_week.eval_items({**ctx, "policy": {**ON, "recheck_window_fire": False}},
+                                       due)
+        self.assertFalse(any(held.values()))
+        # An age-based re-check of a kept subject's unsettled cell is held too.
+        aged = {**planner, "class": "insufficient", "at_cap": False, "recheck": None,
+                "newest": "20200101T000000Z"}
+        fired, _ = plan_week.eval_items({**ctx, "cells": [aged]}, due)
+        self.assertTrue(fired["recheck"], fired)
+        held, _ = plan_week.eval_items({**ctx, "cells": [aged],
+                                        "policy": {**ON, "recheck_window_fire": False}}, due)
+        self.assertFalse(any(held.values()))
+
+    def test_the_fire_switch_is_checked_and_held_in_both_blocks(self):
+        committed = gates.load_gate_policy()
+        self.assertIs(committed["skills"]["recheck_window_fire"], False)
+        self.assertIs(committed["guidance"]["recheck_window_fire"], False)
+        base = "".join(f"  {k}: {v}\n" for k, v in TEST_POLICY.items()
+                       if k != "recheck_window_fire")
+        self.assertIs(gates.parse_gate_policy(f"skills:\n{base}")["skills"]
+                      ["recheck_window_fire"], True)
+        with self.assertRaises(gates.GatePolicyError):
+            gates.parse_gate_policy(f"skills:\n{base}  recheck_window_fire: 'no'\n")
 
 
 if __name__ == "__main__":

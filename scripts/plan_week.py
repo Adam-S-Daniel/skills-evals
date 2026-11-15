@@ -1999,6 +1999,10 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
+        block = (ctx.get("guidance_policy") if cell.get("section")
+                 else ctx.get("policy")) or {}
+        if (band == "recheck" or rechecking) and block.get("recheck_window_fire") is False:
+            continue  # re-checks held while the stopping rules are redesigned
         if (band == "recheck" or rechecking) and _retiring(ctx, subject):
             continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \

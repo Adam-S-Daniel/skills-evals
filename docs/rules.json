@@ -152,6 +152,16 @@
         "recheckWindow"
       ]
     },
+    "gate-policy.yml#guidance.recheck_window_fire": {
+      "value": false,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.recheck_window_fire",
+      "names": [
+        "recheck_window_fire",
+        "RECHECK_WINDOW_FIRE",
+        "recheckWindowFire"
+      ]
+    },
     "gate-policy.yml#guidance.rest_guard_min_pairs": {
       "value": 6,
       "source": "evals/gate-policy.yml",
@@ -335,6 +345,16 @@
         "recheck_window",
         "RECHECK_WINDOW",
         "recheckWindow"
+      ]
+    },
+    "gate-policy.yml#skills.recheck_window_fire": {
+      "value": false,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.recheck_window_fire",
+      "names": [
+        "recheck_window_fire",
+        "RECHECK_WINDOW_FIRE",
+        "recheckWindowFire"
       ]
     },
     "gate-policy.yml#skills.retire_confidence": {
