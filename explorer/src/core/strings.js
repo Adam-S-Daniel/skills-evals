@@ -359,7 +359,7 @@ function buildStrings(you) {
     hooksLocal: 'local hook counts as of', hooksCi: 'CI hook counts as of', hooksCloud: 'cloud hook counts as of',
     activity: 'GitHub activity read', queue: 'fixture queue', spend: 'spend', lessons: 'lessons from' },
   subjectNewestRun: 'its newest run',
-  timesRest: 'Verdicts come from the eval runs up to the newest one. Alerts, removals and the lesson funnel were read from their sources when the data was built.',
+  timesRest: 'Verdicts come from the eval runs up to the newest one. Removals, the lesson funnel and the checks for broken or drifted fixtures were read from their sources when the data was built.',
   srcTip: (source, when) => 'Source: ' + source + '.' + (when ? ' As of ' + when + '.' : ''),
   noValue: '—',
   privateBadge: 'Private',
