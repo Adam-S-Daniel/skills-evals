@@ -135,6 +135,84 @@ class Breakdown(unittest.TestCase):
         self.assertEqual(self.job(doc, "Task Health Publish")["usd_per_week"], 0.0)
 
 
+class CurrentModel(unittest.TestCase):
+    """Costs come only from fires on the task's current model (Adam, 2026-11-15)."""
+
+    ROWS = [
+        {"session_id": "a", "fired_at": "2026-11-12T02:00:00Z", "total_cost_usd": 10.0,
+         "last_served_model": "claude-fable-5-2"},
+        {"session_id": "b", "fired_at": "2026-11-14T02:00:00Z", "total_cost_usd": 2.0,
+         "last_served_model": "claude-sonnet-5-5"},
+        {"session_id": "c", "fired_at": "2026-11-15T02:00:00Z", "total_cost_usd": 1.0,
+         "last_served_model": "claude-sonnet-5-5"},
+    ]
+
+    def test_drops_fires_on_an_earlier_model(self):
+        trig = {"model": "claude-sonnet-5-5", "updated_at": "2026-11-13T00:00:00Z"}
+        self.assertEqual(aus.current_model_costs(self.ROWS, trig),
+                         ("claude-sonnet-5-5", [2.0, 1.0], 1, False))
+
+    def test_a_set_model_with_no_fire_since_the_edit_has_no_cost(self):
+        trig = {"derived_state": {"model": "claude-haiku-5-5"},
+                "updated_at": "2026-11-15T12:00:00Z"}
+        self.assertEqual(aus.current_model_costs(self.ROWS, trig),
+                         ("claude-haiku-5-5", [], 3, False))
+
+    def test_a_page_model_the_fires_ignore_is_flagged(self):
+        trig = {"model": "claude-haiku-5-5", "updated_at": "2026-11-13T00:00:00Z"}
+        self.assertEqual(aus.current_model_costs(self.ROWS, trig),
+                         ("claude-sonnet-5-5", [2.0, 1.0], 1, True))
+
+    def test_no_set_model_uses_the_newest_fire(self):
+        self.assertEqual(aus.current_model_costs(self.ROWS, {"model": ""})[:3],
+                         ("claude-sonnet-5-5", [2.0, 1.0], 1))
+
+
+class LoopMembership(unittest.TestCase):
+    CONFIG = {
+        "categories": [
+            {"id": "fleet", "label": "Fleet", "match": ["fleet", "security"], "in_loop": True},
+            {"id": "personal", "label": "Personal", "match": ["brief"], "in_loop": False},
+        ],
+        "outside_loop": ["security alert triage"],
+        "inside_loop": ["special brief"],
+        "other_in_loop": False,
+    }
+
+    def test_category_default_and_overrides(self):
+        m = lambda name, cat: aus.loop_membership(name, cat, self.CONFIG)  # noqa: E731
+        self.assertIs(m("Fleet worker", "fleet"), True)
+        self.assertIs(m("Daily security alert triage", "fleet"), False)
+        self.assertIs(m("Morning brief", "personal"), False)
+        self.assertIs(m("A special brief", "personal"), True)
+        self.assertIs(m("Site build", "other"), False)
+        self.assertIsNone(aus.loop_membership("Site build", "other", {"categories": []}))
+
+    def test_breakdown_splits_meter_spend(self):
+        triggers = {
+            "t1": {"name": "Fleet worker", "cron_expression": "0 0 * * 1", "enabled": True},
+            "t2": {"name": "Daily security alert triage", "cron_expression": "0 0 * * 1",
+                   "enabled": True},
+        }
+        fires = [{"trigger_id": "t1", "session_id": "a", "total_cost_usd": 3.0},
+                 {"trigger_id": "t2", "session_id": "b", "total_cost_usd": 2.0}]
+        doc = aus.breakdown(self.CONFIG, triggers, fires, [], [], NOW, 14)
+        self.assertAlmostEqual(doc["loop_meter_usd_per_week"], 3.0)
+        self.assertAlmostEqual(doc["outside_loop_meter_usd_per_week"], 2.0)
+        self.assertEqual(doc["loop_unassigned"], [])
+        fleet = next(c for c in doc["categories"] if c["id"] == "fleet")
+        self.assertAlmostEqual(fleet["outside_loop_meter_usd_per_week"], 2.0)
+
+
+class ShippedConfig(unittest.TestCase):
+    def test_every_category_says_whether_it_is_in_the_loop(self):
+        import yaml
+        cfg = yaml.safe_load((ROOT / "evals" / "automatic-spend.yml").read_text(encoding="utf-8"))
+        for c in cfg["categories"]:
+            self.assertIsInstance(c.get("in_loop"), bool, c["id"])
+        self.assertIsInstance(cfg.get("other_in_loop"), bool)
+
+
 class BoxyTasks(unittest.TestCase):
     def test_register_tasks_parameters_and_claude_scripts(self):
         root = Path(tempfile.mkdtemp())
