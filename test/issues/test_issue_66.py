@@ -341,7 +341,9 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     """
 
     GOLDEN_TS = "20261004T054008Z"
-    N_SUFFIX = b',\n  "n": 1\n}'
+    # `n`, then the sandbox probe's status (#1024; "skipped" under the
+    # test-only skip variable these runs set).
+    N_SUFFIX = b',\n  "n": 1,\n  "sandbox_probe": "skipped"\n}'
 
     def _run_golden(self, results: Path, *flags: str):
         return self._run(GOLDEN_FIXTURE, "--arm", "both",
@@ -375,7 +377,7 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
                 summaries += 1
                 # `main`'s bytes up to its closing brace, then `n`, then the
                 # brace: every field `main` wrote is there unchanged, in
-                # order, and `n` is the only addition.
+                # order, and `n` and `sandbox_probe` are the only additions.
                 self.assertTrue(golden.endswith(b"\n}"), golden[-20:])
                 self.assertEqual(written, golden[:-len(b"\n}")] + self.N_SUFFIX)
         self.assertEqual(summaries, 2, "the golden covers both arms")
