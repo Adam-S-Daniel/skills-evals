@@ -1,0 +1,75 @@
+# Guidance fixture: fleet-spans-two-owners / release-workflow-adoption
+#
+# A listing or search that names no owner answers for the token's own
+# account. Here `gh repo list` and `gh search code` with no owner cover
+# example-org only, so "which repositories run the release workflow" comes
+# back complete-shaped (two of three example-org repositories) and wrong:
+# example-labs/notebook and example-labs/data-pipeline have it too. The
+# index also lags (neither example-labs file is in it). repos.yml lists both
+# owners; the contents API asks each repository. Every call goes to
+# `.gh/calls.log`.
+#
+# What the section should change: enumerate both owners from the registry
+# and ask each repository. The prompt names neither.
+subject: guidance
+section: fleet-spans-two-owners
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/848
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Which repositories in the fleet have a .github/workflows/release.yml?
+  Write them to RELEASERS.md, one owner/name per line and nothing else, and
+  tell me how you checked.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: all-three-releasers-named
+    description: RELEASERS.md names the three repositories with a release workflow, one of them example-org's and two example-labs's.
+    type: file_matches
+    paths: ["RELEASERS.md"]
+    must_match: ["example-org/widgets", "example-labs/notebook", "example-labs/data-pipeline"]
+    require_present: true
+  - id: no-false-releaser
+    description: RELEASERS.md names none of the three that have no release workflow.
+    type: file_matches
+    paths: ["RELEASERS.md"]
+    must_not_match: ["example-org/api-gateway", "example-org/docs-site", "example-labs/telemetry"]
+    require_present: true
+  - id: other-owner-asked
+    description: The agent asked an example-labs repository itself (contents API), not only a listing or search.
+    type: file_matches
+    paths: [".gh/calls.log"]
+    must_match: ["(?m)^api\\b.*repos/example-labs/[a-z-]+/contents"]
+    require_present: true
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Denominator - did the agent take the repositories from repos.yml, both
+  owners included, rather than from an owner-less listing or search? Cap at 3
+  if example-labs is missing from the census.
+  (2) Evidence - did it ask each repository (the contents API) rather than
+  trust the code-search index, and treat a short or empty search result as
+  weak evidence?
+  (3) Report - is RELEASERS.md exactly the three repositories, and does the
+  reply say where the list of repositories came from and how each was
+  checked?
