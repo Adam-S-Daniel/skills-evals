@@ -448,6 +448,52 @@ class Problems(unittest.TestCase):
             "rows:\n  - path: evals/old\n    rule: zero-use\n", encoding="utf-8")
         self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
 
+    def test_an_excused_fixture_stays_visible_and_does_not_fail(self):
+        # A rename looks like a deletion to the scope pass, so the census
+        # must keep listing what it excused.
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        self.pause_removed(w, "evals/old")
+        doc = w.json()
+        self.assertEqual(doc["paused_removed"],
+                         [{"registry": "cms-platform", "skill": "retired", "fixtures": 1}])
+        md = w.run().stdout
+        self.assertIn("## Paused as removed", md)
+        self.assertIn("- cms-platform `retired`: 1 fixture(s)", md)
+
+    def test_a_private_registry_excused_fixture_withholds_its_name(self):
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old-private", "zz-private-vanished", PRIVATE)
+        self.pause_removed(w, "evals/old-private")
+        proc = w.run("--json")
+        self.assertNotIn("zz-private-vanished", proc.stdout)
+        self.assertEqual(json.loads(proc.stdout)["paused_removed"],
+                         [{"registry": PRIVATE, "fixtures": 1}])
+
+    def test_the_excuse_needs_the_recorded_digest_to_still_match(self):
+        import eval_scope
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        digest = eval_scope.fixture_digest(w.evals / "old")
+        rows = f"rows:\n  - path: evals/old\n    rule: removed\n    fixture_digest: {digest}\n"
+        (w.evals / "scope-auto.yml").write_text(rows, encoding="utf-8")
+        self.assertEqual(w.json()["problems"], [])
+        with (w.evals / "old" / "fixture.yaml").open("a", encoding="utf-8") as fh:
+            fh.write("# edited after the pause\n")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+
+    def test_a_malformed_scope_auto_file_is_refused(self):
+        for bad in ("rows: [unclosed\n", "rows:\n  a: b\n", "rows:\n  - just-a-string\n"):
+            with self.subTest(bad=bad):
+                w = World(self)
+                (w.evals / "scope-auto.yml").write_text(bad, encoding="utf-8")
+                proc = w.run("--json")
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stdout, "")
+
 
 
 class PrivateNames(unittest.TestCase):

@@ -217,19 +217,20 @@ def _load_yaml(path: Path, what: str):
         raise CensusRefusal(f"{what} {path} is not valid YAML{where}") from exc
 
 
-def removed_pause_paths(evals_dir: Path) -> set[str]:
-    """Fixture paths (`evals/<dir>`) that evals/scope-auto.yml pauses as
-    `removed`: the eval scope pass keeps such a fixture on purpose."""
+def removed_pause_paths(evals_dir: Path) -> dict[str, str | None]:
+    """{fixture path (`evals/<dir>`): recorded fixture_digest or None} for
+    each row evals/scope-auto.yml pauses as `removed`: the eval scope pass
+    keeps such a fixture on purpose."""
     path = evals_dir / "scope-auto.yml"
     if not path.is_file():
-        return set()
+        return {}
     doc = _load_yaml(path, "scope-auto.yml")
     rows = doc.get("rows") if isinstance(doc, dict) else None
     if rows is None:
-        return set()
+        return {}
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
         raise CensusRefusal("scope-auto.yml must hold a `rows` list of mappings")
-    return {r["path"] for r in rows
+    return {r["path"]: r.get("fixture_digest") for r in rows
             if r.get("rule") == "removed" and isinstance(r.get("path"), str)}
 
 
@@ -238,8 +239,10 @@ def count_fixtures(evals_dir: Path, resolved: dict[str, dict],
     """{(registry name, skill): fixture count} from `skill:` / `registry:`.
 
     When `dormant` is given, it receives the same counts restricted to
-    fixtures that evals/scope-auto.yml pauses as `removed`."""
-    paused = removed_pause_paths(evals_dir) if dormant is not None else set()
+    fixtures that evals/scope-auto.yml pauses as `removed` and whose
+    directory still matches the pause row's recorded `fixture_digest` (a
+    fixture edited since the pause is live work, not a kept leftover)."""
+    paused = removed_pause_paths(evals_dir) if dormant is not None else {}
     if not evals_dir.is_dir():
         raise CensusRefusal(f"evals directory {evals_dir} is not a directory")
     # Exactly the set eval.yml's dispatch check discovers:
@@ -286,8 +289,12 @@ def count_fixtures(evals_dir: Path, resolved: dict[str, dict],
             raise CensusRefusal(f"fixture {label}: 'draft:' must be a boolean")
         if not draft:
             counts[(name, skill)] = counts.get((name, skill), 0) + 1
-            if f"evals/{path.parent.relative_to(evals_dir).as_posix()}" in paused:
-                dormant[(name, skill)] = dormant.get((name, skill), 0) + 1
+            rel = f"evals/{path.parent.relative_to(evals_dir).as_posix()}"
+            if rel in paused:
+                import eval_scope  # lazy: heavy imports the census otherwise skips
+                recorded = paused[rel]
+                if recorded is None or recorded == eval_scope.fixture_digest(path.parent):
+                    dormant[(name, skill)] = dormant.get((name, skill), 0) + 1
     return counts
 
 
@@ -365,9 +372,15 @@ def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict,
         elif fixtures.get((name, skill)):
             problems.append({"kind": "skip_but_covered", "registry": name,
                              "skill": skill})
+    paused_removed = []
     for (name, skill), _n in sorted(fixtures.items()):
-        if ((name, skill) not in seen_skills
-                and (dormant or {}).get((name, skill)) != _n):
+        if (name, skill) in seen_skills:
+            continue
+        if (dormant or {}).get((name, skill)) == _n:
+            # Kept on purpose, but a rename looks the same as a deletion
+            # here, so list it where a reader sees it. Not a failure.
+            paused_removed.append({"registry": name, "skill": skill, "fixtures": _n})
+        else:
             problems.append({"kind": "orphan_fixture", "registry": name,
                              "skill": skill})
     problems.sort(key=lambda p: (p["registry"], p["kind"], p["skill"]))
@@ -375,7 +388,7 @@ def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict,
     for status in STATUSES:
         totals[status] = sum(r["counts"][status] for r in registries)
     return {"schema": 1, "registries": registries, "totals": totals,
-            "problems": problems}
+            "problems": problems, "paused_removed": paused_removed}
 
 
 def redact(census: dict, include_private_names: bool) -> dict:
@@ -394,6 +407,10 @@ def redact(census: dict, include_private_names: bool) -> dict:
         if problem["registry"] in private_names and not include_private_names:
             problem = {k: v for k, v in problem.items() if k != "skill"}
         out["problems"].append(problem)
+    out["paused_removed"] = [
+        {k: v for k, v in item.items() if k != "skill"}
+        if item["registry"] in private_names and not include_private_names else item
+        for item in census.get("paused_removed", [])]
     return out
 
 
@@ -438,6 +455,13 @@ def render_markdown(census: dict) -> str:
     for problem in census["problems"]:
         who = f" `{problem['skill']}`" if "skill" in problem else ""
         lines.append(f"- {problem['kind']}: {problem['registry']}{who}")
+    if census.get("paused_removed"):
+        lines += ["", "## Paused as removed", "",
+                  "Fixtures whose skill is gone from its registry, kept by the "
+                  "eval scope pass. Not a failure; a renamed skill shows here too.", ""]
+        for item in census["paused_removed"]:
+            who = f" `{item['skill']}`" if "skill" in item else ""
+            lines.append(f"- {item['registry']}{who}: {item['fixtures']} fixture(s)")
     return "\n".join(lines) + "\n"
 
 
