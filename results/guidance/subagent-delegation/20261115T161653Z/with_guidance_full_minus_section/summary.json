@@ -1,0 +1,309 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20261115T161653Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0777133,
+    "num_turns": 5,
+    "duration_ms": 11320,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 20543,
+      "cache_read_input_tokens": 139558,
+      "output_tokens": 1238,
+      "output_tokens_details": {
+        "thinking_tokens": 34
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 20543
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 306,
+          "cache_read_input_tokens": 32526,
+          "cache_creation_input_tokens": 570,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 570,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "failing-test-named",
+      "passed": true,
+      "detail": "VERDICT.md matches"
+    },
+    {
+      "id": "count-reported",
+      "passed": true,
+      "detail": "VERDICT.md matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Verification",
+        "score": 10,
+        "rationale": "The agent ran the tests with `python3 -m unittest -v test_slugify`, found 4 tests with 1 failure, and saw that `python3 test_slugify.py` runs zero tests because there is no `unittest.main()` call."
+      },
+      {
+        "name": "Report",
+        "score": 10,
+        "rationale": "VERDICT.md states the result (do not merge), the count (3 of 4 pass), the failing test with its actual and expected output, and why the subagent's command could not fail (no `unittest.main()`, so zero tests run and it exits 0)."
+      },
+      {
+        "name": "Restraint",
+        "score": 9,
+        "rationale": "slugify.py does not appear in the diff, so it was left unchanged; the staged `__pycache__` .pyc files are minor workspace noise."
+      }
+    ],
+    "overall": 9.7
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.325 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.1"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 1238,
+      "cache_read_input_tokens": 139558,
+      "cache_creation_input_tokens": 20543,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "subagent-delegation",
+  "mode": "full-minus-section",
+  "bytes": 24009,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v9ccbb970, 24009 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "TGODJMKM-2828"
+  },
+  "fixture_name": "verifier-that-cannot-fail",
+  "guidance_digests": {
+    "section": "21381a3c73b85f646c3ff62f0b2c73a093b2daa2b6d2d5260a9e4f7d78579ccb",
+    "rest": "b88cd9634ee9e3cdddac38769019bd5b2e48bd08240395f6abcea75b7c41828a",
+    "section_payload": "7e75f385e6c8fe3eb939021a6625b8d6fab8aa57be8435af469fb712cde78d50"
+  },
+  "fixture_digest": "b8efb88e351d485cd1c17dc3021a6bbded81ce4d738864162c165856dd0362c0",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 23874,
+        "sha256": "7f008e28511ab2e8e9a0c1a13edcccbb0e82b58f98c6e02cc83078457cb9cc5a"
+      }
+    ]
+  },
+  "sandbox_probe": "passed",
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "43733816093",
+    "session_id": null,
+    "harness_commit": "b61610f45abf55baa7f9c9f89f4870a15851d964",
+    "cli_version": "2.1.325 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-15T16:16:53Z",
+    "ended_at": "2026-11-15T16:18:12Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.4174524,
+      "agent_usd": 0.26432500000000003,
+      "judge_usd": 0.06465299999999999,
+      "guard_usd": 0.0884744,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0777133,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-15T16:17:42Z",
+      "ended_at": "2026-11-15T16:18:04Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-15T16:17:42Z",
+          "ended_at": "2026-11-15T16:17:44Z",
+          "duration_ms": 2135,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-15T16:17:44Z",
+          "ended_at": "2026-11-15T16:17:56Z",
+          "duration_ms": 12111,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-15T16:18:00Z",
+          "ended_at": "2026-11-15T16:18:04Z",
+          "duration_ms": 3692,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 12111,
+        "num_turns": 5,
+        "cost_usd": 0.0777133,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 1238,
+            "cache_read_input_tokens": 139558,
+            "cache_creation_input_tokens": 20543,
+            "cost_usd": 0.0777133
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 20543,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 3692,
+        "num_turns": 1,
+        "cost_usd": 0.015972,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 289,
+            "cache_read_input_tokens": 1445,
+            "cache_creation_input_tokens": 1979,
+            "cost_usd": 0.015972
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1979,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 2135,
+        "num_turns": 1,
+        "cost_usd": 0.032546099999999994,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "cache_read_input_tokens": 8496,
+            "cache_creation_input_tokens": 12629,
+            "cost_usd": 0.032546099999999994
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 12629,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
