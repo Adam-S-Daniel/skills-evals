@@ -119,7 +119,7 @@ class _Run:
         (home / ".claude").mkdir(parents=True)
         (root / "mountinfo").write_text("", encoding="utf-8")
         self.results = root / "results"
-        self.env = {"PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(root / "mountinfo"),
+        self.env = {"PATH": TEST_PATH, run_eval.SANDBOX_PROBE_SKIP_ENV: "1", run_eval.MOUNTINFO_ENV: str(root / "mountinfo"),
                     "HOME": str(home), "TMPDIR": str(shared_tmp), "LANG": "C.UTF-8",
                     "PYTHONDONTWRITEBYTECODE": "1", "CLAUDE_BIN": str(claude),
                     "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto",

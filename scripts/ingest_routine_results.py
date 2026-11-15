@@ -343,6 +343,8 @@ def _object(value, where, allowed, required=()):
         raise Rejected(f"{where}: missing keys {sorted(missing)}")
 
 
+#: `run_eval.sandbox_probe_status` values.
+SANDBOX_PROBE_STATUSES = ("passed", "failed", "skipped", "not_run")
 MODEL_ID_RE = re.compile(r"[^\s`|]{1,128}")
 #: A summary's `judge` when the pair's objective result decided it (#371).
 JUDGE_SKIPPED = {"status": "skipped", "reason": "objective-decided"}
@@ -358,7 +360,9 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "installed", "decoy", "hook_returncode", "guard",
     "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
                                       "context_subject", "arm_context") + ("run", "usage") + (
-    "judge_selection", "fixture_digest", "judge_conditional") + (
+    "judge_selection", "fixture_digest", "judge_conditional",
+    # What the arm sandbox canary did (#1024, run_eval.sandbox_probe_status).
+    "sandbox_probe") + (
     # An isolation guidance run's pooling key (#124): its fixture directory's
     # name and the section's and the rest of the guidance's digests.
     "fixture_name", "guidance_digests") + (
@@ -1265,6 +1269,8 @@ def check_summary(doc, where: str, parts: dict) -> None:
                 isinstance(m, str) and MODEL_ID_RE.fullmatch(m)
                 for m in models):
             raise Rejected(f"{where}: {field} must be a short list of model ids")
+    if "sandbox_probe" in doc and doc["sandbox_probe"] not in SANDBOX_PROBE_STATUSES:
+        raise Rejected(f"{where}: sandbox_probe is not a known status")
     selection = doc.get("judge_selection")
     if selection is not None:
         _object(selection, f"{where}: judge_selection", JUDGE_SELECTION_KEYS,

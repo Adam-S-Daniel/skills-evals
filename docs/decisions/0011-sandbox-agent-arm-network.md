@@ -504,3 +504,49 @@ commands back through the permission flow, which makes trials slower or
 denied, not less isolated. Arms that ran on 2.1.325 or later before this
 change ran without the key; how runs across harness changes compare is
 governed by [`docs/rules.md`](../rules.md).
+
+## Addendum: hosted sessions start without a sandbox (2026-11-15, CLI 2.1.325)
+
+[Claude Code 2.1.325](https://github.com/anthropics/claude-code/releases/tag/v2.1.325)
+"changed Claude Code on the web, cloud scheduled tasks and Cowork cloud
+sessions to start despite `sandbox.failIfUnavailable`: the hosted container
+has no command sandbox." Eval arms run in a routine (ADR 0010), a hosted
+session, so an arm there starts with no refusal and no warning and its Bash
+runs unconfined: the stderr lines the harness matches (`_SANDBOX_DOWN_LINE`)
+never appear. A nested `claude -p` in a routine session measured exactly that
+([#1024](https://github.com/Adam-S-Daniel/skills-evals/issues/1024)).
+
+Decision: arms stay fail-closed. A routine arm without a working command
+sandbox is not acceptable, because the read fence is what keeps an arm from
+answer keys and sibling checkouts. The CLI offers no model-free sandbox status
+(not in `--help`, not in the stream-json init event), so the harness proves
+the fence positively. `main()` always arms a canary before the first agent
+arm of a run, whatever the environment says about hosting (improve and
+guidance runs strip `CLAUDE_*` from their children), and `run_agent` runs it
+once (`probe_arm_sandbox`): the CLI, with the arm's own
+`arm_isolation_flags()` settings on `haiku`, must call Bash with exactly one
+command, `cat` of a random sentinel under HOME (denied to reads) followed by
+an `echo` of a computed marker. Only that call's result counts. The sentinel
+coming back is a leak, and fails every arm `sandbox_unavailable` with a
+detail starting `sandbox not enforcing`, never retried. The fence held only
+if the result shows the marker and the read's denial message
+(`cat: <sentinel path>:`) and not the sentinel; anything else (an echo alone,
+another command, no Bash call, a CLI error, a timeout) is unproven, is
+retried once, and then fails every arm `sandbox_unavailable` with a detail
+starting `sandbox probe`, so the owner can tell "routines cannot sandbox"
+from a flake. The stderr detection stays as well. The probe is one short
+model turn per run (two on a retry).
+
+The probe checks the host's sandbox once per process, not each arm's rules:
+every arm still passes its own `--settings`, and nothing re-proves them per
+arm. A test-only variable, `SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE=1`, skips the
+canary so tests with scripted fake CLIs keep their call counts; only
+test/conftest.py and the test helpers set it, and an arm's allowlisted
+environment never carries it. When `main()` honors it, it warns on stderr and
+every summary.json records `sandbox_probe: skipped` (otherwise `passed` or
+`failed`; the ingester accepts only those and `not_run`). `local_eval` and
+`propose_skill_edit` refuse to run with it set (`REFUSED_ENV_NAMES`), and
+`routine_eval` refuses to start `run_eval.py` with it set.
+
+If the probe shows routine sessions can no longer sandbox at all, where evals
+run becomes an owner decision; this addendum does not make it.

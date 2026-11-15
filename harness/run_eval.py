@@ -2250,6 +2250,172 @@ def _sandbox_unavailable_detail(stderr: str) -> str | None:
     return None
 
 
+# Claude Code 2.1.325 starts hosted sessions (a routine, where eval arms run,
+# ADR 0010) despite `sandbox.failIfUnavailable`: the hosted container has no
+# command sandbox, and the CLI neither refuses nor warns, so the stderr lines
+# above never appear. The CLI shows no model-free signal either (its `--help`
+# has no sandbox status, and the stream-json init event lists tools, not the
+# sandbox), so the harness proves the fence positively, once per process
+# before the first agent arm: a one-turn probe with the arm's own isolation
+# flags runs `cat` on a sentinel under a `denyRead` path. A sentinel that comes
+# back, or a probe that cannot tell, fails every arm `sandbox_unavailable`.
+# The probe checks the HOST's sandbox once per process; each arm still passes
+# its own `--settings`, which the probe does not re-check.
+SANDBOX_PROBE_MODEL = "haiku"
+# TEST-ONLY: `main()` skips the probe when this variable is "1" (test/conftest.py
+# sets it, so a test's scripted fake CLI keeps its call count). No production
+# path sets it, and the arm's allowlisted environment never carries it.
+SANDBOX_PROBE_SKIP_ENV = "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"
+# Set by `main()`: a direct `run_agent` call (a test's) launches no probe.
+_SANDBOX_PROBE_REQUIRED = False
+# None until the probe has run, then ("" if the fence held, else the detail).
+_SANDBOX_PROBE_VERDICT: str | None = None
+# Set by `main()` when the test-only skip variable was honored.
+_SANDBOX_PROBE_SKIPPED = False
+_SANDBOX_NOT_ENFORCING = "sandbox not enforcing: "
+_SANDBOX_PROBE_ATTEMPTS = 2
+
+
+def _walk_blocks(node):
+    """Every dict nested anywhere in a CLI JSON result."""
+    if isinstance(node, list):
+        for item in node:
+            yield from _walk_blocks(item)
+    elif isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _walk_blocks(value)
+
+
+def _block_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(part["text"] for part in content
+                         if isinstance(part, dict) and isinstance(part.get("text"), str))
+    return ""
+
+
+def _probe_outcomes(decoded, command: str) -> tuple[list[str], list[str]]:
+    """(every tool_result text, the texts answering a Bash `tool_use` whose
+    input is exactly `command`)."""
+    ids = {block.get("id") for block in _walk_blocks(decoded)
+           if block.get("type") == "tool_use" and block.get("name") == "Bash"
+           and isinstance(block.get("input"), dict)
+           and block["input"].get("command") == command
+           and isinstance(block.get("id"), str)}
+    every, matched = [], []
+    for block in _walk_blocks(decoded):
+        if block.get("type") == "tool_result":
+            text = _block_text(block.get("content"))
+            every.append(text)
+            if block.get("tool_use_id") in ids:
+                matched.append(text)
+    return every, matched
+
+
+def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
+                cwd: Path, env: dict, timeout: int) -> tuple[str, str]:
+    """One canary launch: ("held", ""), ("refused", the CLI's line), ("leak", why)
+    or ("unproven", why)."""
+    prompt = ("Call the Bash tool exactly once with this command and then "
+              f"reply with only its output, nothing else:\n{command}")
+    cmd = [run_canary.cli_bin(), "-p", prompt, "--output-format", "json",
+           "--verbose", "--permission-mode", "auto",
+           "--setting-sources", "project", *flags, "--strict-mcp-config",
+           "--no-session-persistence", "--model", SANDBOX_PROBE_MODEL,
+           "--max-turns", "3"]
+    try:
+        result = _run_in_own_session(cmd, cwd=cwd, capture_output=True,
+                                     text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return "unproven", f"sandbox probe timed out after {timeout}s; the fence is unproven"
+    except OSError as exc:
+        return "unproven", (f"sandbox probe could not start ({type(exc).__name__}); "
+                            "the fence is unproven")
+    down = _sandbox_unavailable_detail(result.stderr)
+    if down is not None:
+        return "refused", down  # the CLI itself refused to start
+    try:
+        every, matched = _probe_outcomes(json.loads(result.stdout), command)
+    except ValueError:
+        every, matched = [], []
+    if any(token in text for text in every):
+        return "leak", (_SANDBOX_NOT_ENFORCING + "a Bash command read a file under "
+                        "filesystem.denyRead (hosted Claude Code sessions start "
+                        "without a command sandbox, CLI 2.1.325)")
+    if any(marker in text and f"cat: {sentinel}:" in text for text in matched):
+        return "held", ""
+    return "unproven", (f"sandbox probe inconclusive (CLI exit {result.returncode}; "
+                        "no exact probe Bash call showed the denied read); the "
+                        "fence is unproven")
+
+
+def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
+    """Run the sandbox canary; return "" if the read fence held, else why not.
+
+    The sentinel lies under HOME, which `arm_sandbox_settings` denies to
+    reads. The model must call Bash with exactly the probe command: `cat` of
+    the sentinel, then an `echo` of a computed marker. The fence held only if
+    THAT call's result shows the marker and the read's denial message and not
+    the sentinel; a sentinel is a leak, anything else (the command never ran,
+    an echo alone, another path) is unproven and fails closed. An unproven
+    probe is retried once, a leak never is, and a leak's detail starts
+    `sandbox not enforcing` so the owner can tell it from a flake.
+    """
+    token = "sentinel-" + os.urandom(12).hex()
+    left, right = os.urandom(1)[0] + 1, os.urandom(1)[0] + 1
+    marker = f"probe-ran-{left + right}"
+    holder = Path(tempfile.mkdtemp(prefix="skills-evals-sandbox-probe-",
+                                   dir=Path.home()))
+    cwd = Path(tempfile.mkdtemp(prefix="skills-evals-sandbox-probe-cwd-"))
+    try:
+        sentinel = holder / "sentinel.txt"
+        sentinel.write_text(token + "\n", encoding="utf-8")
+        flags = arm_isolation_flags(checkouts, outputs=outputs,
+                                    path_env=os.environ.get("PATH", ""))
+        env = guidance.cli_child_env(agent_env(cwd, None))
+        for name in ARM_DROPPED_ENV:
+            env.pop(name, None)
+        command = f"cat {sentinel} 2>&1; echo probe-ran-$(({left}+{right}))"
+        detail = ""
+        for _ in range(_SANDBOX_PROBE_ATTEMPTS):
+            verdict, detail = _probe_once(command, token, marker, sentinel,
+                                          flags, cwd, env, timeout)
+            if verdict == "refused":
+                return detail  # the CLI's own refusal line
+            if verdict != "unproven":
+                return "" if verdict == "held" else detail
+        return detail
+    finally:
+        shutil.rmtree(holder, ignore_errors=True)
+        shutil.rmtree(cwd, ignore_errors=True)
+
+
+def sandbox_probe_status() -> str:
+    """What summary.json records as `sandbox_probe`: `skipped` (the test-only
+    variable was honored), `passed`, `failed`, or `not_run` (no agent arm
+    asked yet)."""
+    if not _SANDBOX_PROBE_REQUIRED:
+        return "skipped" if _SANDBOX_PROBE_SKIPPED else "not_run"
+    if _SANDBOX_PROBE_VERDICT is None:
+        return "not_run"
+    return "passed" if _SANDBOX_PROBE_VERDICT == "" else "failed"
+
+
+def sandbox_probe_failure(checkouts=(), outputs=()) -> str | None:
+    """The detail every arm fails with, or None when the fence was proven.
+
+    Memoized: the probe runs once per process, before the first agent arm.
+    """
+    global _SANDBOX_PROBE_VERDICT
+    if not _SANDBOX_PROBE_REQUIRED:
+        return None
+    if _SANDBOX_PROBE_VERDICT is None:
+        _SANDBOX_PROBE_VERDICT = probe_arm_sandbox(checkouts, outputs)
+    return _SANDBOX_PROBE_VERDICT or None
+
+
 # The managed sandbox and permission settings an arm's run accepts, each with
 # the values it may take; ANY other key under `sandbox` or `permissions`, or
 # an accepted key with another value, refuses the run, so a key a later CLI
@@ -3265,6 +3431,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     refusal = managed_sandbox_refusal()
     if refusal is not None:
         return {"error": "managed_sandbox_policy", "detail": refusal}
+    unproven = sandbox_probe_failure(checkouts, outputs)
+    if unproven is not None:
+        return {"error": "sandbox_unavailable", "detail": unproven}
     # `setting_sources` and `env_override` are the guidance subject's two
     # seams (#97): guidance is delivered into USER memory by the fleet hook,
     # so a guidance arm is invoked with `user,project` and with the scrubbed
@@ -5220,6 +5389,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         summary.setdefault("n", 1)
         if key and len(key.split("/")) == 3:
             summary.setdefault("fixture", key.split("/")[2])
+    summary["sandbox_probe"] = sandbox_probe_status()
     summary["run"] = _TELEMETRY.run(harness_version)
     summary["usage"] = _TELEMETRY.usage(usage_trials)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
@@ -8385,6 +8555,18 @@ def _exiting_on_signals(run):
 @_exiting_on_signals
 @_ending_the_run
 def main() -> int:
+    global _SANDBOX_PROBE_REQUIRED
+    # Every run proves the sandbox before its first agent arm (see
+    # `probe_arm_sandbox`), whatever the environment says about hosting:
+    # improve and guidance runs strip CLAUDE_* from their children. Only a
+    # test sets the skip variable.
+    global _SANDBOX_PROBE_SKIPPED
+    _SANDBOX_PROBE_SKIPPED = os.environ.get(SANDBOX_PROBE_SKIP_ENV) == "1"
+    _SANDBOX_PROBE_REQUIRED = not _SANDBOX_PROBE_SKIPPED
+    if _SANDBOX_PROBE_SKIPPED:
+        print(f"warning: {SANDBOX_PROBE_SKIP_ENV}=1, so the arm sandbox is NOT "
+              "proven for this run (test use only); summary.json records "
+              "sandbox_probe: skipped", file=sys.stderr)
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
     # Deliberately NOT an argparse `choices=` list any more: a guidance

@@ -183,6 +183,7 @@ class Base(unittest.TestCase):
         self.source_profile = tree(self.home / ".claude")
         self.version_log = self.root / "versions.log"
         self.env = {"PATH": str(self.bin) + os.pathsep + os.defpath,
+                    run_eval.SANDBOX_PROBE_SKIP_ENV: "1",
                     "HOME": str(self.home), "GIT_CONFIG_NOSYSTEM": "1",
                     "GIT_CONFIG_GLOBAL": "/dev/null",
                     "GIT_AUTHOR_NAME": "Fixture", "GIT_COMMITTER_NAME": "Fixture",

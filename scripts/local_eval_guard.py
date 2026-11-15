@@ -20,7 +20,11 @@ sys.dont_write_bytecode = True
 #: module docstring).
 REFUSED_ENV_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_USE_", "AWS_", "GOOGLE_",
                         "GCLOUD_", "CLOUDSDK_", "AZURE_")
-REFUSED_ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
+#: SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE (run_eval.SANDBOX_PROBE_SKIP_ENV) is
+#: test-only: it turns off the arm sandbox canary, so no exhibit or improve run
+#: may carry it.
+REFUSED_ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR",
+                     "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE")
 #: CLAUDE_CODE_USE_* names that toggle a tool, not a provider.
 NOT_PROVIDER_ENV = ("CLAUDE_CODE_USE_POWERSHELL_TOOL",)
 REFUSED_ENV_SUBSTRINGS = ("API_KEY", "AUTH_TOKEN", "ACCESS_KEY", "SECRET",
