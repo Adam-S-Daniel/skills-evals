@@ -308,6 +308,27 @@ class ExplorerPublicTests(unittest.TestCase):
         self.assertEqual(hooks["totals"]["local"][0]["invocations"], 9)
         self.assertEqual(hooks["cloud_from"], "2026-08-24")
 
+    def test_read_at_dates_each_count_file_by_its_own_time(self):
+        # 2026-11-15: the page's one read range left the hook counts out, so
+        # each count file now carries its own time.
+        (self.tree / "usage" / "weekly-ci.json").write_text(json.dumps(
+            {"schema": skill_usage.SCHEMA, "generated_at": "2026-09-03T08:00:00Z", "rows": []}),
+            encoding="utf-8")
+        local = usage_doc(self.rows(), [CLOUD_SOURCE])
+        local["generated_at"] = "2026-09-04T13:00:00Z"
+        (self.tree / "usage" / "weekly-local.json").write_text(json.dumps(local), encoding="utf-8")
+        hooks = pub.build_hooks(self.tree, NOW, None, {}, PUBLIC, pub.load_hook_policy())
+        self.assertEqual(hooks["read_at"], {"local": "2026-09-04T13:00:00Z",
+                                            "ci": "2026-09-03T08:00:00Z",
+                                            "cloud": CLOUD_SOURCE["to"]})
+
+    def test_read_at_is_null_for_a_missing_file_and_has_no_cloud_without_a_source(self):
+        local = usage_doc(self.rows())
+        local["generated_at"] = "2026-09-04T13:00:00Z"
+        (self.tree / "usage" / "weekly-local.json").write_text(json.dumps(local), encoding="utf-8")
+        hooks = pub.build_hooks(self.tree, NOW, None, {}, PUBLIC, pub.load_hook_policy())
+        self.assertEqual(hooks["read_at"], {"local": "2026-09-04T13:00:00Z", "ci": None})
+
     def test_without_a_cloud_source_the_cloud_key_is_absent_and_rows_are_dropped(self):
         hooks = self.build(self.rows())
         self.assertEqual(sorted(hooks["totals"]), ["ci", "local"])

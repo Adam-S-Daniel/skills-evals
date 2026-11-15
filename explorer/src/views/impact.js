@@ -7,7 +7,7 @@ import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
 import { cloudNote } from './hooks.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, navLink, rangeLine, srcLineFor, fold } from './bits.js';
+import { table, panel, navLink, timesLine, srcLineFor, fold } from './bits.js';
 import { VERDICT_CHIPS } from '../core/stats.js';
 import { noUseShare } from './utility.js';
 import { weekChart, weekScale } from './weekchart.js';
@@ -190,7 +190,7 @@ export function impactView(doc, ctx) {
   const ext = ctx && ctx.ext;
   const covers = (k) => !!(ext && ext.covers && ext.covers(k));
   return h('div', null,
-    rangeLine(doc),
+    timesLine(doc, ['spend', 'usage', 'hooksLocal', 'hooksCi', 'hooksCloud']),
     panel(STRINGS.impactSpend, spendView(doc, refMs)),
     covers('cost') ? ext.cost(ctx) : null,
     panel(STRINGS.agentMade, agentMadeView(doc, refMs)),

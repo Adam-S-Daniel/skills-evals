@@ -429,15 +429,38 @@ await test('C3: the guard\'s own room_points is used when present, and rows with
   const t = textOf(needs(ALLOW({ room_points: 0, points: 90 }))).replace(/\s+/g, ' ');
   ok(t.includes('Room for new tests now: about 0.0 points'), t);
 });
-await test('C4: each panel prints its own block time, never one document time, and the page says the range', () => {
+await test('C4: each panel prints its own block time, never one document time, and the page names its own sources\' times', () => {
   const d = doc({ generated_at: '2026-11-12T16:54:13Z', activity: { fetched_at: '2026-11-12T17:45:57Z', since: '2026-10-29T17:00:00Z', repos: ['Adam-S-Daniel/skills-evals'],
     runs: [{ repo: 'Adam-S-Daniel/skills-evals', run_id: 5, workflow: 'CI', title: 'CI', event: 'push', state: 'completed', conclusion: 'success', created_at: '2026-11-12T17:36:00Z', updated_at: '2026-11-12T17:40:00Z', url: 'https://github.com/Adam-S-Daniel/skills-evals/actions/runs/5' }],
     pulls: [], issues: [] }, fixture_queue: Object.assign({}, fqDoc().fixture_queue, { generated_at: '2026-11-12T17:45:00Z' }) });
   const ops = textOf(renderRoute(d, { name: 'activity', id: null }, {})).replace(/\s+/g, ' ');
   ok(ops.includes('as of Nov 12, 2026, 12:45 PM ET'), ops);
-  ok(/Data read between Nov 12, 2026, 11:54 AM ET and Nov 12, 2026, 12:45 PM ET/.test(ops), ops);
+  ok(ops.includes('Data times: GitHub activity read Nov 12, 2026, 12:45 PM ET.'), ops);
+  ok(!ops.includes('Data read between'), 'no page-wide range: ' + ops);
   const loop = textOf(renderRoute(d, { name: 'changes', id: null }, {})).replace(/\s+/g, ' ');
   ok(loop.includes('Fixture requests From the results document, as of Nov 12, 2026, 12:45 PM ET'), loop);
+});
+await test('times line: the summary dates every source by its own time, and a page names only the sources it shows', () => {
+  const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
+    coverage: Object.assign({}, doc().coverage, { as_of: '2026-11-12T16:53:31Z' }),
+    usage: Object.assign({}, doc().usage, { to: '2026-11-14T17:37:16Z' }),
+    hooks: Object.assign({}, doc().hooks, { read_at: { local: '2026-11-14T17:37:16Z', ci: '2026-11-14T13:49:46Z' } }) });
+  const sum = textOf(renderRoute(d, { name: 'summary', id: null }, {})).replace(/\s+/g, ' ');
+  ok(sum.includes('newest eval run Nov 11, 2026, 9:26 PM ET'), sum);
+  ok(sum.includes('skills census Nov 12, 2026, 11:53 AM ET'), sum);
+  ok(sum.includes('CI hook counts read through Nov 14, 2026, 8:49 AM ET'), sum);
+  ok(!sum.includes('Data read between'), sum);
+  ok(!sum.includes('cloud hook counts'), 'an undated source is left out, never given the document time: ' + sum);
+  const hooks = textOf(renderRoute(d, { name: 'hooks', id: null }, {})).replace(/\s+/g, ' ');
+  ok(hooks.includes('Data times: local hook counts read through Nov 14, 2026, 12:37 PM ET \u00b7 CI hook counts read through Nov 14, 2026, 8:49 AM ET.'), hooks);
+  ok(!hooks.includes('skills census'), 'the hooks page does not date the census: ' + hooks);
+});
+await test('times line: a subject page dates its own newest run, not the fleet\'s', () => {
+  const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
+    skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [{ at: '2026-11-03T15:00:00Z' }, { at: '2026-11-05T15:00:00Z' }] }] });
+  const text = textOf(renderRoute(d, { name: 'skills', id: 'demo-skill' }, {})).replace(/\s+/g, ' ');
+  ok(text.includes('its newest run Nov 5, 2026, 10:00 AM ET'), text);
+  ok(!text.includes('newest eval run Nov 11'), text);
 });
 await test('C4 guard: no view prints the single document time for a panel (srcLine(STRINGS.srcDoc, refMs))', () => {
   const dir = path.join(EXPLORER, 'src', 'views');
@@ -452,7 +475,7 @@ await test('C4 guard: no view prints the single document time for a panel (srcLi
       for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
     })(ast);
   }
-  eq(found.join(','), '', 'use rangeLine(doc) or srcLineFor(doc, block)');
+  eq(found.join(','), '', 'use timesLine(doc, keys) or srcLineFor(doc, block)');
 });
 await test('money is printed with thousands separators everywhere', () => {
   eq(fmtUsd(5541.65), '$5,541.65'); eq(fmtUsd(0), '$0.00'); eq(fmtUsd(12.5), '$12.50');

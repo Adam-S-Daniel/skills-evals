@@ -2,7 +2,7 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtDateTime } from '../core/format.js';
 import { h, link } from '../core/h.js';
-import { table, srcLine, panel, rangeLine, srcLineFor, refreshCap } from './bits.js';
+import { table, srcLine, panel, timesLine, srcLineFor, refreshCap } from './bits.js';
 import { prTable, repoNumber, LIST_CAP } from './loop.js';
 
 export const PROBLEM = ['failure', 'timed_out', 'startup_failure', 'cancelled', 'action_required'];
@@ -75,7 +75,7 @@ export function opsView(doc, ctx) {
   const ext = ctx && ctx.ext;
   const covers = (k) => !!(ext && ext.covers && ext.covers(k));
   return h('div', null,
-    rangeLine(doc),
+    timesLine(doc, ['activity']),
     ext && ext.opsTop ? ext.opsTop(ctx) : null,
     covers('runs') ? ext.runs(ctx) : panel(STRINGS.opsRuns, runsView(doc, refMs), PROBLEMS_PANEL),
     covers('prs') ? ext.prs(ctx) : panel(STRINGS.opsPrs, prsView(doc, refMs)),

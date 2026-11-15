@@ -19,7 +19,7 @@ import { impactView } from './impact.js';
 import { opsView } from './ops.js';
 import { methodView } from './method.js';
 import { searchView } from './search.js';
-import { navLink, srcLine, rangeLine, srcLineFor } from './bits.js';
+import { navLink, srcLine, timesLine, srcLineFor } from './bits.js';
 import { fmtUtcDay } from '../core/format.js';
 import { indexDoc } from '../core/terms.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
@@ -41,7 +41,7 @@ export function buildPage(doc, mode, opts) {
   if (mode === 'guidance') {
     const items = sectionItems(doc);
     return h('div', null,
-      rangeLine(doc),
+      timesLine(doc, ['runs']),
       wholeView(wholeGuidance(doc), refMs),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
@@ -51,7 +51,7 @@ export function buildPage(doc, mode, opts) {
   const items = skillItems(doc);
   const u = doc.usage;
   return h('div', null,
-    rangeLine(doc),
+    timesLine(doc, ['runs', 'coverage', 'usage']),
     h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
