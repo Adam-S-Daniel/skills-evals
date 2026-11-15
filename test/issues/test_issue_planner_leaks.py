@@ -196,7 +196,9 @@ class ProvisionalKeepTests(unittest.TestCase):
 
     def test_a_provisional_keep_with_only_the_lapse_left_is_past_its_cap(self):
         runs, _current = pooled_tests.StaleKeepTests().noisy(20)
-        projection = self.projection(cell_of(runs))
+        projection = plan_week.pairs_to_verdict(
+            planner_cell(cell_of(runs), section="sec"),
+            plan_ctx([], guidance_policy={**POOLED, "max_runs_extension": 1.0}))
         self.assertGreater(projection["keep"], projection["remaining"])
         self.assertGreater(projection["remove"], projection["remaining"])
         self.assertTrue(projection["past_cap"])
@@ -434,15 +436,24 @@ class CurrentWealthTests(unittest.TestCase):
 
     def test_it_is_past_its_cap_when_the_gap_exceeds_the_pairs_left(self):
         # 25 pairs held leaves 15 under the cap of 40: the peak reads about
-        # 9 pairs away, the current wealth about 27.
-        peak = plan_week.pairs_to_verdict(betting_cell(PEAKED, current=False, pairs=25),
-                                          plan_ctx([]))
-        now = plan_week.pairs_to_verdict(betting_cell(PEAKED, pairs=25), plan_ctx([]))
+        # 9 pairs away, the current wealth about 27 (without THE CAP
+        # EXTENSION).
+        off = plan_ctx([], policy={**TEST_POLICY, "max_runs_extension": 1.0})
+        peak = plan_week.pairs_to_verdict(betting_cell(PEAKED, current=False, pairs=25), off)
+        now = plan_week.pairs_to_verdict(betting_cell(PEAKED, pairs=25), off)
         self.assertEqual(now["remaining"], 15)
         self.assertLess(peak["pairs"], 15)
         self.assertFalse(peak["past_cap"])
         self.assertGreater(now["pairs"], 15)
         self.assertTrue(now["past_cap"])
+
+    def test_the_cap_extension_plans_toward_the_longer_cap(self):
+        # THE CAP EXTENSION: the same cell, about 27 pairs away with 15 left
+        # under the cap of 40, fits the extended cap of 60.
+        now = plan_week.pairs_to_verdict(betting_cell(PEAKED, pairs=25), plan_ctx([]))
+        self.assertEqual(TEST_POLICY["max_runs_extension"], 1.5)
+        self.assertEqual(now["remaining"], 35)
+        self.assertFalse(now["past_cap"])
 
     def test_a_crossed_peak_still_counts_as_crossed(self):
         # A rejection is final: a keep route whose peak crossed projects 0

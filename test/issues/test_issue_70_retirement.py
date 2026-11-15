@@ -163,7 +163,8 @@ class PolicyTests(unittest.TestCase):
             "max_runs_high_cell": 20, "floor_fraction": 0.10, "floor_min_runs": 3,
             "high_stop_min_without": 0.90, "recheck_weeks": 8, "recheck_weeks_high": 4,
             "max_removal_pauses": 3, "retirement_mode": "auto", "recheck_window": True,
-            "recheck_carry": True})
+            "recheck_carry": True,
+            "max_runs_extension": 1.5})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -659,7 +660,7 @@ class CapTests(unittest.TestCase):
         return series("with", up[:n], cli=None), series("without", down[:n])
 
     def test_a_cell_at_the_cap_has_no_clear_effect(self):
-        policy = {**TEST_POLICY, "max_runs_per_cell": 6}
+        policy = {**TEST_POLICY, "max_runs_per_cell": 6, "max_runs_extension": 1.0}
         result = cell(*self.swing(5), policy=policy)
         self.assertEqual(result["class"], "insufficient")
         result = cell(*self.swing(6), policy=policy)
@@ -667,7 +668,7 @@ class CapTests(unittest.TestCase):
         self.assertIn("6 pairs and neither test rejected", result["reason"])
 
     def test_pairs_past_the_cap_do_not_decide(self):
-        policy = {**TEST_POLICY, "max_runs_per_cell": 6}
+        policy = {**TEST_POLICY, "max_runs_per_cell": 6, "max_runs_extension": 1.0}
         w, o = self.swing(6)
         late_w = series("with", [(100,) * 3] * 10, start=30)
         late_o = series("without", [(10,) * 3] * 10, start=30)
@@ -676,7 +677,7 @@ class CapTests(unittest.TestCase):
                          ("no-clear-effect", 16, 6))
 
     def test_the_cap_needs_min_cli_versions_too(self):
-        policy = {**TEST_POLICY, "max_runs_per_cell": 6}
+        policy = {**TEST_POLICY, "max_runs_per_cell": 6, "max_runs_extension": 1.0}
         w = series("with", [(90, 90, 90), (70, 70, 70)] * 3, cli=CLIS[0])
         o = series("without", [(80, 80, 80)] * 6, cli=CLIS[0])
         result = cell(w, o, policy=policy)

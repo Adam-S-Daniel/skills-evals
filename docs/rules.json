@@ -72,6 +72,16 @@
         "maxRemovalPauses"
       ]
     },
+    "gate-policy.yml#guidance.max_runs_extension": {
+      "value": 1.5,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.max_runs_extension",
+      "names": [
+        "max_runs_extension",
+        "MAX_RUNS_EXTENSION",
+        "maxRunsExtension"
+      ]
+    },
     "gate-policy.yml#guidance.max_runs_high_cell": {
       "value": 20,
       "source": "evals/gate-policy.yml",
@@ -253,6 +263,16 @@
         "MAX_REMOVAL_PAUSES",
         "maxRemovalPauses",
         "MAX_LOOP_PAUSES"
+      ]
+    },
+    "gate-policy.yml#skills.max_runs_extension": {
+      "value": 1.5,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.max_runs_extension",
+      "names": [
+        "max_runs_extension",
+        "MAX_RUNS_EXTENSION",
+        "maxRunsExtension"
       ]
     },
     "gate-policy.yml#skills.max_runs_high_cell": {

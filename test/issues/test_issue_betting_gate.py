@@ -171,8 +171,8 @@ class IdenticalRunsTests(unittest.TestCase):
 
 class VerdictTests(unittest.TestCase):
 
-    def verdict(self, runs, models=("model-a", "model-b")):
-        return gates.retirement({"runs": runs}, list(models), "demo", POLICY, EXPECT)
+    def verdict(self, runs, models=("model-a", "model-b"), policy=POLICY):
+        return gates.retirement({"runs": runs}, list(models), "demo", policy, EXPECT)
 
     @staticmethod
     def arms(with_patterns, without_patterns, model):
@@ -260,11 +260,12 @@ class VerdictTests(unittest.TestCase):
 
     def test_the_cap_gives_no_clear_effect_which_still_retires_automatically(self):
         # A swing of D = +0.3, -0.2 (a gain of 0.05): neither test decides
-        # in the cap's 40 pairs.
+        # in the cap's 40 pairs (without THE CAP EXTENSION).
         swing = [(50, 50, 50), (0, 0, 0)] * 20
         mid = [(20, 20, 20), (20, 20, 20)] * 20
         capped = self.arms(swing, mid, "model-a")
-        result = self.verdict(capped + self.arms(FLAT, FLAT, "model-b"))
+        result = self.verdict(capped + self.arms(FLAT, FLAT, "model-b"),
+                              policy={**POLICY, "max_runs_extension": 1.0})
         classes = {c["model"]: c["class"] for c in result["cells"]}
         self.assertEqual(classes, {"model-a": "no-clear-effect", "model-b": "no-benefit"})
         # Adam, 2026-11-13: every retire is automatic.
@@ -282,7 +283,8 @@ class VerdictTests(unittest.TestCase):
         mid = [(20, 20, 20), (20, 20, 20)] * 20
         with_runs = series("with", swing)
         with_runs[1]["trials"][0] = gates.trial_record(trial(error="timeout"))
-        result = cell(with_runs, series("without", mid), policy=POLICY)
+        result = cell(with_runs, series("without", mid),
+                      policy={**POLICY, "max_runs_extension": 1.0})
         self.assertEqual(result["class"], "insufficient", result["reason"])
         self.assertTrue(result["reason"].startswith(
             "no-clear-effect on the numbers, but the cell has"), result["reason"])

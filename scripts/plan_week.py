@@ -2343,7 +2343,15 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
         if remove == 0 and (cell.get("class") in OPEN_CELL_CLASSES or provisional):
             blocked, remove = BLOCKED_CLI_VERSIONS, math.inf
     pairs = min(keep, remove)
-    cap = gate_cap(ctx, "guidance" if guidance else "skill")
+    base = gate_cap(ctx, "guidance" if guidance else "skill")
+    cap = cell["cap"] if isinstance(cell.get("cap"), int) else base
+    # THE CAP EXTENSION (gates `cell_cap`): a cell not yet at its cap that
+    # is projected to decide within the extended cap is planned toward it;
+    # at the cap, the gates' own `cap` for the cell decides.
+    factor = policy_value(policy, "max_runs_extension", guidance)
+    if base is not None and _number(factor) and n >= PROJECTION_MIN_PAIRS \
+            and held < base and held + pairs <= math.floor(base * factor):
+        cap = math.floor(base * factor)
     remaining = None if cap is None else max(0, cap - held)
     return {"pairs": pairs, "keep": keep, "remove": remove, "remaining": remaining,
             "past_cap": remaining is not None and n >= PROJECTION_MIN_PAIRS
@@ -3696,6 +3704,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "recheck": (cell or {}).get("recheck")
                 if (cell or {}).get("class") == "benefit" else None,
                 "at_cap": (cell or {}).get("at_cap") is True,
+                # THE CAP EXTENSION (gates `cell_cap`): the cell's own cap
+                # once its first `max_runs_per_cell` pairs earned more.
+                "cap": (cell or {}).get("cap"),
                 # DEEP BEFORE WIDE (`pairs_to_verdict`): the gate's own state
                 # the projection reads, the keep and remove tests so far, the
                 # bet prior its next bet starts from, the keep family, and

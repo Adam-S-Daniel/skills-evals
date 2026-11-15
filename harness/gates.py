@@ -423,6 +423,20 @@ re-checks, where fresh re-checks often or almost always never removed it.
 Each kept cell reports `recheck` `carry` ({"remove", "keep"} log wealth),
 and `projected_pairs` uses the keep carry.
 
+THE CAP EXTENSION (Adam, 2026-11-15; `max_runs_extension`). The tests are
+anytime-valid, so `max_runs_per_cell` is a budget, not a statistical limit.
+A cell whose first `max_runs_per_cell` pairs (pooled: beside the current
+rest) decided neither the keep test (at its family's level) nor the remove
+test, but whose nearer test is projected to cross by `max_runs_extension`
+times the cap, gets that larger cap (`cell_cap`). The projection reads only
+those first pairs: a test's log wealth grows about (mean - h)^2 / (2 var) a
+pair (h is 0 for the keep test, the margin for the remove test), so the
+pairs it needs are (threshold - its wealth now) over that. Every rule that
+reads the cap then reads the cell's (`cap` in its verdict); its re-checks
+keep `max_runs_per_cell`. Measured on the Nov 15 open cells with 4 or more
+pairs (docs/forecasts/catch-up-2026-11-15.md): cells undecided at the cap
+fell from 21% to 4%, for about 1 more pair a cell.
+
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
 
@@ -649,6 +663,9 @@ DEFAULT_RECHECK_WINDOW = False
 #: kept cell's re-checks carry both tests' evidence across windows (module
 #: docstring, THE RE-CHECK CARRY).
 DEFAULT_RECHECK_CARRY = False
+#: `max_runs_extension` of a block that names none: 1, no extension (the
+#: rule before 2026-11-15; module docstring, THE CAP EXTENSION).
+DEFAULT_MAX_RUNS_EXTENSION = 1.0
 #: THE RE-CHECK CARRY's guard on a carried early stop: the re-check's own
 #: pairs, at least this many, must average at least the margin.
 CARRY_MIN_OWN_PAIRS = 3
@@ -703,12 +720,14 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     `keep_stands_until_recheck`, true or false (default
     DEFAULT_KEEP_STANDS_UNTIL_RECHECK). Both blocks take `recheck_window`
     and `recheck_carry`, true or false (defaults DEFAULT_RECHECK_WINDOW,
-    DEFAULT_RECHECK_CARRY). An unknown
+    DEFAULT_RECHECK_CARRY), and `max_runs_extension`, a number from 1 to 2
+    (default DEFAULT_MAX_RUNS_EXTENSION). An unknown
     `rest_policy` fails: unlike `retirement_mode`, no value of it is safe to
     fall back to silently."""
     if not isinstance(block, dict):
         raise GatePolicyError(f"gate policy {name} must be a mapping")
-    allowed = set(SKILL_KEYS) | {"retirement_mode", "recheck_window", "recheck_carry"} | (
+    allowed = set(SKILL_KEYS) | {"retirement_mode", "recheck_window", "recheck_carry",
+                                 "max_runs_extension"} | (
         set(GUIDANCE_ONLY_KEYS) if guidance else set())
     unknown = sorted(set(block) - allowed)
     if unknown:
@@ -733,6 +752,11 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     if not isinstance(carry, bool):
         raise GatePolicyError(f"gate policy {name}.recheck_carry must be true or false")
     out["recheck_carry"] = carry
+    extension = block.get("max_runs_extension", DEFAULT_MAX_RUNS_EXTENSION)
+    if not _number(1, 2)(extension):
+        raise GatePolicyError(f"gate policy {name}.max_runs_extension must be a number "
+                              "from 1 to 2")
+    out["max_runs_extension"] = extension
     if guidance:
         rest_policy = block.get("rest_policy", DEFAULT_REST_POLICY)
         if not isinstance(rest_policy, str) or rest_policy not in REST_POLICIES:
@@ -2015,6 +2039,7 @@ def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
                  rest: dict | None = None) -> tuple:
     """((run, class, reason) for every run of one classified current cell,
     the day of its decision point or None): RUN UTILITY's classes."""
+    policy = {**policy, "max_runs_per_cell": cell.get("cap", policy["max_runs_per_cell"])}
     discards, usable = _cell_split(with_runs, without_runs, policy, cell["class"], rest)
     at = None if cell["class"] in UNDECIDED_CLASSES else cell.get("decided_at")
     guard = cell.get("rest_guard")
@@ -2258,6 +2283,37 @@ def _recheck_projection(ds: list, policy: dict, bet_prior: dict | None,
     return hit if hit is not None else cap
 
 
+def cell_cap(pairs: list, policy: dict, family: int = 1, bet_prior: dict | None = None,
+             current=None, pooled: bool = False) -> int:
+    """THE CAP EXTENSION: a cell's cap, `max_runs_per_cell` or that times
+    `max_runs_extension` (rounded down). `pairs` are the cell's pairs in
+    `_classify`'s order; pooled, only those beside `current` count."""
+    cap = policy["max_runs_per_cell"]
+    longer = math.floor(cap * policy.get("max_runs_extension", DEFAULT_MAX_RUNS_EXTENSION))
+    if longer <= cap:
+        return cap
+    ds = [w["numbers"]["run_mean"] - o["numbers"]["run_mean"] for w, o in pairs
+          if (not pooled or w.get("pair_key") == current)
+          and w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
+    if len(ds) < cap:
+        return cap
+    first = ds[:cap]
+    margin = policy["objective_margin"]
+    mean = sum(first) / cap
+    var = max(sum((d - mean) ** 2 for d in first) / (cap - 1), MIN_BET_VARIANCE)
+    need = math.inf
+    for wealth, alpha, h, toward in (
+            (keep_wealth(first, bet_prior), (1 - policy["benefit_confidence"]) / family,
+             0.0, mean > 0),
+            (remove_wealth(first, margin, bet_prior), 1 - policy["retire_confidence"],
+             margin, mean < margin)):
+        if first_crossing(wealth, alpha) is not None:
+            return cap
+        if toward:
+            need = min(need, (-math.log(alpha) - wealth[-1]) / ((mean - h) ** 2 / (2 * var)))
+    return longer if cap + need <= longer else cap
+
+
 def classify_cell(with_runs: list, without_runs: list, policy: dict,
                   judge_carried: bool = False, family: int = 1, bet_prior=None,
                   errored_blocks: bool = True, rest: dict | None = None) -> dict:
@@ -2276,7 +2332,13 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
     skipped, pairs, unpaired, rest_info = _cell_pairs(with_runs, without_runs, rest)
     if callable(bet_prior):
         bet_prior = bet_prior(pairs[0][0]["timestamp"]) if pairs else None
-    full = _classify(pairs, policy, family, bet_prior, rest_info)
+    # THE CAP EXTENSION: every rule below reads the cell's cap; a re-check
+    # keeps the policy's (`recheck_policy`).
+    recheck_policy = policy
+    cap = cell_cap(pairs, policy, family, bet_prior, (rest_info or {}).get("current"),
+                   rest_info is not None)
+    policy = {**policy, "max_runs_per_cell": cap}
+    full = {**_classify(pairs, policy, family, bet_prior, rest_info), "cap": cap}
     guard = full.get("rest_guard")
     if policy.get("recheck_window") and full["class"] == "benefit" \
             and not (isinstance(guard, dict) and guard.get("keep_final") is False):
@@ -2292,11 +2354,11 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
                         and o["numbers"]["run_mean"] is not None),
                        key=lambda p: _order(p[0]))
         pooled_cell = isinstance(guard, dict)
-        recheck = _recheck(every, keep_stamps, policy, bet_prior,
+        recheck = _recheck(every, keep_stamps, recheck_policy, bet_prior,
                            rest_info["current"] if pooled_cell else None,
                            rest_info["min_pairs"] if pooled_cell else 1)
         recheck["projected_pairs"] = _recheck_projection(
-            differences(usable), policy, bet_prior,
+            differences(usable), recheck_policy, bet_prior,
             (recheck.get("carry") or {}).get("keep", 0.0))
         full = {**full, "recheck": recheck}
         errored_all = sum(r["numbers"]["errored_trials"] for r in with_runs + without_runs)

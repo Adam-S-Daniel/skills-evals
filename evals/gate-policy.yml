@@ -46,6 +46,10 @@
 #                          RE-CHECK CARRY): one lifetime removal bound, and
 #                          a strong cell passes in a few pairs. false: each
 #                          re-check starts from scratch.
+#   max_runs_extension     a cell whose first max_runs_per_cell pairs decided
+#                          nothing, but whose nearer test is projected to
+#                          cross by this many times the cap, gets that cap
+#                          (harness/gates.py THE CAP EXTENSION); 1 is off.
 # Guidance block only (ADR 0014, "Pooled-rest addendum (2026-11-07)"):
 #   rest_policy            `pooled-with-current-guard` pools pairs made beside
 #                          every rest of the guidance, guarded by the current
@@ -73,6 +77,7 @@ skills:
   retirement_mode: auto
   recheck_window: true
   recheck_carry: true
+  max_runs_extension: 1.5
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -90,6 +95,7 @@ guidance:
   retirement_mode: auto
   recheck_window: true
   recheck_carry: true
+  max_runs_extension: 1.5
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6
   keep_stands_until_recheck: true
