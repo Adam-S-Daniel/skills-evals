@@ -1110,6 +1110,7 @@ class EndToEndTests(Base):
         self.assertIs(sandbox["enabled"], True)
         self.assertIs(sandbox["failIfUnavailable"], True)
         self.assertIs(sandbox["allowUnsandboxedCommands"], False)
+        self.assertIs(sandbox["autoAllowBashIfSandboxed"], True)
         self.assertEqual(sandbox["network"], run_eval.arm_sandbox_settings()["sandbox"]["network"])
         denied = sandbox["filesystem"]["denyRead"]
         scratch_home = Path(call["env"]["HOME"])

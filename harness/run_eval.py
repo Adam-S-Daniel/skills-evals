@@ -2171,6 +2171,12 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
             "failIfUnavailable": True,
             # No `dangerouslyDisableSandbox` retry.
             "allowUnsandboxedCommands": False,
+            # Sandboxed Bash runs without a permission decision, as every
+            # CLI before 2.1.325 did by default (#1023): the sandbox is the
+            # arm's boundary, and a prompt or classifier refusal in a
+            # headless `-p` arm would change results with no change to a
+            # skill or to guidance. Deny rules still apply.
+            "autoAllowBashIfSandboxed": True,
             # Explicit, so no user or project value fills them in; a managed
             # value would still win, so `managed_sandbox_refusal` refuses one.
             "excludedCommands": [],
