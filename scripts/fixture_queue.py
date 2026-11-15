@@ -7,6 +7,7 @@ when broken, and included in the dashboard").
 
   fixture_queue.py report --issues FILE --pulls FILE --repo DIR
                           --results-tree DIR --now TIME --out FILE
+                          [--guidance DIR]
   fixture_queue.py alerts --report FILE [--dry-run] [--run-url URL]
 
 THE QUEUE. The weekly sweep files one `agent-ready` issue per fixture
@@ -62,7 +63,11 @@ health audit's vocabulary (_agent-guidance docs/routines/fleet-health-audit.md):
       (an origin missing, say) or nobody looked.
   skills-evals/fixture-queue-unused-fixture-<slug>   broken, high
       a fixture with an origin, committed UNUSED_FIXTURE_DAYS ago, with no
-      ingested run: it never reached the schedule, or its runs fail.
+      ingested run: it never reached the schedule, or its runs fail. Not a
+      fixture of a guidance section whose _agent-guidance eval-coverage.yml
+      row is `skipped` (`--guidance`, plan_week.guidance_skipped): the weekly
+      plan holds those out of scope (plan_week.scope_holds), so no run is
+      the design, not a fault. An unreadable manifest holds nothing.
 
 High is the audit's "blocks the self-improvement loop": a stuck pull request
 or an unrun fixture is a request answered and wasted. A stale request only
@@ -100,6 +105,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compute_gates  # noqa: E402
 import explorer_data  # noqa: E402
 import fixture_pr_gate  # noqa: E402
+import plan_week  # noqa: E402
 import retire_skill  # noqa: E402
 import work_item_issues  # noqa: E402
 
@@ -304,9 +310,10 @@ def _sum(values: list):
 
 
 def build_report(issues: list, pulls: list, fixtures: list, runs: dict, by_run: dict,
-                 tree: Path, now: datetime) -> dict:
+                 tree: Path, now: datetime, held: frozenset = frozenset()) -> dict:
     """The report (module docstring). `fixtures` is `origin_fixtures`',
-    `runs` and `by_run` `fixture_runs`' result; `now` is a UTC datetime."""
+    `runs` and `by_run` `fixture_runs`' result; `now` is a UTC datetime;
+    `held` the guidance section ids the weekly plan holds out of scope."""
     stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     requests = requests_of(issues)
     linked = pulls_of(pulls, {r["issue"] for r in requests})
@@ -342,7 +349,10 @@ def build_report(issues: list, pulls: list, fixtures: list, runs: dict, by_run: 
                                      if entry["without"][1] else None),
                "cost_points": _sum(points), "cost_usd": _sum(usd)}
         out_fixtures.append(row)
-        if row["runs"] == 0 and _older(fixture["added_at"], now, UNUSED_FIXTURE_DAYS):
+        section = fixture["subject"].split("/", 1)[1] \
+            if fixture["subject"].startswith("guidance/") else None
+        if row["runs"] == 0 and _older(fixture["added_at"], now, UNUSED_FIXTURE_DAYS) \
+                and section not in held:
             findings.append(finding("unused-fixture", slug(fixture["path"]), fixture["subject"],
                                     f"{REPO_URL}/tree/main/{fixture['path']}"))
     merged = {n for n, (row, _s) in seen_prs.items() if row["state"] == "merged"}
@@ -538,8 +548,10 @@ def report_main(args) -> int:
         issues, pulls = flatten(_load(args.issues)), flatten(_load(args.pulls))
         runs, by_run = fixture_runs(args.results_tree, args.repo / "evals",
                                     now.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+        held = (plan_week.guidance_skipped(args.guidance) or frozenset()) \
+            if args.guidance else frozenset()
         report = build_report(issues, pulls, origin_fixtures(args.repo), runs, by_run,
-                              args.results_tree, now)
+                              args.results_tree, now, held)
         text = json.dumps(report, indent=1, sort_keys=True, allow_nan=False) + "\n"
     except (QueueError, ValueError, OSError, KeyError, TypeError) as exc:
         print(f"fixture_queue: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -600,6 +612,9 @@ def main(argv: list | None = None, *, gh=retire_skill.default_gh, out=sys.stdout
     r.add_argument("--results-tree", type=Path, required=True)
     r.add_argument("--now", required=True)
     r.add_argument("--out", type=Path, required=True)
+    r.add_argument("--guidance", type=Path, default=None,
+                   help="an _agent-guidance checkout: its eval-coverage.yml's skipped "
+                        "sections are held out of scope (no unused-fixture finding)")
     a = sub.add_parser("alerts")
     a.add_argument("--report", type=Path, required=True)
     a.add_argument("--dry-run", action="store_true")

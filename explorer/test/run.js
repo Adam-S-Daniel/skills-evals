@@ -223,6 +223,17 @@ await test('the Needs you list merges half-built issues, document alerts and fir
   ok(rows.map((r) => r.what).join(' | ').includes('2 of 9 fires'), 'the fires line says out of how many');
   eq(attentionRows(fakeDash({}), doc()).length, 0);
 });
+await test('a fixture-queue finding filed as an open half-built issue is listed once, as the issue', () => {
+  const id = 'skills-evals/fixture-queue-unused-fixture-guidance-example-section-fx';
+  const other = 'skills-evals/fixture-queue-unused-fixture-guidance-example-section-gx';
+  const dash = fakeDash({ half_built_issues: okData([{ key: 'k1', state: 'open', kind: 'broken', severity: 'high', title: 'Filed', url: 'https://github.com/example-owner/r/issues/1', finding_id: id },
+    { key: 'k2', state: 'closed', kind: 'broken', severity: 'high', title: 'Closed', url: null, finding_id: other }]) });
+  const f = (fid) => ({ finding_id: fid, kind: 'broken', severity: 'high', subject: 'guidance/example-section', url: 'https://github.com/example-owner/r/tree/main/x' });
+  const rows = attentionRows(dash, doc({ fixture_queue: { findings: [f(id), f(other)] } }));
+  eq(rows.length, 2, JSON.stringify(rows));
+  eq(rows.filter((r) => r.family === 'half-built').length, 1, 'the issue');
+  eq(rows.filter((r) => r.family === 'fixture').length, 1, 'only the finding with no open issue');
+});
 await test('a regression alert is not a Needs attention row: it is trending toward removal, in its own table', () => {
   const d = doc({ alerts: [{ kind: 'regression', name: 'example-skill', subject: 'skill', model: 'claude-opus-5-5', fixture: 'fx-one', verdict: 'regressed', measure: 'judge',
     previous: 7.5, current: 6.0000000000000009, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/r/issues/5' }] });

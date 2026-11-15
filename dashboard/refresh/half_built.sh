@@ -19,6 +19,6 @@ jq -s '{checked_at:(now|todate), total_count:.[0].total_count, incomplete:([.[].
     created_at, closed_at, labels:[.labels[].name],
     kind:((.body//"")|(capture("(?:^|\\n)Kind:\\s*(?<v>[a-z-]+)") | .v)? // null),
     severity:((.body//"")|(capture("(?:^|\\n)Severity:\\s*(?<v>[a-z]+)") | .v)? // null),
-    finding_id:((.body//"")|(capture("(?:^|\\n)Finding-ID:\\s*(?<v>[A-Za-z0-9._-]+)") | .v)? // null)}] | sort_by(.repo,.number)}' "$tmp".p* > "$out.new"
+    finding_id:((.body//"")|(capture("(?:^|\\n)Finding-ID:\\s*(?<v>[A-Za-z0-9._/-]+)") | .v)? // null)}] | sort_by(.repo,.number)}' "$tmp".p* > "$out.new"
 mv "$out.new" "$out"; rm -f "$tmp" "$tmp".p*
 jq -r '"half-built issues: \(.items|length) (\([.items[]|select(.state=="open")]|length) open), incomplete=\(.incomplete)"' "$out"
