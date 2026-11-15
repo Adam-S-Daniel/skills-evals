@@ -162,7 +162,8 @@ class PolicyTests(unittest.TestCase):
             "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 20,
             "max_runs_high_cell": 20, "floor_fraction": 0.10, "floor_min_runs": 3,
             "high_stop_min_without": 0.90, "recheck_weeks": 8, "recheck_weeks_high": 4,
-            "max_removal_pauses": 3, "retirement_mode": "auto", "recheck_window": True})
+            "max_removal_pauses": 3, "retirement_mode": "auto", "recheck_window": True,
+            "recheck_carry": True})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}

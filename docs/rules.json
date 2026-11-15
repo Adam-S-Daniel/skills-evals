@@ -112,6 +112,16 @@
         "objectiveMargin"
       ]
     },
+    "gate-policy.yml#guidance.recheck_carry": {
+      "value": true,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.recheck_carry",
+      "names": [
+        "recheck_carry",
+        "RECHECK_CARRY",
+        "recheckCarry"
+      ]
+    },
     "gate-policy.yml#guidance.recheck_weeks": {
       "value": 8,
       "source": "evals/gate-policy.yml",
@@ -283,6 +293,16 @@
         "objective_margin",
         "OBJECTIVE_MARGIN",
         "objectiveMargin"
+      ]
+    },
+    "gate-policy.yml#skills.recheck_carry": {
+      "value": true,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.recheck_carry",
+      "names": [
+        "recheck_carry",
+        "RECHECK_CARRY",
+        "recheckCarry"
       ]
     },
     "gate-policy.yml#skills.recheck_weeks": {

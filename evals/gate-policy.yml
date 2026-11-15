@@ -41,6 +41,11 @@
 #                          pairs (it can remove, stops early once the gain
 #                          clears the margin, else runs to max_runs_per_cell);
 #                          false: re-check pairs cannot change a keep.
+#   recheck_carry          true: a kept cell's re-checks carry both tests'
+#                          evidence across windows (harness/gates.py THE
+#                          RE-CHECK CARRY): one lifetime removal bound, and
+#                          a strong cell passes in a few pairs. false: each
+#                          re-check starts from scratch.
 # Guidance block only (ADR 0014, "Pooled-rest addendum (2026-11-07)"):
 #   rest_policy            `pooled-with-current-guard` pools pairs made beside
 #                          every rest of the guidance, guarded by the current
@@ -67,6 +72,7 @@ skills:
   max_removal_pauses: 3
   retirement_mode: auto
   recheck_window: true
+  recheck_carry: true
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -83,6 +89,7 @@ guidance:
   max_removal_pauses: 3
   retirement_mode: auto
   recheck_window: true
+  recheck_carry: true
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6
   keep_stands_until_recheck: true

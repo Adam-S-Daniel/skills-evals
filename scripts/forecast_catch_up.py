@@ -56,6 +56,7 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import plan_week  # noqa: E402
+import stakes  # noqa: E402
 
 #: Assumptions the verdict document cannot supply. Each is (default, what
 #: it is); a run's --assumptions file overrides any of them, and the output
@@ -70,7 +71,8 @@ ASSUMPTION_KEYS = {
     "pairs_per_fire": (2.0, "pairs (one fixture x one model, both arms) one fire carries"),
     "api_credit_usd_per_week": (0.0, "extra eval dollars a week from the monthly API credit lane"),
     "new_hooks_per_week": (None, "git hooks added per week; default: arrivals/targets.json "
-                                 "(reported, not priced)"),
+                                 "(reported at $0: a hook's verdict comes from its usage, "
+                                 "evals/hook-policy.yml, not from eval runs)"),
     "new_skills_per_week": (None, "skills added per week; default: arrivals/targets.json, "
                                   "else batches/current.json rate"),
     "new_sections_per_week": (None, "guidance sections added per week; default: as skills"),
@@ -265,6 +267,34 @@ def dormant_usd(gates: dict, costs: dict, overhead: float, prior_pairs: float) -
     return total
 
 
+def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
+                         skipped_sections: frozenset = frozenset(),
+                         stakes_table: dict | None = None) -> float:
+    """Dollars a week of re-checks of kept subjects: each kept cell's
+    `recheck.projected_pairs` (harness/gates.py, THE RE-CHECK WINDOW and
+    THE RE-CHECK CARRY; the cap when absent), priced at its model's pair
+    cost plus the fire overhead, over its re-check age (`recheck_weeks_high`
+    for a high-stakes subject in evals/stakes.yml, else `recheck_weeks`)."""
+    fallback = sum(costs.values()) / len(costs) if costs else 0.0
+    total = 0.0
+    for block, kind, key in (("skills", "skill", "policy"),
+                             ("guidance", "guidance", "guidance_policy")):
+        policy = gates.get(key) or gates["policy"]
+        for name, subject in (gates.get(block) or {}).items():
+            if subject.get("verdict") != "keep" or (block == "guidance"
+                                                   and name in skipped_sections):
+                continue
+            high = stakes_table is not None and \
+                stakes.level_of(stakes_table, kind, name) == "high"
+            age = policy["recheck_weeks_high" if high else "recheck_weeks"]
+            for cell in subject.get("cells") or []:
+                recheck = cell.get("recheck")
+                projected = recheck.get("projected_pairs") if isinstance(recheck, dict) else None
+                pairs = projected if _number(projected) else policy["max_runs_per_cell"]
+                total += pairs * (costs.get(cell.get("model"), fallback) + overhead) / age
+    return total
+
+
 def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
     """Weeks to spend `backlog` dollars at `capacity` a week less the
     keep-up spend; inf when keep-up takes the whole capacity."""
@@ -276,7 +306,8 @@ def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
 
 def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              batch: dict | None, assumptions: dict,
-             skipped_sections: frozenset = frozenset()) -> dict:
+             skipped_sections: frozenset = frozenset(),
+             stakes_table: dict | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
     central figure with a low-high range, and every input with its source."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
@@ -327,7 +358,6 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
                   for name, s in (gates.get(block) or {}).items()
                   if s.get("verdict") == "keep"
                   and not (block == "guidance" and name in skipped_sections))
-    recheck_weeks = gates["policy"]["recheck_weeks"]
     # Under keep_stands_until_recheck (gate-policy.yml) a rest change no
     # longer reopens a guidance keep; the re-check item prices it instead.
     stands = bool((gates.get("guidance_policy") or {}).get("keep_stands_until_recheck"))
@@ -338,7 +368,11 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         "new fixtures on open subjects": a["new_fixtures_per_week_open"] * models
         * prior_pairs * mean_pair,
         "skill text edits": a["skill_text_edits_per_week"] * median,
-        "re-checks of kept subjects": decided * median / recheck_weeks,
+        "re-checks of kept subjects": recheck_usd_per_week(gates, costs, overhead,
+                                                           skipped_sections, stakes_table),
+        # A git hook's verdict comes from its usage (evals/hook-policy.yml),
+        # not from eval runs, so new hooks cost no eval dollars.
+        "new git hooks": 0.0,
         "guidance keeps re-proved after a rest change": rest_changes
         * sum(r["usd_central"] for r in rows if r["kind"] == "guidance" and r["route"] == "keep"),
     }
@@ -440,7 +474,8 @@ def main(argv: list | None = None) -> int:
     from_arrivals = arrival_assumptions(arrivals_doc, now)
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
-    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped)
+    table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
+    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table)
     doc["inputs"]["assumption_sources"] = sources
     # Why an arrival rate fell back, so a reader can tell a default from data.
     doc["inputs"]["arrivals_status"] = (

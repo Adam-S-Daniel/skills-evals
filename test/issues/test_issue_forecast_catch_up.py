@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "scripts"))
 import forecast_catch_up as fc  # noqa: E402
 
-POLICY = {"max_runs_per_cell": 20, "recheck_weeks": 8}
+POLICY = {"max_runs_per_cell": 20, "recheck_weeks": 8, "recheck_weeks_high": 4}
 CTX = {"policy": POLICY, "guidance_policy": POLICY}
 
 
@@ -132,6 +132,26 @@ class Forecast(unittest.TestCase):
         self.assertEqual(doc["kept_subjects"], 1)
         weeks = doc["scenarios"]["plan_cap_only"]["weeks_central"]
         self.assertAlmostEqual(weeks, 24.0 / (25 / 0.15 - doc["keep_up_usd_per_week"]))
+
+    def test_rechecks_are_priced_per_kept_cell_at_its_projection_and_age(self):
+        item = "re-checks of kept subjects"
+        # No projection: the cell's re-check is priced at the cap, $1 a pair,
+        # every recheck_weeks.
+        doc = self.run_forecast()
+        self.assertAlmostEqual(doc["keep_up_items"][item],
+                               POLICY["max_runs_per_cell"] / POLICY["recheck_weeks"])
+        cell = {**self.GATES["skills"]["kept"]["cells"][0], "recheck": {"projected_pairs": 6}}
+        gates = {**self.GATES, "skills": {"kept": {"verdict": "keep", "cells": [cell]}}}
+        doc = self.run_forecast(gates=gates)
+        self.assertAlmostEqual(doc["keep_up_items"][item], 6 / POLICY["recheck_weeks"])
+        # A high-stakes subject is re-checked at recheck_weeks_high.
+        table = {("skill", "kept"): {"stakes": "high"}}
+        got = fc.recheck_usd_per_week(gates, {"m": 1.0}, 0.0, frozenset(), table)
+        self.assertAlmostEqual(got, 6 / POLICY["recheck_weeks_high"])
+
+    def test_new_git_hooks_cost_no_eval_dollars(self):
+        doc = self.run_forecast(new_hooks_per_week=5.0)
+        self.assertEqual(doc["keep_up_items"]["new git hooks"], 0.0)
 
     def test_never_when_keep_up_exceeds_capacity(self):
         doc = self.run_forecast(new_fixtures_per_week_open=100.0)
