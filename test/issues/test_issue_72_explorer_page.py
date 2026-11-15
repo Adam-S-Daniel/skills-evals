@@ -1,4 +1,4 @@
-"""Issues #72 and #123: the Evals Explorer page (tool/index.html).
+"""Issues #72 and #123: the Improvement Loop Explorer page (tool/index.html).
 
 tool/index.html is the build output of explorer/src (`npm run build` in
 explorer/). The page's own tests are plain Node (tool/test/run.js, no

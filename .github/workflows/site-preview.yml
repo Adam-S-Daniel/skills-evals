@@ -158,7 +158,7 @@ jobs:
           SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
           SOURCE_REF: pr-${{ github.event.pull_request.number }}
           SOURCE_PR: ${{ github.event.pull_request.number }}
-          COMMIT_MSG: "tools: preview Evals Explorer PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
+          COMMIT_MSG: "tools: preview Improvement Loop Explorer PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
         run: bash scripts/sync_to_site.sh
 
       - name: Ensure the draft mirror PR
@@ -169,7 +169,7 @@ jobs:
           SRC_TITLE: ${{ github.event.pull_request.title }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          title="Preview: Evals Explorer PR #${PR_NUMBER} — ${SRC_TITLE}"
+          title="Preview: Improvement Loop Explorer PR #${PR_NUMBER} — ${SRC_TITLE}"
           body="Draft mirror of ${GITHUB_REPOSITORY}#${PR_NUMBER} (head \`${HEAD_SHA::7}\`) for the site preview pipeline. Do not merge: it closes automatically when the source PR closes, and a merged source PR lands via the \`tool-sync/skills-evals\` PR instead."
           pr=$(gh pr list -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --state open --json number -q '.[0].number')
           if [ -z "$pr" ]; then

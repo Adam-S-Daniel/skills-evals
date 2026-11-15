@@ -25,7 +25,7 @@ summary.
   improve run for the skill.
 
 KIND LABELS AND HEADER LINES (Adam, 2026-11-03, the fixture-queue tracking
-the Evals Explorer shows, scripts/fixture_queue.py): a fleet-worker issue
+the Improvement Loop Explorer shows, scripts/fixture_queue.py): a fleet-worker issue
 carries ONE kind label beside `agent-ready`, the kind itself
 (`needs-fixtures`, `needs-harder-fixtures` or `needs-trigger-set`), and
 its body's marker line is followed by `Kind: <kind>`, `Subject: <key>` and

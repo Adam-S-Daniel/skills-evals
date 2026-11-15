@@ -1,28 +1,29 @@
 /* Summary: the front page's headline tiles. */
 import { STRINGS } from '../core/strings.js';
-import { parseTime, fmtDateTime, fmtCount, fmtUtcDay, fmtDayKey, fmtTime, etDayKey, dayKeyOf } from '../core/format.js';
+import { parseTime, fmtCount, fmtUtcDay, fmtDayKey, fmtTime, etDayKey, dayKeyOf } from '../core/format.js';
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, wholeGuidance } from '../core/items.js';
 import { hookTile } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
-import { term, defn } from '../core/terms.js';
+import { term } from '../core/terms.js';
 import { tile, srcTip, panel, sourceTimes, TIME_KEYS } from './bits.js';
 import { alertsView, firesFigures } from './alerts.js';
 import { trendingView } from './trending.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
 import { isTrending } from '../core/stats.js';
 
-/* The build time and newest eval run on one line, then a fold (shut by
-   default) listing every dated source grouped by its Eastern day, newest
-   day first, and what was read at build time. */
+/* A fold (shut by default) listing every dated source grouped by its Eastern
+   day, newest day first. What the build itself read (removal PRs, the lesson
+   funnel, fixture checks) is one more source, dated by the build time. */
 export function asOfLine(doc, refMs) {
-  const newest = parseTime(doc.newest_run);
   // Grouped by calendar day key: an Eastern day for a timed source, the
   // source's own day for one dated by a day only (lessons). Newest day first;
   // within a day, newest time first and day-only sources last.
+  const times = sourceTimes(doc, TIME_KEYS);
+  if (isFinite(refMs)) times.push({ key: 'build', label: STRINGS.timesAtBuildList, ms: refMs, day: false });
   const groups = new Map();
-  for (const t of sourceTimes(doc, TIME_KEYS)) {
+  for (const t of times) {
     const key = t.day ? dayKeyOf(t.ms) : etDayKey(t.ms);
     if (!key) continue;
     if (!groups.has(key)) groups.set(key, []);
@@ -32,9 +33,7 @@ export function asOfLine(doc, refMs) {
     const items = groups.get(key).sort((a, b) => (a.day - b.day) || (b.ms - a.ms));
     return h('li', null, h('b', null, fmtDayKey(key, refMs)), ' ' + items.map((t) => (t.day ? t.label : t.label + ' ' + fmtTime(t.ms))).join(' \u00b7 '));
   });
-  rows.push(h('li', null, h('b', null, STRINGS.timesAtBuild), ' ' + STRINGS.timesAtBuildList));
   return h('div', { class: 'asof' },
-    h('p', { class: 'src asof-line' }, defn('dataBuilt'), ' ' + fmtDateTime(refMs), ' \u00b7 ', defn('newestRun'), ' ' + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet)),
     h('details', { class: 'asof-times' }, h('summary', null, STRINGS.timesFold), h('ul', { class: 'src' }, rows)));
 }
 

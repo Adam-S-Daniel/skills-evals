@@ -291,7 +291,7 @@ test('the start-up code names the one page title, not a property of its state', 
   // Regression: a title rename once left `state.STRINGS.title` in boot(), which
   // only runs in a browser, so every page load showed "could not be shown".
   ok(!/\bstate\.STRINGS\b/.test(html), 'no state.STRINGS reference');
-  eq(P.STRINGS.title, 'Evals Explorer');
+  eq(P.STRINGS.title, 'Improvement Loop Explorer');
 });
 test('stakes show on the card for high and no-eval subjects only', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
@@ -621,7 +621,7 @@ test('the public voice says "the owner"; the private voice says "you"', () => {
     eq(P.STRINGS.lessonSignals.rule, 'a rule you stated');
     eq(P.STRINGS.title, 'Self-improvement project');
   } finally { P.useVoice('owner'); }
-  eq(P.STRINGS.title, 'Evals Explorer');
+  eq(P.STRINGS.title, 'Improvement Loop Explorer');
 });
 test('search finds subjects, checks and pull requests, and filters by verdict', () => {
   const items = P.searchItems(fixture, null);
@@ -1009,9 +1009,9 @@ test('every chart has a title above it and every legend item is a definition but
     }
   }
 });
-test('the top of the summary has one line saying what each time refers to', () => {
+test('the top of the summary has one fold dating each source, with no separate built line', () => {
   const line = sp(P.textOf(P.asOfLine(fixture, Date.parse(fixture.generated_at))));
-  ok(/^Built .* ET . newest eval run .* ET/.test(line), line);
+  ok(/^Data times /.test(line) && !/Built |Read at build/.test(line) && /fixture checks \d+:\d\d [AP]M/.test(line), line);
   const t = sp(P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {})));
   ok(!t.includes(P.STRINGS.srcLine(P.STRINGS.srcDoc, '').slice(0, 8)) || true);
   ok(!/Data as of/.test(t), 'the separate Data as of tile is gone');

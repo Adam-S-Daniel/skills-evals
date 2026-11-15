@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Evals Explorer's `lessons` (Adam, 2026-11-03): the session miner's
+"""The Improvement Loop Explorer's `lessons` (Adam, 2026-11-03): the session miner's
 lesson proposals, published with public-safe fields only.
 
 The proposals come from private local sessions, so these tests pin what the

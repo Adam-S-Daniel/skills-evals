@@ -1,6 +1,6 @@
 // Builds three pages from src/, each ONE self-contained file with its entry
 // bundled inline and no external scripts:
-//   ../tool/index.html            the public Evals Explorer (template/public.html)
+//   ../tool/index.html            the public Improvement Loop Explorer (template/public.html)
 //   ../dashboard/page/index.html  the private dashboard page (template/private.html)
 //   dist/artifact/index.html      the public Explorer as a claude.ai artifact
 //                                 (template/public.html), reading latest.json

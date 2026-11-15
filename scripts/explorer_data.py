@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write `explorer/latest.json`: the public data behind the Evals Explorer (#72).
+"""Write `explorer/latest.json`: the public data behind the Improvement Loop Explorer (#72).
 
   explorer_data.py --results-tree DIR --roster evals/roster.yml
                    --policy evals/gate-policy.yml --as-of TIME
@@ -187,7 +187,7 @@ only the issues, its `date`, `items` and `left_out` are None (unknown, not
 empty). `finish` holds every item and issue to its keys.
 
 THE PUBLIC DATA CONTRACT (2026-11-04) makes this document the single public data contract
-of the Evals Explorer and the project dashboard, still `schema_version` 1:
+of the Improvement Loop Explorer and the project dashboard, still `schema_version` 1:
 the change only adds fields, so a reader of the earlier document keeps
 working. `explorer/schema.json`
 describes all of it, and `main` validates the document against it after

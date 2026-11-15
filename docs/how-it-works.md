@@ -1343,7 +1343,7 @@ guidance already covers it. A `retire` whose alone check has not finished
 (no alone cell yet, or one still undecided) gets verdict `insufficient`
 (`in_situ_verdict` stays `retire`), neither
 removed nor proposed to the owner (2026-11-13), since the alone check could
-still turn it into `shorten-or-merge`; the planner fires the alone arm. The Evals Explorer shows a section's alone results only
+still turn it into `shorten-or-merge`; the planner fires the alone arm. The Improvement Loop Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
 whole-guidance headline still pools every run with no guidance, and each
 section card's trend, help-per-word order and early sign use the in-situ
