@@ -151,8 +151,12 @@ export function alertWhat(a) {
 /* One list of what needs attention, with a kind column. */
 export function attentionRows(dash, doc) {
   const rows = [];
+  // A fixture-queue finding is also filed as a half-built issue with the
+  // same Finding-ID: list it once, as the issue.
+  const filed = new Set();
   for (const r of some(dash, 'half_built_issues') || []) {
     if (r.state !== 'open') continue;
+    if (typeof r.finding_id === 'string' && r.finding_id) filed.add(r.finding_id);
     rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built', hbKind: r.kind });
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
@@ -169,7 +173,7 @@ export function attentionRows(dash, doc) {
   }
   const q = doc.fixture_queue;
   for (const x of q && Array.isArray(q.findings) ? q.findings : []) {
-    if (x) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null, acts: P.actsFixture(x.kind || ''), family: 'fixture' });
+    if (x && !filed.has(x.finding_id)) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null, acts: P.actsFixture(x.kind || ''), family: 'fixture' });
   }
   const order = { high: 0, medium: 1, low: 2 };
   return rows.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));

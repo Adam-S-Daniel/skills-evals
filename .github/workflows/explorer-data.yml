@@ -284,6 +284,7 @@ jobs:
           python3 scripts/fixture_queue.py report \
             --issues "$RUNNER_TEMP/queue-issues.json" --pulls "$RUNNER_TEMP/queue-pulls.json" \
             --repo . --results-tree "$GITHUB_WORKSPACE/eval-results" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --out "$out" || rc=$?
           if [ "$rc" -ne 0 ]; then
             rm -f "$out"
