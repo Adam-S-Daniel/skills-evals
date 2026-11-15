@@ -1,24 +1,36 @@
 {
   "include_private_names": false,
+  "paused_removed": [
+    {
+      "fixtures": 1,
+      "registry": "cms-platform",
+      "skill": "consumer-repo-provisioning"
+    },
+    {
+      "fixtures": 1,
+      "registry": "cms-platform",
+      "skill": "github-actions-sha-pinning"
+    }
+  ],
   "problems": [],
   "publication": {
-    "as_of": "2026-11-12T16:53:31Z",
-    "guidance_revision": "3cde93525764497ef6cea362d9608c3598d2f699",
+    "as_of": "2026-11-15T15:43:11Z",
+    "guidance_revision": "acb23735bbb4c069dbeda19bbff4faf6ab42175d",
     "public_registry_revisions": {
-      "adam-agentskills": "ad9094d01a7699294149aaf3c968d8665f081d15",
-      "adamdaniel.ai": "536f9a3e3692eb47173d56cc90fabbbda8ea5a41",
-      "cms-platform": "8cb9ffe249ee6fa66b5852cf96093d47aa1c044b"
+      "adam-agentskills": "7c01814fbed9eb20608d7f69037b925f4b1a8705",
+      "adamdaniel.ai": "35db9e3eb30b11b9d4b3a143555080b92f86f237",
+      "cms-platform": "958b208b17b75e275f087a66f0fa87068435d825"
     },
-    "repository_revision": "2a5072e3725def05674fa8d22f3d3d1dce855034",
-    "run_id": "43263445626"
+    "repository_revision": "b61610f45abf55baa7f9c9f89f4870a15851d964",
+    "run_id": "43731387659"
   },
   "registries": [
     {
       "counts": {
-        "covered": 16,
+        "covered": 15,
         "gap": 1,
         "skipped": 7,
-        "total": 24
+        "total": 23
       },
       "layout": "plugins/*/skills/*/SKILL.md",
       "name": "adam-agentskills",
@@ -47,14 +59,6 @@
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "ci-job-performance",
-          "status": "covered"
-        },
-        {
-          "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
-          "reason": null,
-          "registry": "adam-agentskills",
-          "skill": "debug-github-workflows",
           "status": "covered"
         },
         {
@@ -107,7 +111,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "vendor-release-impact-issues",
@@ -222,10 +226,10 @@
     },
     {
       "counts": {
-        "covered": 10,
+        "covered": 8,
         "gap": 0,
         "skipped": 3,
-        "total": 13
+        "total": 11
       },
       "layout": "skills/*/SKILL.md",
       "name": "cms-platform",
@@ -285,23 +289,7 @@
           "fixtures": 1,
           "reason": null,
           "registry": "cms-platform",
-          "skill": "consumer-repo-provisioning",
-          "status": "covered"
-        },
-        {
-          "bundle": null,
-          "fixtures": 1,
-          "reason": null,
-          "registry": "cms-platform",
           "skill": "editorial-label-audit",
-          "status": "covered"
-        },
-        {
-          "bundle": null,
-          "fixtures": 1,
-          "reason": null,
-          "registry": "cms-platform",
-          "skill": "github-actions-sha-pinning",
           "status": "covered"
         },
         {
@@ -378,9 +366,9 @@
   ],
   "schema": 1,
   "totals": {
-    "covered": 28,
+    "covered": 25,
     "gap": 3,
     "skipped": 10,
-    "total": 41
+    "total": 38
   }
 }
