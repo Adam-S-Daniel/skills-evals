@@ -16,7 +16,7 @@
    "name": "budget.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Test budget settings"
  },
  "checkins": {
@@ -27,7 +27,7 @@
    "name": "checkins.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Scheduled check-ins"
  },
  "cost_benefit_summary": {
@@ -38,7 +38,7 @@
    "name": "cost_benefit_summary.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
@@ -49,7 +49,7 @@
    "name": "cost_benefit_weeks.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Cost and benefit, by week"
  },
  "eval_allowance": {
@@ -60,7 +60,7 @@
    "name": "eval_allowance.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Test allowance snapshot"
  },
  "eval_ingests": {
@@ -91,7 +91,7 @@
    "name": "half_built_issues.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Half-built and broken features, findings"
  },
  "half_built_summary": {
@@ -102,7 +102,7 @@
    "name": "half_built_summary.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Half-built and broken features, summary"
  },
  "merged_prs": {
@@ -184,7 +184,7 @@
    "name": "roster.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Models in the tests"
  },
  "routines": {
@@ -195,7 +195,7 @@
    "name": "routines.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Routines"
  },
  "run_stream": {
@@ -206,7 +206,7 @@
    "name": "run_stream.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Run console"
  },
  "threads": {
@@ -217,7 +217,7 @@
    "name": "threads.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Project threads"
  },
  "usage_rows": {
@@ -228,7 +228,7 @@
    "name": "usage_rows.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Real-work use, weekly"
  },
  "usage_sources": {
@@ -239,7 +239,7 @@
    "name": "usage_sources.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Real-work use sources"
  },
  "waiting": {
@@ -250,7 +250,7 @@
    "name": "waiting.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Waiting on you"
  },
  "explorer": {
@@ -261,7 +261,7 @@
    "name": "explorer.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Evals document"
  },
  "explorer_private": {
@@ -272,7 +272,7 @@
    "name": "explorer_private.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Private-skill results (optional)"
  },
  "refresh": {
@@ -283,7 +283,7 @@
    "name": "refresh.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 50,
   "title": "Refresh clock"
  }
 }

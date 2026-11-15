@@ -38,7 +38,7 @@ raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 
 Routes are the same in both builds; `?subject=guidance`, the old tab hashes
 (`#overview`, `#evals`, `#costbenefit`, ...) and the old routes (`#/loop`, `#/impact`,
-`#/ops`, `#/removed`) redirect. A snapshot older than 13 hours shows a banner on every group. The public build has no
+`#/ops`, `#/removed`) redirect. A snapshot older than 25 hours shows a banner on every group. The public build has no
 Needs you group, says "the owner" where this page says "you", and folds checks
 in private repos into one row. Its bundle never holds private view code,
 private dataset ids or `dash` (an AST check in `explorer/test/run.js`).
@@ -142,7 +142,7 @@ tokens and cost $5.43, for a task that fires twice a day.
    `build.py` copies `explorer/latest.json` unchanged into the `explorer` dataset and refuses to
    build without it. It refuses to write an empty dataset: an empty list reads as "failed to
    load" on the page, so empty lists get one placeholder row (key field `none`), which the page hides.
-8. **Compare and publish.** Upload only datasets that changed. Still set `updated` on every `file` dataset the build wrote, changed or not, `budget`, `roster` and `explorer_private` included (each is read fresh every run). The dashboard header's "Updated <age>" is the OLDEST `updated.at` of all file datasets, so one dataset left unstamped makes the whole page read days old (2026-11-13: `budget`, last stamped Nov 9, made it say "Updated 4 days ago" after a run that morning). Every dataset goes stale after 26 hours (two refresh intervals plus two). Skip `eval_allowance` when
+8. **Compare and publish.** Upload only datasets that changed. Still set `updated` on every `file` dataset the build wrote, changed or not, `budget`, `roster` and `explorer_private` included (each is read fresh every run). The dashboard header's "Updated <age>" is the OLDEST `updated.at` of all file datasets, so one dataset left unstamped makes the whole page read days old (2026-11-13: `budget`, last stamped Nov 9, made it say "Updated 4 days ago" after a run that morning). Every dataset goes stale after 50 hours (two refresh intervals plus two). Skip `eval_allowance` when
    only its timestamps and pace moved. Never skip `refresh`: it changes every run, and the page's
    "refresh did not land" banner reads it.
    For each changed file, run Artifact `publish` with the dashboard's `url`, `asset: true` and
@@ -277,6 +277,6 @@ source holds them:
 2. Create a Dashboard artifact. Write `page/index.html` to `files/index.html`,
    and each entry of `page/datasets.json` to `datasets/<id>`, with your owner and
    repo names in the live queries.
-3. Run one refresh by hand, then schedule `tasks/refresh.md` every 12 hours (7:29 AM and 7:29 PM ET; `REFRESH_INTERVAL_HOURS` in `build.py`).
+3. Run one refresh by hand, then schedule `tasks/refresh.md` every 24 hours (7:29 AM ET; `REFRESH_INTERVAL_HOURS` in `build.py`).
 4. The page's words are in `explorer/src/core/strings.js` (shared) and
    `explorer/src/private/strings.js` (this page only); rebuild after editing.
