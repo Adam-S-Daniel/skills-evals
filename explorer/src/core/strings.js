@@ -422,7 +422,7 @@ function buildStrings(you) {
   colRunsWindow: (weeks) => (weeks === null ? 'Runs outside CI' : 'Runs outside CI, ' + weeks + ' weeks'),
   runsNotCounted: 'not counted',
   blockedOf: (blocked, runs) => blocked + ' of ' + runs + (runs === 1 ? ' run' : ' runs'),
-  hookRunsNote: 'Runs outside CI are commits and pushes on ' + W.whose + ' computers (and cloud sessions, where recorded) that ran the check. CI records only which checks failed a red run, never how often each ran, so no check\'s CI runs are counted. Where every run is counted, Blocked reads like "4 of 30 runs".',
+  hookRunsNote: 'Runs outside CI are commits and pushes on ' + W.whose + ' computers (and cloud sessions, where recorded) that ran the check. CI records only which checks failed a red run, never how often each ran, so no check\'s CI runs are counted. For a check with no CI blocks, Blocked reads like "4 of 30 runs".',
   overridesNotCounted: 'not counted',
   hookOverridesNote: 'Overrides (work pushed past a refusal) are not counted for this check yet, so "overridden often" cannot be judged; the verdict rests on runs and blocks alone.',
   hookRule: (rate, weeks) => 'A check earns its place when it blocks something in ' + (weeks === null ? 'the window (length unknown)' : weeks + ' weeks') + '; it is overridden often when more than ' + rate + ' of its blocks are pushed past anyway.',
