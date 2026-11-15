@@ -33,6 +33,7 @@ follow-ups, gets `run_eval.arm_isolation_flags()`:
 
 - `--settings` with `run_eval.arm_sandbox_settings()`: `sandbox.enabled`,
   `failIfUnavailable: true`, `allowUnsandboxedCommands: false`,
+  `autoAllowBashIfSandboxed: true` (addendum 2026-11-15),
   `network.strictAllowlist: true`, `network.allowedDomains: []`, and
   `network.deniedDomains` for GitHub (`github.com`, `*.github.com`,
   `codeload.github.com`, `githubusercontent.com`, `*.githubusercontent.com`),
@@ -482,3 +483,24 @@ printed when commands run unsandboxed, which now fails the arm even at exit
 Not covered here: skill-creator's own `claude -p` calls in the improvement
 loop (`scripts/propose_skill_edit.py`) run through the guard launcher, which
 adds `--setting-sources` and `--strict-mcp-config` but none of these flags.
+
+## Addendum: sandboxed Bash runs without a permission decision (2026-11-15)
+
+Claude Code 2.1.325 (2026-11-13) stopped auto-allowing sandboxed Bash
+commands by default: they now go through the normal permission flow unless
+`sandbox.autoAllowBashIfSandboxed: true` is set
+([skills-evals#1023](https://github.com/Adam-S-Daniel/skills-evals/issues/1023)).
+Arms run headless under `--permission-mode auto`, where that flow is the
+classifier, and a refusal there is a tool denial the arm cannot answer.
+
+`arm_sandbox_settings()` now sets `autoAllowBashIfSandboxed: true`. The
+sandbox above is the arm's boundary, so the classifier adds no protection a
+trial needs, and the explicit value keeps arms on the behavior every CLI
+before 2.1.325 had by default, so results stay comparable across that
+release. Explicit deny rules still apply to sandboxed commands. A managed
+policy's `autoAllowBashIfSandboxed` still wins over `--settings` and is
+still accepted as any boolean; a managed `false` would put sandboxed
+commands back through the permission flow, which makes trials slower or
+denied, not less isolated. Arms that ran on 2.1.325 or later before this
+change ran without the key; how runs across harness changes compare is
+governed by [`docs/rules.md`](../rules.md).

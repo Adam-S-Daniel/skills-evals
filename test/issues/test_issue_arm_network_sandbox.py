@@ -94,6 +94,7 @@ class ArmSandboxSettingsTests(unittest.TestCase):
             "enabled": True,
             "failIfUnavailable": True,
             "allowUnsandboxedCommands": False,
+            "autoAllowBashIfSandboxed": True,
             "excludedCommands": [],
             "network": {
                 "strictAllowlist": True,
