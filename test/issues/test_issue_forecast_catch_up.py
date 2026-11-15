@@ -123,6 +123,34 @@ class Forecast(unittest.TestCase):
                                {"fire_overhead_usd": 0.0, **assumptions},
                                frozenset({"skipped-one"}))
 
+    def test_automatic_spend_breaks_down_non_eval_points(self):
+        automatic = {"as_of": "2026-11-15T18:00:00+00:00", "unmeasured": ["Job x"],
+                     "categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15},
+                                    {"label": "Evals", "meter_usd_per_week": 0.0}]}
+        budget = {**self.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, budget, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "interactive_points_per_week": 50.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        # $20/0.15 a week at $1/0.15 a point is 20 points; a $0 category is left out.
+        self.assertEqual(doc["inputs"]["non_eval_points_breakdown"],
+                         {"Dashboard": 20.0, "Interactive threads and local sessions": 50.0})
+        self.assertAlmostEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 70.0)
+        # The account stop (80) less 70 points of other use leaves evals 10 of their 25.
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertEqual(doc["inputs"]["automatic_unmeasured_jobs"], 1)
+
+    def test_given_non_eval_points_win_over_the_breakdown(self):
+        automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 3.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "non_eval_points_per_week": 5.0,
+                               "interactive_points_per_week": 50.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        self.assertEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 5.0)
+
     def test_backlog_capacity_and_weeks(self):
         doc = self.run_forecast(new_skills_per_week=0.0, new_sections_per_week=0.0)
         # $1 a pair: subject a keeps at 4 pairs, subject b needs both cells (20).
@@ -249,5 +277,92 @@ class Arrivals(unittest.TestCase):
                          set(target_arrivals.KINDS))
 
 
+class MeterNonEval(unittest.TestCase):
+    """The non-eval total measured from the account meter's history."""
+
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    END = _dt(2026, 11, 15, 12, tzinfo=_tz.utc)
+
+    def at(self, hours_before):
+        return self.END - self._td(hours=hours_before)
+
+    def test_whole_week_less_evals_capped_at_the_rise_while_they_ran(self):
+        # Week from the Nov 9 reset to END (Nov 15 noon, 5.79 days). Meter
+        # 1 -> 39 while evals ran (calibrated at 50, so only 38 come off),
+        # then 39 -> 94; a drop is skipped.
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        h = lambda x: reset + self._td(hours=x)  # noqa: E731
+        readings = [(h(0), 1.0), (h(57), 39.0), (h(58), 30.0), (h(59), 39.0), (self.END, 94.0)]
+        runs = [(h(1), 20.0), (h(55), 30.0), (reset - self._td(hours=2), 99.0)]
+        m = fc.meter_non_eval_points(readings, runs, self.END)
+        self.assertEqual((m["meter_rise_points"], m["eval_points_calibrated"], m["eval_points"]),
+                         (102.0, 50.0, 38.0))
+        days = (self.END - reset).total_seconds() / 86400
+        self.assertAlmostEqual(m["points_per_week"], 64.0 * 7 / days)
+
+    def test_a_young_week_measures_the_week_before(self):
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        readings = [(reset - self._td(days=7), 0.0), (reset - self._td(hours=1), 70.0),
+                    (reset + self._td(hours=5), 2.0)]
+        m = fc.meter_non_eval_points(readings, [], reset + self._td(days=1))
+        self.assertAlmostEqual(m["points_per_week"], 70.0 * 7 / (7 - 1 / 24))
+
+    def test_too_few_readings(self):
+        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END))
+
+    def test_measured_total_less_automatic_is_interactive(self):
+        automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15}]}
+        gates = Forecast.GATES
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(gates, Forecast.CELLS, Forecast.BUDGET, Forecast.BATCH, None,
+                              {"fire_overhead_usd": 0.0}, frozenset({"skipped-one"}), None,
+                              automatic, {"points_per_week": 75.0})
+        self.assertAlmostEqual(
+            doc["inputs"]["non_eval_points_breakdown"]["Interactive threads and local sessions"],
+            55.0)
+        self.assertAlmostEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 75.0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvalsRunFirst(unittest.TestCase):
+    """Evals spend the fixed cap from the Monday reset, so the account stop
+    binds only on other use that accrues while they do."""
+
+    def run_forecast(self, **assumptions):
+        budget = {**Forecast.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            return fc.forecast(Forecast.GATES, Forecast.CELLS, budget, Forecast.BATCH, None,
+                               {"fire_overhead_usd": 0.0, **assumptions},
+                               frozenset({"skipped-one"}))
+
+    def test_heavy_other_use_still_leaves_evals_the_cap_and_squeezes_the_owner(self):
+        # 25 points at 1 an hour take 25 hours; 168 other points a week accrue
+        # 25 meanwhile; 50 < 80, so the whole cap runs.
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
+        sq = doc["inputs"]["owner_squeeze"]
+        self.assertAlmostEqual(sq["week_total_points"], 193.0)
+        self.assertAlmostEqual(sq["days_at_limit_before_reset"], 93.0 / 24.0)
+
+    def test_slow_evals_meet_the_stop_part_way(self):
+        # At 0.1 an hour, E + 168 * E / 16.8 = 80, so E = 80 / 11.
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 80 / 11)
+
+    def test_without_a_pace_the_stop_comes_off_the_whole_week(self):
+        doc = self.run_forecast(non_eval_points_per_week=70.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertIsNone(doc["inputs"]["owner_squeeze"])
+
+    def test_pace_is_measured_from_weeks_that_reached_the_cap(self):
+        reset = fc.RESET_ANCHOR
+        runs = [(reset + fc.timedelta(hours=h), 5.0) for h in (1, 5, 10, 15, 20)]  # 25 by hour 20
+        runs += [(reset + fc.timedelta(days=7, hours=1), 3.0)]  # a week that never reached it
+        pace = fc.eval_pace(runs, 25.0, reset + fc.timedelta(days=14))
+        self.assertEqual(pace, {"points_per_hour": 1.25, "weeks": 1})
+        self.assertIsNone(fc.eval_pace(runs[-1:], 25.0, reset + fc.timedelta(days=14)))

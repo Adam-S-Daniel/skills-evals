@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""Append scheduled-task fires to $DASHBOARD_HOME/watch/routine-fires.jsonl, one line per fire,
+"""Append scheduled-task fires to the routine fire ledger, one line per fire,
 deduplicated by session id (a ledger: append, never rewrite).
+
+The ledger is version-controlled, privately: `spend/routine-fires.jsonl` on the
+`persistent/usage-events` branch of adam-agentskills-private (it names private
+tasks and session ids, so never this public repository). Set
+ROUTINE_FIRES_LEDGER to that file in a checkout of the branch; the caller
+commits and pushes it (dashboard/README.md, "Fire cost ledger").
 
 usage: append_routine_fires.py '<json list>'   (or @file)
 Each item: {trigger_id, name, fired_at, finished_at, status, session_id,
@@ -16,9 +22,10 @@ fire replaces it. acsi-kit's plan model needs per-fire cost history
 import json, sys, datetime
 
 import os
-H = os.environ.get("DASHBOARD_HOME") or sys.exit("DASHBOARD_HOME is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/) and run again.")
-H = os.path.abspath(H)
-PATH = os.path.join(H, "watch/routine-fires.jsonl")
+PATH = os.environ.get("ROUTINE_FIRES_LEDGER") or sys.exit(
+    "ROUTINE_FIRES_LEDGER is not set: export it as spend/routine-fires.jsonl in a checkout of "
+    "adam-agentskills-private's persistent/usage-events branch and run again.")
+PATH = os.path.abspath(PATH)
 FIELDS = ["trigger_id", "name", "fired_at", "finished_at", "status", "session_id",
           "total_cost_usd", "session_usage_cost_usd", "last_served_model"]
 

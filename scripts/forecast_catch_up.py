@@ -39,10 +39,17 @@ results tree (or `--arrivals`), counted daily from git history by
 scripts/target_arrivals.py; a stale document or an incomplete kind is not
 used. The assumptions file and `--set` override it. Every value the run
 used is echoed in the output, with its source (`assumption_sources`).
+
+`--automatic-spend` (scripts/automatic_spend.py) breaks the non-eval meter
+use down by category (`non_eval_points_breakdown`): each category's meter
+dollars at the mid $/point, plus `interactive_points_per_week` for people's
+own threads and local sessions; their sum is non_eval_points_per_week unless
+that is set.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import sys
@@ -87,7 +94,14 @@ ASSUMPTION_KEYS = {
                                             "current rest, so each guidance keep must be re-proved"),
     "non_eval_points_per_week": (None, "meter points a week used by everything but evals "
                                        "(threads, routines, local sessions); with budget.yml's "
-                                       "account stop it can cap the eval points"),
+                                       "account stop it can cap the eval points; default when both "
+                                       "--automatic-spend and interactive_points_per_week are given: "
+                                       "their sum"),
+    "eval_points_per_hour": (None, "meter points an hour evals spend from the weekly reset until "
+                                   "the cap; when set, evals run first in the week and the account "
+                                   "stop binds only on other use that accrues meanwhile"),
+    "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
+                                          "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
 }
 
@@ -295,6 +309,55 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
     return total
 
 
+#: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
+RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
+
+
+def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
+                          min_days: float = 2.0) -> dict | None:
+    """Measured non-eval meter points a week over the account's current
+    allowance week (from the newest Monday reset before `end`; the week
+    before it when fewer than `min_days` have passed), from the `seven_day`
+    meter readings (adam-agentskills-private
+    persistent/usage-events:spend/meter-history.csv).
+
+    A whole week, not a recent stretch: use comes in bursts, and a quiet
+    early week and a busy weekend average out only over the week (Adam,
+    2026-11-15: 94% with 86% of the week gone and no manual reset). Eval
+    points (routine-results/*/cost_estimate.json) come off the rise, but
+    never more than the meter rose while evals ran (first run to an hour
+    after the last), since their calibration can overstate them. The rise
+    sums increases between consecutive readings. None when fewer than two
+    readings fall in the span."""
+    start = RESET_ANCHOR + timedelta(days=7) * math.floor(
+        (end - RESET_ANCHOR) / timedelta(days=7))
+    if (end - start) < timedelta(days=min_days):
+        start -= timedelta(days=7)
+        end = start + timedelta(days=7)
+    span = sorted((t, p) for t, p in readings if start <= t <= end)
+    if len(span) < 2:
+        return None
+
+    def rise(lo, hi):
+        # From the last reading at or before lo to the first at or after hi.
+        first = max((i for i, x in enumerate(span) if x[0] <= lo), default=0)
+        last = min((i for i, x in enumerate(span) if x[0] >= hi), default=len(span) - 1)
+        pts = span[first:last + 1]
+        return sum(max(0.0, b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+
+    total = rise(span[0][0], span[-1][0])
+    runs = sorted((t, p) for t, p in eval_runs if span[0][0] <= t <= span[-1][0])
+    calibrated = sum(p for _, p in runs)
+    while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1)) if runs else 0.0
+    evals = min(calibrated, while_running)
+    covered = (span[-1][0] - span[0][0]).total_seconds() / 86400
+    return {"points_per_week": max(0.0, total - evals) * 7 / covered,
+            "meter_rise_points": total, "eval_points": evals,
+            "eval_points_calibrated": calibrated, "eval_rise_while_running": while_running,
+            "from": span[0][0].isoformat(), "to": span[-1][0].isoformat(),
+            "readings": len(span)}
+
+
 def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
     """Weeks to spend `backlog` dollars at `capacity` a week less the
     keep-up spend; inf when keep-up takes the whole capacity."""
@@ -307,7 +370,9 @@ def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
 def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              batch: dict | None, assumptions: dict,
              skipped_sections: frozenset = frozenset(),
-             stakes_table: dict | None = None) -> dict:
+             stakes_table: dict | None = None,
+             automatic: dict | None = None,
+             measured_non_eval: dict | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
     central figure with a low-high range, and every input with its source."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
@@ -318,11 +383,42 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     low_rate = a["usd_per_point_low"] or rate
     high_rate = a["usd_per_point_high"] or low_rate
     cap_points = budget["weekly_cap"] * 100
+    # Non-eval meter use by category (scripts/automatic_spend.py): each
+    # automatic category's meter dollars at the mid $/point, plus people's
+    # own use. It sets non_eval_points_per_week unless that is given.
+    breakdown = None
+    if automatic is not None:
+        mid = (low_rate + high_rate) / 2
+        breakdown = {c["label"]: c["meter_usd_per_week"] / mid
+                     for c in automatic.get("categories") or [] if c.get("meter_usd_per_week")}
+        # Measured total less the automatic jobs is people's own use.
+        if a["interactive_points_per_week"] is None and measured_non_eval is not None:
+            a["interactive_points_per_week"] = max(
+                0.0, measured_non_eval["points_per_week"] - sum(breakdown.values()))
+        if a["interactive_points_per_week"] is not None:
+            breakdown["Interactive threads and local sessions"] = a["interactive_points_per_week"]
+            if a["non_eval_points_per_week"] is None:
+                a["non_eval_points_per_week"] = sum(breakdown.values())
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
+    squeeze = None
     if a["non_eval_points_per_week"] is not None and stop is not None:
-        cap_points = max(0.0, min(cap_points, stop * 100 - a["non_eval_points_per_week"]))
+        other = a["non_eval_points_per_week"]
+        pace = a["eval_points_per_hour"]
+        if pace:
+            # Evals run first: the guard's fixed cap is a floor
+            # (allowance_guard.py `room`), so from the Monday reset they fire
+            # until the cap is spent, and the stop binds only on the other
+            # use that accrues meanwhile (E + other * E / (pace * 168) = stop).
+            cap_points = min(cap_points, stop * 100 / (1 + other / (pace * 168)))
+            # What that leaves the owner's own use: the week's total past 100
+            # comes off the end of the week, at the non-eval rate.
+            over = cap_points + other - 100
+            squeeze = {"week_total_points": cap_points + other,
+                       "days_at_limit_before_reset": max(0.0, over) / (other / 7) if other else 0.0}
+        else:
+            cap_points = max(0.0, min(cap_points, stop * 100 - other))
     costs = pair_usd(gates)
     if a["measured_usd_per_pair"] and costs:
         scale = a["measured_usd_per_pair"] / (sum(costs.values()) / len(costs))
@@ -407,6 +503,13 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "pairs_per_cell_prior": prior_pairs,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,
             "assumptions": a, "batch_rates": rates,
+            "non_eval_points_breakdown": breakdown,
+            "measured_non_eval": measured_non_eval,
+            "owner_squeeze": squeeze,
+            "automatic_spend_as_of": (automatic or {}).get("as_of"),
+            # A count, not names: job names can be private, and this
+            # document is committed to a public repository.
+            "automatic_unmeasured_jobs": len((automatic or {}).get("unmeasured") or []),
         },
         "subjects": rows,
         "paused_subjects": {f"{k}:{n}": r for (k, n), r in sorted(paused_subjects(gates).items())},
@@ -422,6 +525,52 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     }
 
 
+def _iso(text: str) -> datetime:
+    t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
+def eval_run_points(results_tree: Path) -> list:
+    """(start time, meter points) of each routine eval run, from its run id
+    (YYYYMMDDTHHMMSSZ-...) and cost_estimate.json `points`."""
+    out = []
+    for path in sorted((results_tree / "routine-results").glob("*/cost_estimate.json")):
+        try:
+            when = datetime.strptime(path.parent.name[:16], "%Y%m%dT%H%M%SZ") \
+                .replace(tzinfo=timezone.utc)
+            points = json.loads(path.read_text(encoding="utf-8")).get("points")
+        except (ValueError, OSError):
+            continue
+        # cost_estimate.json `points` is a fraction of the allowance, as
+        # budget.yml's values are: 0.01 is one meter point.
+        if isinstance(points, (int, float)):
+            out.append((when, float(points) * 100))
+    return out
+
+
+def eval_pace(runs: list, cap_points: float, now: datetime) -> dict | None:
+    """Meter points an hour evals spent from each weekly reset until they
+    had spent `cap_points`, over the weeks before `now` that reached it; the
+    median. None when no week did."""
+    paces = []
+    start = RESET_ANCHOR
+    while start < now:
+        total = 0.0
+        for t, points in sorted(runs):
+            if start <= t < start + timedelta(days=7):
+                total += points
+                if total >= cap_points:
+                    hours = (t - start).total_seconds() / 3600
+                    if hours > 0:
+                        paces.append(cap_points / hours)
+                    break
+        start += timedelta(days=7)
+    if not paces:
+        return None
+    paces.sort()
+    return {"points_per_hour": paces[len(paces) // 2], "weeks": len(paces)}
+
+
 def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--gates", type=Path, required=True,
@@ -435,6 +584,12 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--arrivals", type=Path, default=None,
                    help="arrivals document (scripts/target_arrivals.py); default: "
                         "arrivals/targets.json in --results-tree")
+    p.add_argument("--automatic-spend", type=Path, default=None,
+                   help="breakdown from scripts/automatic_spend.py: non-eval points by category")
+    p.add_argument("--meter-history", type=Path, default=None,
+                   help="meter readings CSV (ts_utc, meter_name, percent; adam-agentskills-private "
+                        "persistent/usage-events:spend/meter-history.csv): measures the non-eval "
+                        "total over the allowance week, less eval runs' points from --results-tree")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
@@ -475,7 +630,35 @@ def main(argv: list | None = None) -> int:
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
     table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
-    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table)
+    automatic = json.loads(args.automatic_spend.read_text(encoding="utf-8")) \
+        if args.automatic_spend else None
+    measured = None
+    if args.meter_history:
+        readings = [(_iso(r["ts_utc"]), float(r["percent"]))
+                    for r in csv.DictReader(args.meter_history.open(encoding="utf-8"))
+                    if r.get("meter_name") == "seven_day"]
+        measured = meter_non_eval_points(readings, eval_run_points(args.results_tree), now)
+        if measured is None:
+            p.error("--meter-history: fewer than two seven_day readings in the allowance week")
+    if "eval_points_per_hour" not in assumptions:
+        measured_pace = eval_pace(eval_run_points(args.results_tree),
+                                  budget["weekly_cap"] * 100, now)
+        if measured_pace:
+            assumptions["eval_points_per_hour"] = measured_pace["points_per_hour"]
+            sources["eval_points_per_hour"] = (
+                f"routine-results: median over {measured_pace['weeks']} week(s) of the hours "
+                "from the reset until evals spent the cap")
+    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
+                   automatic, measured)
+    if automatic is not None and "non_eval_points_per_week" not in assumptions:
+        if assumptions.get("interactive_points_per_week") is not None:
+            sources["non_eval_points_per_week"] = \
+                "--automatic-spend categories + interactive_points_per_week"
+        elif measured is not None:
+            sources["non_eval_points_per_week"] = \
+                "--automatic-spend categories + the rest of --meter-history's measured total"
+            sources["interactive_points_per_week"] = \
+                "--meter-history measured total less --automatic-spend categories"
     doc["inputs"]["assumption_sources"] = sources
     # Why an arrival rate fell back, so a reader can tell a default from data.
     doc["inputs"]["arrivals_status"] = (
