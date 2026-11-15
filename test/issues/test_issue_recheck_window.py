@@ -12,6 +12,7 @@ Hermetic and deterministic: canned runs, no network, no clock.
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 import unittest
@@ -253,6 +254,21 @@ class RecheckCarryTests(unittest.TestCase):
                     <= gates._stamp(g["passed"][0])) for g in (carried, fresh)]
         self.assertEqual(took[1], self.policy["max_runs_per_cell"])
         self.assertLess(took[0], took[1])
+
+    def test_a_long_healthy_history_does_not_block_a_later_removal(self):
+        # THE FLOOR: a bet prior near the margin bets on removal in each
+        # strong re-check and loses a little; a year of that must not leave
+        # a gain that falls to 0 unremovable.
+        prior = {"mean": 0.136, "variance": 0.0118, "n": 3.0}
+        rng = random.Random(5)
+        healthy = 52 * 42
+        pairs = stream(lambda i: rng.choice([0.6, 0.3, 0.0, 0.4]) if i < healthy
+                       else rng.choice([0.3, -0.3, 0.0, 0.0]), 60)
+        got = gates._recheck(pairs, KEEP, weekly(self.policy, True), prior)
+        self.assertIsNotNone(got["removed_at"])
+        self.assertGreaterEqual(got["carry"]["remove"],
+                                -gates.CARRY_REMOVE_FLOOR * -math.log(
+                                    1 - self.policy["retire_confidence"]))
 
     def test_pairs_beside_an_older_rest_carry_nothing(self):
         old = stream(lambda i: 0.8, 2, key="old")

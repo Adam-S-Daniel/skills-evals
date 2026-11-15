@@ -391,6 +391,16 @@ With the carry, a kept cell's re-checks are one test across its lifetime:
     re-check it will have, is at most 1 - `retire_confidence`. (One bet
     estimator across all windows was measured too: it remembers the strong
     early pairs and removed a gain that fell to 0 after 5 re-checks, not 2.)
+    THE FLOOR: the carry sinks no lower than CARRY_REMOVE_FLOOR times the
+    threshold below 0 (a wealth of alpha squared). Without it, a year of
+    strong re-checks (a learned bet prior near the margin bets on removal
+    and loses a little each time) left 14% of replayed cells unremoved 12
+    re-checks after their gain fell to 0; with it, the median is 3 (p90 4).
+    Each time the floor lifts the carry the test restarts from that wealth,
+    so the lifetime bound is no longer exact. Measured at the margin over 26
+    re-checks: 1.5% removed on the replayed cells, and 8.5% on the
+    heavy-tailed test pairs (test_issue_recheck_window.py), both under the
+    level; a floor of 1 took the latter to 14.5%.
   * THE EARLY STOP also carries: a passed re-check adds its final keep log
     wealth (against "the gain is at most the margin"). A re-check may lean
     on at most CARRY_KEEP_SHARE of the threshold from it, and a carried
@@ -648,6 +658,10 @@ CARRY_KEEP_SHARE = 0.5
 #: THE FUTILE STOP (THE RE-CHECK CARRY) on or off; a constant so the replay
 #: can measure what it saves.
 RECHECK_FUTILE_STOP = True
+#: THE RE-CHECK CARRY's floor on the carried remove log wealth, as a
+#: multiple of the threshold: a carry sinks no lower than a wealth of
+#: alpha squared.
+CARRY_REMOVE_FLOOR = 2.0
 #: The keys only the guidance block takes, each optional with its default.
 GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs", "keep_stands_until_recheck")
 
@@ -2206,7 +2220,7 @@ def _recheck(pairs: list, keep_stamps: list, policy: dict, bet_prior: dict | Non
             return out
         out["passed"].append(passed.strftime("%Y%m%dT%H%M%SZ"))
         if carrying:
-            carry_remove = removed_w
+            carry_remove = max(removed_w, -CARRY_REMOVE_FLOOR * threshold)
             if removal:
                 carry_keep += keep_wealth(removal, bet_prior, margin)[-1]
             out["carry"] = {"remove": carry_remove, "keep": carry_keep}
