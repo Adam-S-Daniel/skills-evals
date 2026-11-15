@@ -478,6 +478,42 @@ class StandingKeepTests(unittest.TestCase):
         self.assertNotIn("keep_since", cell_of(runs + strat(MAIN, FLAT[:6], FLAT[:6], start=20))
                          ["rest_guard"])
 
+    def test_a_rest_change_never_moves_the_confirmation_back(self):
+        # The round 2 review's blocker: a confirmation beside today's rest
+        # must survive the next change of the rest, or every edit elsewhere
+        # would make a mature keep due at once.
+        first = strat(OLD, GAIN, LOSS) + strat(MAIN, GAIN * 2, LOSS * 2, start=10)
+        since = cell_of(first, STANDS)["rest_guard"]["keep_since"]
+        moved = strat(OLD, GAIN, LOSS) + strat(OLDER, GAIN * 2, LOSS * 2, start=10) \
+            + strat(MAIN, FLAT[:1], FLAT[:1], start=40)
+        cell = cell_of(moved, STANDS)
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertEqual(cell["rest_guard"]["keep_since"], since)
+        self.assertGreater(since, cell_of(strat(OLD, GAIN, LOSS), STANDS)
+                           ["rest_guard"]["keep_since"])
+
+    def test_a_recheck_passes_once_one_rest_holds_the_floor(self):
+        # The round 2 review's should-fix: a re-check ends. Due 8 weeks
+        # after the confirmation; passed at the pair by which one rest holds
+        # 6 pairs made since; due again 8 weeks after that pair.
+        t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stamp = lambda t: t.strftime("%Y%m%dT%H%M%SZ")
+        cell = {"section": "sec", "keep_since": stamp(t0), "rest_guard_min_pairs": 6}
+        age = plan_week.recheck_after(cell)
+        due = t0 + age
+        before = [[stamp(t0 + timedelta(days=d)), 0] for d in range(1, 8)]
+        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": before}), due)
+        after = [[stamp(due + timedelta(hours=h)), 1] for h in range(5)]
+        self.assertEqual(plan_week.standing_recheck_at(
+            {**cell, "pair_stamps": before + after}), due)
+        # Five beside one rest and one beside the next: not yet.
+        split = after + [[stamp(due + timedelta(hours=9)), 2]]
+        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": split}), due)
+        six = after + [[stamp(due + timedelta(hours=9)), 1]]
+        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": six}),
+                         due + timedelta(hours=9) + age)
+        self.assertIsNone(plan_week.standing_recheck_at({"keep_since": None}))
+
     def test_run_utility_puts_the_decision_at_the_standing_keep(self):
         # The review's m3: a later current-rest keep does not move the
         # decision point of a keep that was already final.

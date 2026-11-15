@@ -332,10 +332,14 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     made there is final (`keep_final` true): it neither waits for the
     current rest nor lapses at its cap, so an edit to another section does
     not reopen it. `rest_guard.keep_since` is the with run's timestamp at its
-    newest final crossing; `recheck_weeks` after it, scripts/plan_week.py
-    fires the cell every sweep until the current rest decides it (its own
-    keep crosses and moves `keep_since`, or a removal on its evidence
-    overrides the keep) or its window is full. An edit to the section itself
+    newest confirmation (the latest crossing of the pooled keep test or of
+    any one rest's own keep test), and `rest_guard.pair_stamps` each usable
+    pair's timestamp and rest. scripts/plan_week.py (`standing_recheck_at`)
+    makes it due `recheck_weeks` after that, fires it every sweep until one
+    rest holds `rest_guard_min_pairs` pairs made since it fell due (the
+    removal guard's floor, so a removal could decide) and then counts the
+    re-check as passed from that pair, or until its own keep crosses again,
+    a removal overrides the keep, or its window is full. An edit to the section itself
     starts a new cell (the with arm's digest is in the key). The keep test's
     level is unchanged; what changes is what it is about: the rest the keep
     was made beside, not today's, with the re-check bounding how stale it
@@ -1461,16 +1465,30 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         if stands:
             out["rest_guard"]["keep_stands"] = True
             if final:
-                # The keep's newest confirmation, a final crossing's pair:
-                # scripts/plan_week.py re-checks it `recheck_weeks` later,
-                # and fires it until the current rest decides (THE STANDING
-                # KEEP). The with run's timestamp of that pair.
-                current_final = current_keep is not None and (
-                    remove_decided is None or current_keep <= remove_decided)
-                last = max(k for k in (pooled_keep if not removed else None,
-                                       current_keep if current_final else None)
-                           if k is not None and k <= len(usable))
-                out["rest_guard"]["keep_since"] = usable[last - 1][0]["timestamp"]
+                # The keep's NEWEST CONFIRMATION, the latest final crossing
+                # of the pooled keep test or of any one rest's own keep test
+                # (each over that rest's pairs, at the route's alpha, as the
+                # current-rest test runs), before any removal decided. Every
+                # rest's counts, not just today's, so a change of the rest
+                # never moves it back (the review's round 2 blocker).
+                # Reporting only: the keep is decided above. With
+                # `pair_stamps`, each usable pair's with run timestamp and
+                # its rest's ordinal, scripts/plan_week.py times the re-check
+                # (`standing_recheck_at`).
+                confirmed = [k for k in (pooled_keep, current_keep) if k is not None]
+                for key in dict.fromkeys(usable_keys):
+                    own = [i + 1 for i, k in enumerate(usable_keys) if k == key]
+                    hit = first_crossing(keep_wealth(differences(
+                        [usable[i - 1] for i in own]), bet_prior), route_alpha)
+                    if hit is not None:
+                        confirmed.append(own[hit - 1])
+                confirmed = [k for k in confirmed if k <= len(usable)
+                             and (remove_decided is None or k <= remove_decided)]
+                if confirmed:
+                    out["rest_guard"]["keep_since"] = usable[max(confirmed) - 1][0]["timestamp"]
+                ordinal = {k: i for i, k in enumerate(dict.fromkeys(usable_keys))}
+                out["rest_guard"]["pair_stamps"] = [
+                    [w["timestamp"], ordinal[k]] for (w, _), k in zip(usable, usable_keys)]
         # Round 3's M1: a provisional keep does not stand at the current
         # rest's cap either. No more pairs can test it there, so the cell
         # ends on the current rest's own rules, as a `current` cell would:

@@ -1807,12 +1807,18 @@ week, more than the rest of the keep-up together.
   at or after the crossing, whose own rest has `rest_guard_min_pairs` usable
   pairs. A keep made there is final. It does not wait for the current rest,
   and it does not lapse at the cap. `harness/gates.py`, THE STANDING KEEP.
-- The re-check: `recheck_weeks` after the keep's newest final crossing
-  (`rest_guard.keep_since`), `scripts/plan_week.py` fires the cell every
-  sweep until the current rest decides it or its window is full. A single
-  re-check fire every `recheck_weeks` would never reach the removal guard's
-  pair floor beside one rest while the rest changes weekly (the review's
-  blocker).
+- The re-check: `rest_guard.keep_since` is the keep's newest confirmation,
+  the latest crossing of the pooled keep test or of any one rest's own keep
+  test, so a change of the rest never moves it back. `recheck_weeks` after
+  it, `scripts/plan_week.py` (`standing_recheck_at`) fires the cell every
+  sweep until one rest holds `rest_guard_min_pairs` pairs made since it fell
+  due. That is the removal guard's floor, so a removal could have decided.
+  The re-check then counts as passed at that pair, and the next is due
+  `recheck_weeks` later. A single re-check fire every `recheck_weeks` would
+  never reach the floor beside one rest while the rest changes weekly (the
+  first review's blocker). Known limit: the floor counts per rest digest, so
+  a base.md reverted to an earlier version counts that rest's old pairs
+  again.
 - Kept: the current-rest removal guard. A removal on the current rest's
   evidence still overrides a pooled keep, so the re-check's pairs can remove
   the section. An edit to the section itself starts a new cell, because the

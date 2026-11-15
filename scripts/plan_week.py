@@ -1949,8 +1949,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # Round 3's m5: a decided cell at the cap is not re-checked; a
             # new pair cannot enter its frozen window.
             band, order = None, None
-        elif cell.get("keep_since") and _stamp_time(cell["keep_since"]) is not None \
-                and now - _stamp_time(cell["keep_since"]) >= recheck_after(cell):
+        elif standing_recheck_at(cell) is not None and now >= standing_recheck_at(cell):
             # THE STANDING KEEP's re-check (Adam, 2026-11-15: a guidance keep
             # stands until its re-check). Due `recheck_weeks` after its newest
             # confirmation, it is fired like an undecided guidance cell, every
@@ -3477,6 +3476,39 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
     return verdicts
 
 
+def standing_recheck_at(cell: dict) -> datetime | None:
+    """When a standing keep's re-check is due (harness/gates.py, THE
+    STANDING KEEP), or None for any other cell. Due `recheck_after` its
+    newest confirmation (`keep_since`); a re-check passes at the pair by
+    which one rest holds `rest_guard_min_pairs` pairs made since it fell due
+    (the removal guard's floor, so a removal could have decided), and the
+    next one is due `recheck_after` that pair. So a change of the rest never
+    makes it due early, and a re-check that has had its pairs ends."""
+    since = _stamp_time(cell.get("keep_since"))
+    if since is None:
+        return None
+    age = recheck_after(cell)
+    floor = cell.get("rest_guard_min_pairs")
+    stamps = sorted((t, rest) for t, rest in (
+        (_stamp_time(s), r) for s, r in (cell.get("pair_stamps") or [])
+        if isinstance(s, str)) if t is not None)
+    if not isinstance(floor, int) or floor < 1:
+        return since + age
+    while True:
+        due = since + age
+        seen: dict = {}
+        passed = None
+        for t, rest in stamps:
+            if t >= due:
+                seen[rest] = seen.get(rest, 0) + 1
+                if seen[rest] >= floor:
+                    passed = t
+                    break
+        if passed is None:
+            return due
+        since = passed
+
+
 def provisional_keep(gate_cell: dict | None) -> bool:
     """Whether a gates cell keeps on a pooled keep alone, which is not final
     (harness/gates.py, THE STALE KEEP): `eval_items` fires it until the
@@ -3683,6 +3715,8 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # (`eval_items`). None for any other cell.
                 "keep_since": ((cell or {}).get("rest_guard") or {}).get("keep_since")
                 if (cell or {}).get("class") == "benefit" else None,
+                "pair_stamps": ((cell or {}).get("rest_guard") or {}).get("pair_stamps"),
+                "rest_guard_min_pairs": ((cell or {}).get("rest_guard") or {}).get("min_pairs"),
                 "at_cap": (cell or {}).get("at_cap") is True,
                 # DEEP BEFORE WIDE (`pairs_to_verdict`): the gate's own state
                 # the projection reads, the keep and remove tests so far, the
