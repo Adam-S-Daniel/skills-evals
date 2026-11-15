@@ -542,7 +542,11 @@ every arm still passes its own `--settings`, and nothing re-proves them per
 arm. A test-only variable, `SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE=1`, skips the
 canary so tests with scripted fake CLIs keep their call counts; only
 test/conftest.py and the test helpers set it, and an arm's allowlisted
-environment never carries it.
+environment never carries it. When `main()` honors it, it warns on stderr and
+every summary.json records `sandbox_probe: skipped` (otherwise `passed` or
+`failed`; the ingester accepts only those and `not_run`). `local_eval` and
+`propose_skill_edit` refuse to run with it set (`REFUSED_ENV_NAMES`), and
+`routine_eval` refuses to start `run_eval.py` with it set.
 
 If the probe shows routine sessions can no longer sandbox at all, where evals
 run becomes an owner decision; this addendum does not make it.

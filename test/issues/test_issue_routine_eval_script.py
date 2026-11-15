@@ -812,7 +812,10 @@ class RunnerTests(unittest.TestCase):
     def test_a_run_past_its_timeout_is_stopped_by_the_reviewed_group_stop(self):
         proc = mock.MagicMock(pid=424242)
         proc.wait.side_effect = subprocess.TimeoutExpired("run_eval", 1)
+        env = {k: v for k, v in os.environ.items()
+               if k != "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"}
         with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(routine_eval.subprocess, "Popen", return_value=proc) as popen, \
                 mock.patch("probe_model_defaults._stop") as stop, \
                 mock.patch("os.killpg") as killpg, mock.patch("os.kill") as kill:

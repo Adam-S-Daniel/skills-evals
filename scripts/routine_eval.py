@@ -95,6 +95,8 @@ PIN_STEP = "Install harness dependencies"
 PIN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.]*")
 REGISTRIES_FILE = Path("harness/registries.yml")
 RUN_EVAL = "harness/run_eval.py"
+#: Test-only; mirrors run_eval.SANDBOX_PROBE_SKIP_ENV (a test pins the two).
+SANDBOX_PROBE_SKIP_ENV = "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"
 RESULTS_ROOT = "eval-results"
 
 PUBLIC_REGISTRIES = ("adam-agentskills", "cms-platform", "adamdaniel.ai")
@@ -366,6 +368,10 @@ class Runner:
         """run_eval.py in its own session, output to `log`; at `timeout` the
         whole group is stopped (SIGTERM, then SIGKILL) and None returned."""
         with open(log, "ab") as sink:
+            if os.environ.get(SANDBOX_PROBE_SKIP_ENV) == "1":
+                # Test-only: it would run the arms with no sandbox canary.
+                sink.write(f"refusing to run: {SANDBOX_PROBE_SKIP_ENV} is set\n".encode())
+                return 127
             try:
                 proc = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL,
                                         stdout=sink, stderr=subprocess.STDOUT,

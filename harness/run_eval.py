@@ -2270,6 +2270,8 @@ SANDBOX_PROBE_SKIP_ENV = "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"
 _SANDBOX_PROBE_REQUIRED = False
 # None until the probe has run, then ("" if the fence held, else the detail).
 _SANDBOX_PROBE_VERDICT: str | None = None
+# Set by `main()` when the test-only skip variable was honored.
+_SANDBOX_PROBE_SKIPPED = False
 _SANDBOX_NOT_ENFORCING = "sandbox not enforcing: "
 _SANDBOX_PROBE_ATTEMPTS = 2
 
@@ -2314,7 +2316,8 @@ def _probe_outcomes(decoded, command: str) -> tuple[list[str], list[str]]:
 
 def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
                 cwd: Path, env: dict, timeout: int) -> tuple[str, str]:
-    """One canary launch: ("held", ""), ("leak", why) or ("unproven", why)."""
+    """One canary launch: ("held", ""), ("refused", the CLI's line), ("leak", why)
+    or ("unproven", why)."""
     prompt = ("Call the Bash tool exactly once with this command and then "
               f"reply with only its output, nothing else:\n{command}")
     cmd = [run_canary.cli_bin(), "-p", prompt, "--output-format", "json",
@@ -2332,7 +2335,7 @@ def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
                             "the fence is unproven")
     down = _sandbox_unavailable_detail(result.stderr)
     if down is not None:
-        return "held", down  # the CLI refused: handled by the caller
+        return "refused", down  # the CLI itself refused to start
     try:
         every, matched = _probe_outcomes(json.loads(result.stdout), command)
     except ValueError:
@@ -2379,7 +2382,7 @@ def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
         for _ in range(_SANDBOX_PROBE_ATTEMPTS):
             verdict, detail = _probe_once(command, token, marker, sentinel,
                                           flags, cwd, env, timeout)
-            if verdict == "held" and detail:
+            if verdict == "refused":
                 return detail  # the CLI's own refusal line
             if verdict != "unproven":
                 return "" if verdict == "held" else detail
@@ -2387,6 +2390,17 @@ def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
     finally:
         shutil.rmtree(holder, ignore_errors=True)
         shutil.rmtree(cwd, ignore_errors=True)
+
+
+def sandbox_probe_status() -> str:
+    """What summary.json records as `sandbox_probe`: `skipped` (the test-only
+    variable was honored), `passed`, `failed`, or `not_run` (no agent arm
+    asked yet)."""
+    if not _SANDBOX_PROBE_REQUIRED:
+        return "skipped" if _SANDBOX_PROBE_SKIPPED else "not_run"
+    if _SANDBOX_PROBE_VERDICT is None:
+        return "not_run"
+    return "passed" if _SANDBOX_PROBE_VERDICT == "" else "failed"
 
 
 def sandbox_probe_failure(checkouts=(), outputs=()) -> str | None:
@@ -5375,6 +5389,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         summary.setdefault("n", 1)
         if key and len(key.split("/")) == 3:
             summary.setdefault("fixture", key.split("/")[2])
+    summary["sandbox_probe"] = sandbox_probe_status()
     summary["run"] = _TELEMETRY.run(harness_version)
     summary["usage"] = _TELEMETRY.usage(usage_trials)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
@@ -8545,7 +8560,13 @@ def main() -> int:
     # `probe_arm_sandbox`), whatever the environment says about hosting:
     # improve and guidance runs strip CLAUDE_* from their children. Only a
     # test sets the skip variable.
-    _SANDBOX_PROBE_REQUIRED = os.environ.get(SANDBOX_PROBE_SKIP_ENV) != "1"
+    global _SANDBOX_PROBE_SKIPPED
+    _SANDBOX_PROBE_SKIPPED = os.environ.get(SANDBOX_PROBE_SKIP_ENV) == "1"
+    _SANDBOX_PROBE_REQUIRED = not _SANDBOX_PROBE_SKIPPED
+    if _SANDBOX_PROBE_SKIPPED:
+        print(f"warning: {SANDBOX_PROBE_SKIP_ENV}=1, so the arm sandbox is NOT "
+              "proven for this run (test use only); summary.json records "
+              "sandbox_probe: skipped", file=sys.stderr)
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
     # Deliberately NOT an argparse `choices=` list any more: a guidance

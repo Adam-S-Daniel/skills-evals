@@ -10,6 +10,8 @@ probe answers (no network, no model, no clock).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -23,6 +25,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import ingest_routine_results  # noqa: E402
+import local_eval_guard  # noqa: E402
+import routine_eval  # noqa: E402
 import run_eval  # noqa: E402
 from arm_test_env import install_arm_test_environment  # noqa: E402
 
@@ -195,6 +201,72 @@ class SandboxProbeTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     run_eval.main()
                 self.assertIs(run_eval._SANDBOX_PROBE_REQUIRED, expected)
+
+    def run_main_until_parse(self, skip: str | None) -> str:
+        """`main()` up to its argument parsing; what it printed to stderr."""
+        import argparse
+        env = {k: v for k, v in os.environ.items()
+               if k != run_eval.SANDBOX_PROBE_SKIP_ENV}
+        if skip:
+            env[run_eval.SANDBOX_PROBE_SKIP_ENV] = skip
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(sys, "argv", ["run_eval.py"]), \
+                mock.patch.object(argparse.ArgumentParser, "parse_args",
+                                  side_effect=SystemExit(2)), \
+                contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit):
+                run_eval.main()
+        return err.getvalue()
+
+    def recorded(self) -> str:
+        out = self.root / "results"
+        run_eval._write_summary(out, "s", "without_skill", "t", None, None,
+                                None, None, None)
+        return json.loads((out / "s" / "t" / "without_skill" / "summary.json")
+                          .read_text())["sandbox_probe"]
+
+    def test_a_skipped_probe_warns_and_is_recorded(self):
+        with mock.patch.object(run_eval, "_SANDBOX_PROBE_SKIPPED", False):
+            warning = self.run_main_until_parse("1")
+            self.assertIn("NOT proven", warning)
+            self.assertIn(run_eval.SANDBOX_PROBE_SKIP_ENV, warning)
+            self.assertEqual(self.recorded(), "skipped")
+
+    def test_a_run_that_probes_does_not_warn_and_records_the_verdict(self):
+        with mock.patch.object(run_eval, "_SANDBOX_PROBE_SKIPPED", False):
+            self.assertEqual(self.run_main_until_parse(None), "")
+            self.assertEqual(self.recorded(), "not_run")
+            run_eval._SANDBOX_PROBE_VERDICT = ""
+            self.assertEqual(self.recorded(), "passed")
+            run_eval._SANDBOX_PROBE_VERDICT = "sandbox not enforcing: x"
+            self.assertEqual(self.recorded(), "failed")
+
+    def test_exhibit_and_improve_runs_refuse_the_skip_variable(self):
+        self.assertEqual(local_eval_guard.refused_env_names(
+            {run_eval.SANDBOX_PROBE_SKIP_ENV: "1", "PATH": "/usr/bin"}),
+            [run_eval.SANDBOX_PROBE_SKIP_ENV])
+
+    def test_a_routine_refuses_to_start_run_eval_with_the_skip_variable(self):
+        self.assertEqual(routine_eval.SANDBOX_PROBE_SKIP_ENV,
+                         run_eval.SANDBOX_PROBE_SKIP_ENV)
+        log = self.root / "routine.log"
+        with mock.patch.dict(os.environ, {run_eval.SANDBOX_PROBE_SKIP_ENV: "1"}), \
+                mock.patch.object(routine_eval.subprocess, "Popen") as popen:
+            code = routine_eval.Runner().run_eval(
+                ["true"], cwd=self.root, timeout=1, log=log)
+        self.assertEqual(code, 127)
+        popen.assert_not_called()
+        self.assertIn("refusing to run", log.read_text())
+
+    def test_the_ingester_knows_every_status_run_eval_records(self):
+        self.assertIn("sandbox_probe", ingest_routine_results.SUMMARY_ALLOWED)
+        for state in ((True, None), (True, ""), (True, "x"), (False, None)):
+            with mock.patch.object(run_eval, "_SANDBOX_PROBE_REQUIRED", state[0]), \
+                    mock.patch.object(run_eval, "_SANDBOX_PROBE_VERDICT", state[1]), \
+                    mock.patch.object(run_eval, "_SANDBOX_PROBE_SKIPPED", not state[0]):
+                self.assertIn(run_eval.sandbox_probe_status(),
+                              ingest_routine_results.SANDBOX_PROBE_STATUSES)
 
     def test_the_cli_sandbox_stderr_detection_still_applies(self):
         self.assertIsNotNone(run_eval._sandbox_unavailable_detail(

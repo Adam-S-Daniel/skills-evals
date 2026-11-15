@@ -27343,7 +27343,8 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         dump = root / "seen.json"
         cli = self._probe_cli(root / "cli", dump)
 
-        env = {**arm_test_environment(), **self.BASE_ENVIRONMENT}
+        env = {**arm_test_environment(), run_eval.SANDBOX_PROBE_SKIP_ENV: "1",
+               **self.BASE_ENVIRONMENT}
         env.update(self.PLANTED_DROPPED)
         env.update(self.PLANTED_FORWARDED)
         env.update(self.PLANTED_TOKENS)
