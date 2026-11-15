@@ -199,6 +199,14 @@ class PolicyAndPlumbingTests(unittest.TestCase):
         held, _ = plan_week.eval_items({**ctx, "policy": {**ON, "recheck_window_fire": False}},
                                        due)
         self.assertFalse(any(held.values()))
+        # An age-based re-check of a kept subject's unsettled cell is held too.
+        aged = {**planner, "class": "insufficient", "at_cap": False, "recheck": None,
+                "newest": "20200101T000000Z"}
+        fired, _ = plan_week.eval_items({**ctx, "cells": [aged]}, due)
+        self.assertTrue(fired["recheck"], fired)
+        held, _ = plan_week.eval_items({**ctx, "cells": [aged],
+                                        "policy": {**ON, "recheck_window_fire": False}}, due)
+        self.assertFalse(any(held.values()))
 
     def test_the_fire_switch_is_checked_and_held_in_both_blocks(self):
         committed = gates.load_gate_policy()

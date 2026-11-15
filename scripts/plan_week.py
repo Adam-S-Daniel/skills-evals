@@ -1942,9 +1942,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # leaves its section out, as a provisional keep is; a skill cell
             # to the recheck band.
             rechecking = True
-            block = (ctx.get("guidance_policy") if cell.get("section")
-                     else ctx.get("policy")) or {}
-            if block.get("recheck_window_fire") is False or now < recheck_due_at(cell):
+            if now < recheck_due_at(cell):
                 band, order = None, None
             elif cell.get("section"):
                 band, order = _guidance_band(cell, focused, near_order)
@@ -2001,6 +1999,10 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
+        block = (ctx.get("guidance_policy") if cell.get("section")
+                 else ctx.get("policy")) or {}
+        if (band == "recheck" or rechecking) and block.get("recheck_window_fire") is False:
+            continue  # re-checks held while the stopping rules are redesigned
         if (band == "recheck" or rechecking) and _retiring(ctx, subject):
             continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
