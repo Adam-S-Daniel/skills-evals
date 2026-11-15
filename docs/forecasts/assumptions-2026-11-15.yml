@@ -1,0 +1,56 @@
+# Measured inputs for scripts/forecast_catch_up.py, 2026-11-15 run.
+# Each value names where it was measured. Policy numbers are NOT here: the
+# script reads them from evals/*.yml and the verdict document.
+
+# $ per weekly-meter point. Low: budget.yml's rate (2026-11-10 quiet-night
+# measurement). High: the week of 2026-11-09, ~$284 of eval spend (run cost
+# plus routine sessions) moved the account meter 1% -> 39% by 2026-11-12
+# 02:27 UTC, with evals almost the only use.
+usd_per_point_low: 6.67
+usd_per_point_high: 7.5
+
+# Run cost per pair, 2026-11-08 to 2026-11-12: 621 run_eval invocations in
+# 433 routine fires cost $331 (routine-results/*/cost_estimate.json usd).
+measured_usd_per_pair: 0.53
+pairs_per_fire: 1.43
+# Eval runner routine session per fire: $0.19 (slim routine, 2026-11-08
+# estimate); one measured refusal fire on 2026-11-12 cost $0.12.
+fire_overhead_usd: 0.19
+
+# Monthly $200 API credit spent through eval.yml: ~$46 a week. Used only in
+# the "plus API credit" scenario.
+api_credit_usd_per_week: 46
+
+# Skills: batches/current.json measured 1.8 a week (2026-10-26 to 11-09); 0
+# were added 2026-11-08 to 11-15. Under the first-use rule only used skills
+# are evaluated: 7 of 38 catalog skills have any recorded use (explorer,
+# local since 2026-09-21 plus cloud since 2026-11-02). Central 1.0, between
+# the 4-week rate and last week's zero.
+new_skills_per_week: 1.0
+first_use_share: 0.2
+# Sections: 1.0 a week (batches/current.json). 12 of 32 rows in
+# eval-coverage.yml are skipped, the newest (eval-rules) among them.
+new_sections_per_week: 1.0
+evaluated_section_share: 0.6
+
+# Fixtures added: 49 guidance and 32 skill fixtures in the 28 days to
+# 2026-11-15 (git log --diff-filter=A on evals/**/fixture.yaml, the
+# 2026-10-26/27 layout move excluded), slowing to 6 in the last 3.5 days.
+# About half the guidance sections are heading for removal or the cap
+# (where every new cell must run); skill fixtures count only for used
+# skills. Central 5 a week on open, non-keep subjects.
+new_fixtures_per_week_open: 5
+
+# Evaluated skills whose text changed: 3 of 7 changed skills in the week to
+# 2026-11-15 are evaluated (vendor-release-impact-issues, workflow-path-audit,
+# rename-pdfs).
+skill_text_edits_per_week: 2
+
+# agents-md/base.md changed on 2026-11-08 and 2026-11-13 (a manual merge
+# outside the Monday window), moving every section's current rest; each
+# time every guidance keep falls back to provisional.
+guidance_rest_changes_per_week: 1
+
+# Evals resume after the Monday reset (12 PM ET) and the Monday noon-2 PM
+# ET pause: 2026-11-16 2 PM ET.
+start: "2026-11-16T19:00:00Z"
