@@ -1,0 +1,1005 @@
+{
+  "as_of": "2026-11-15T16:23:13Z",
+  "generated_at": "2026-11-15T16:23:31Z",
+  "items": [
+    {
+      "at": "2026-06-04T12:43:58Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": "admin-config-render",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-06-01"
+    },
+    {
+      "at": "2026-06-04T12:43:58Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": "editorial-label-audit",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-06-01"
+    },
+    {
+      "at": "2026-06-05T12:04:33Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": "platform-release-and-bump",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-06-01"
+    },
+    {
+      "at": "2026-06-05T15:02:51Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "cms-platform-secrets",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-06-01"
+    },
+    {
+      "at": "2026-07-10T12:29:38Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "embeddable-tool-pages",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-06"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "admin-config-render",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "aws-bootstrap",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "browser-testing",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "ci-watcher-loops",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "cms-platform-secrets",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "cms-stuck-pr-triage",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "code-quality",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "editorial-label-audit",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "github-actions-sha-pinning",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "platform-release-and-bump",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "post-failure-comment",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "preview-environments",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "sveltia-cms-playwright-demo",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "test-canary",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "workflow-path-audit",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T15:15:45Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "writing-adrs",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-07-13T19:36:24Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "writing-adrs",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-07-13"
+    },
+    {
+      "at": "2026-08-07T10:02:45Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "writing-adrs",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-03"
+    },
+    {
+      "at": "2026-08-14T10:14:43Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "workflow-path-audit",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "admin-config-render",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "aws-bootstrap",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "browser-testing",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "ci-watcher-loops",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "cms-platform-secrets",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "cms-stuck-pr-triage",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "code-quality",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "editorial-label-audit",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "github-actions-sha-pinning",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "platform-release-and-bump",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "post-failure-comment",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "preview-environments",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "sveltia-cms-playwright-demo",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "test-canary",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-14T11:22:29Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "workflow-path-audit",
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "week": "2026-08-10"
+    },
+    {
+      "at": "2026-08-19T17:14:41Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "consumer-repo-provisioning",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-08-17"
+    },
+    {
+      "at": "2026-08-19T17:14:41Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "cms-platform-secrets",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-08-17"
+    },
+    {
+      "at": "2026-09-25T17:48:18Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": null,
+      "repo": null,
+      "week": "2026-09-21"
+    },
+    {
+      "at": "2026-09-25T19:08:16Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": "launch-top-level-claude-session",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-09-21"
+    },
+    {
+      "at": "2026-09-25T19:08:16Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "launch-wsl-claude-session",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-09-21"
+    },
+    {
+      "at": "2026-09-26T18:44:58Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "skill",
+      "name": "vendor-release-impact-issues",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-09-21"
+    },
+    {
+      "at": "2026-09-28T21:14:43Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "sync-skills",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-09-28"
+    },
+    {
+      "at": "2026-09-29T19:06:51Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "guidance-section",
+      "name": "sessions-get-cut-off",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-09-28"
+    },
+    {
+      "at": "2026-10-04T21:33:33Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "test-that-can-signal-kills-every-session",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-09-28"
+    },
+    {
+      "at": "2026-10-23T11:28:32Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "agent-contribution-markers",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-19"
+    },
+    {
+      "at": "2026-10-23T16:47:14Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "read-before-you-start",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-19"
+    },
+    {
+      "at": "2026-10-23T16:47:14Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "guidance-section",
+      "name": "network-allowlists",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-19"
+    },
+    {
+      "at": "2026-10-25T13:54:15Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "sveltia-cms-playwright-demo",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-10-19"
+    },
+    {
+      "at": "2026-10-26T15:13:20Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "persistent-delete",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-26T15:13:20Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "push-to-default",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-26T15:13:20Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "rules-dir",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-26T15:13:20Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "secret-file",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-26T15:13:20Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "staged-index",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-26T19:53:59Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "ci-job-performance",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-28T01:03:11Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "skill-shell",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-29T13:38:18Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "skill",
+      "name": null,
+      "repo": null,
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-29T13:38:18Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "skill",
+      "name": null,
+      "repo": null,
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-29T18:28:34Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "dated-phrasing",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-10-30T00:49:58Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "repo-local:Adam-S-Daniel/skills-evals",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-11-01T15:46:17Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "fan-out-triage",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-10-26"
+    },
+    {
+      "at": "2026-11-02T17:24:22Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "pr-tldr",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-02T17:24:22Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "pr-tldr",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-03T01:29:18Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "red-ci-adamdaniel-ai",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-03T01:57:37Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "skill",
+      "name": "tool-powershell",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-04T04:37:17Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "agents-md-size",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-04T18:58:51Z",
+      "eligible": true,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "turn-lessons-into-checks",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-08T13:53:54Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "gha-template-injection",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-02"
+    },
+    {
+      "at": "2026-11-12T21:32:11Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "debug-github-workflows",
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "week": "2026-11-09"
+    },
+    {
+      "at": "2026-11-12T23:06:14Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "local-identity",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-09"
+    },
+    {
+      "at": "2026-11-13T20:05:52Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "consumer-repo-provisioning",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-11-09"
+    },
+    {
+      "at": "2026-11-13T20:31:05Z",
+      "eligible": null,
+      "event": "removed",
+      "kind": "skill",
+      "name": "github-actions-sha-pinning",
+      "repo": "Adam-S-Daniel/cms-platform",
+      "week": "2026-11-09"
+    },
+    {
+      "at": "2026-11-13T21:54:58Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "eval-rules",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-09"
+    }
+  ],
+  "kinds": [
+    "git-hook",
+    "skill",
+    "guidance-section"
+  ],
+  "rate_weeks": 4,
+  "rates": {
+    "git-hook": {
+      "added": 12,
+      "added_per_week": 3.3439182302887778,
+      "complete": true,
+      "eligible_share": null,
+      "from": "2026-10-21T13:30:05Z",
+      "removed": 0,
+      "removed_per_week": 0.0,
+      "to": "2026-11-15T16:23:13Z",
+      "weeks": 3.5886
+    },
+    "guidance-section": {
+      "added": 5,
+      "added_per_week": 1.25,
+      "complete": true,
+      "eligible_share": 0.4,
+      "from": "2026-10-18T16:23:13Z",
+      "removed": 1,
+      "removed_per_week": 0.25,
+      "to": "2026-11-15T16:23:13Z",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 6,
+      "added_per_week": 1.5,
+      "complete": true,
+      "eligible_share": 0.0,
+      "from": "2026-10-18T16:23:13Z",
+      "removed": 4,
+      "removed_per_week": 1.0,
+      "to": "2026-11-15T16:23:13Z",
+      "weeks": 4.0
+    }
+  },
+  "schema": 1,
+  "sources": [
+    {
+      "current": 11,
+      "kind": "git-hook",
+      "parser": "agent-checks",
+      "private": false,
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "since": "2026-10-21T13:30:05Z",
+      "status": "ok"
+    },
+    {
+      "current": 1,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "since": "2026-07-03T13:16:45Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "since": "2026-03-01T13:53:28Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "since": "2026-09-24T22:23:59Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "since": "2026-05-27T16:14:01Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "since": "2026-03-15T12:40:00Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/repo-settings",
+      "since": "2026-07-13T14:54:22Z",
+      "status": "ok"
+    },
+    {
+      "current": 0,
+      "kind": "git-hook",
+      "parser": "repo-local",
+      "private": false,
+      "repo": "Adam-S-Daniel/wsl-automation",
+      "since": "2026-07-17T21:56:20Z",
+      "status": "ok"
+    },
+    {
+      "current": 32,
+      "kind": "guidance-section",
+      "parser": "eval-coverage",
+      "private": false,
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "since": "2026-09-04T21:28:01Z",
+      "status": "ok"
+    },
+    {
+      "current": 23,
+      "kind": "skill",
+      "parser": "skill-dirs",
+      "private": false,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "since": "2026-09-24T22:23:59Z",
+      "status": "ok"
+    },
+    {
+      "current": 11,
+      "kind": "skill",
+      "parser": "skill-dirs",
+      "private": false,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "since": "2026-05-29T20:08:54Z",
+      "status": "ok"
+    },
+    {
+      "current": 1,
+      "kind": "skill",
+      "parser": "skill-dirs",
+      "private": false,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "since": "2026-03-23T19:35:37Z",
+      "status": "ok"
+    },
+    {
+      "current": 3,
+      "kind": "skill",
+      "parser": "skill-dirs",
+      "private": true,
+      "repo": null,
+      "since": "2026-07-01T01:43:18Z",
+      "status": "ok"
+    }
+  ],
+  "weeks": [
+    {
+      "added": 4,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 3,
+      "kind": "skill",
+      "removed": 0,
+      "week": "2026-06-01"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 0,
+      "week": "2026-07-06"
+    },
+    {
+      "added": 16,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-07-13"
+    },
+    {
+      "added": 0,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-08-03"
+    },
+    {
+      "added": 0,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 16,
+      "week": "2026-08-10"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-08-17"
+    },
+    {
+      "added": 3,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 3,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-09-21"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 1,
+      "kind": "guidance-section",
+      "removed": 1,
+      "week": "2026-09-28"
+    },
+    {
+      "added": 0,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-09-28"
+    },
+    {
+      "added": 2,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 1,
+      "kind": "guidance-section",
+      "removed": 1,
+      "week": "2026-10-19"
+    },
+    {
+      "added": 0,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 1,
+      "week": "2026-10-19"
+    },
+    {
+      "added": 8,
+      "added_eligibility_unknown": 8,
+      "added_eligible": 0,
+      "kind": "git-hook",
+      "removed": 0,
+      "week": "2026-10-26"
+    },
+    {
+      "added": 4,
+      "added_eligibility_unknown": 2,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 0,
+      "week": "2026-10-26"
+    },
+    {
+      "added": 3,
+      "added_eligibility_unknown": 3,
+      "added_eligible": 0,
+      "kind": "git-hook",
+      "removed": 0,
+      "week": "2026-11-02"
+    },
+    {
+      "added": 2,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 1,
+      "kind": "guidance-section",
+      "removed": 0,
+      "week": "2026-11-02"
+    },
+    {
+      "added": 2,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 0,
+      "week": "2026-11-02"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 1,
+      "added_eligible": 0,
+      "kind": "git-hook",
+      "removed": 0,
+      "week": "2026-11-09"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "guidance-section",
+      "removed": 0,
+      "week": "2026-11-09"
+    },
+    {
+      "added": 0,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "skill",
+      "removed": 3,
+      "week": "2026-11-09"
+    }
+  ]
+}
