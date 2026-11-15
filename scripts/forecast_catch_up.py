@@ -97,6 +97,9 @@ ASSUMPTION_KEYS = {
                                        "account stop it can cap the eval points; default when both "
                                        "--automatic-spend and interactive_points_per_week are given: "
                                        "their sum"),
+    "eval_points_per_hour": (None, "meter points an hour evals spend from the weekly reset until "
+                                   "the cap; when set, evals run first in the week and the account "
+                                   "stop binds only on other use that accrues meanwhile"),
     "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
                                           "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
@@ -388,8 +391,23 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
+    squeeze = None
     if a["non_eval_points_per_week"] is not None and stop is not None:
-        cap_points = max(0.0, min(cap_points, stop * 100 - a["non_eval_points_per_week"]))
+        other = a["non_eval_points_per_week"]
+        pace = a["eval_points_per_hour"]
+        if pace:
+            # Evals run first: the guard's fixed cap is a floor
+            # (allowance_guard.py `room`), so from the Monday reset they fire
+            # until the cap is spent, and the stop binds only on the other
+            # use that accrues meanwhile (E + other * E / (pace * 168) = stop).
+            cap_points = min(cap_points, stop * 100 / (1 + other / (pace * 168)))
+            # What that leaves the owner's own use: the week's total past 100
+            # comes off the end of the week, at the non-eval rate.
+            over = cap_points + other - 100
+            squeeze = {"week_total_points": cap_points + other,
+                       "days_at_limit_before_reset": max(0.0, over) / (other / 7) if other else 0.0}
+        else:
+            cap_points = max(0.0, min(cap_points, stop * 100 - other))
     costs = pair_usd(gates)
     if a["measured_usd_per_pair"] and costs:
         scale = a["measured_usd_per_pair"] / (sum(costs.values()) / len(costs))
@@ -476,6 +494,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "assumptions": a, "batch_rates": rates,
             "non_eval_points_breakdown": breakdown,
             "measured_non_eval": measured_non_eval,
+            "owner_squeeze": squeeze,
             "automatic_spend_as_of": (automatic or {}).get("as_of"),
             # A count, not names: job names can be private, and this
             # document is committed to a public repository.
@@ -516,6 +535,33 @@ def eval_run_points(results_tree: Path) -> list:
         if isinstance(points, (int, float)):
             out.append((when, float(points) * 100))
     return out
+
+
+#: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
+RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
+
+
+def eval_pace(runs: list, cap_points: float, now: datetime) -> dict | None:
+    """Meter points an hour evals spent from each weekly reset until they
+    had spent `cap_points`, over the weeks before `now` that reached it; the
+    median. None when no week did."""
+    paces = []
+    start = RESET_ANCHOR
+    while start < now:
+        total = 0.0
+        for t, points in sorted(runs):
+            if start <= t < start + timedelta(days=7):
+                total += points
+                if total >= cap_points:
+                    hours = (t - start).total_seconds() / 3600
+                    if hours > 0:
+                        paces.append(cap_points / hours)
+                    break
+        start += timedelta(days=7)
+    if not paces:
+        return None
+    paces.sort()
+    return {"points_per_hour": paces[len(paces) // 2], "weeks": len(paces)}
 
 
 def main(argv: list | None = None) -> int:
@@ -591,6 +637,14 @@ def main(argv: list | None = None) -> int:
         if measured is None:
             p.error(f"--meter-history: fewer than two seven_day readings in the "
                     f"{args.meter_days:g} days before --as-of")
+    if "eval_points_per_hour" not in assumptions:
+        measured_pace = eval_pace(eval_run_points(args.results_tree),
+                                  budget["weekly_cap"] * 100, now)
+        if measured_pace:
+            assumptions["eval_points_per_hour"] = measured_pace["points_per_hour"]
+            sources["eval_points_per_hour"] = (
+                f"routine-results: median over {measured_pace['weeks']} week(s) of the hours "
+                "from the reset until evals spent the cap")
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
                    automatic, measured)
     if automatic is not None and "non_eval_points_per_week" not in assumptions:

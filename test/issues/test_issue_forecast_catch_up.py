@@ -321,3 +321,43 @@ class MeterNonEval(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvalsRunFirst(unittest.TestCase):
+    """Evals spend the fixed cap from the Monday reset, so the account stop
+    binds only on other use that accrues while they do."""
+
+    def run_forecast(self, **assumptions):
+        budget = {**Forecast.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            return fc.forecast(Forecast.GATES, Forecast.CELLS, budget, Forecast.BATCH, None,
+                               {"fire_overhead_usd": 0.0, **assumptions},
+                               frozenset({"skipped-one"}))
+
+    def test_heavy_other_use_still_leaves_evals_the_cap_and_squeezes_the_owner(self):
+        # 25 points at 1 an hour take 25 hours; 168 other points a week accrue
+        # 25 meanwhile; 50 < 80, so the whole cap runs.
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
+        sq = doc["inputs"]["owner_squeeze"]
+        self.assertAlmostEqual(sq["week_total_points"], 193.0)
+        self.assertAlmostEqual(sq["days_at_limit_before_reset"], 93.0 / 24.0)
+
+    def test_slow_evals_meet_the_stop_part_way(self):
+        # At 0.1 an hour, E + 168 * E / 16.8 = 80, so E = 80 / 11.
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 80 / 11)
+
+    def test_without_a_pace_the_stop_comes_off_the_whole_week(self):
+        doc = self.run_forecast(non_eval_points_per_week=70.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertIsNone(doc["inputs"]["owner_squeeze"])
+
+    def test_pace_is_measured_from_weeks_that_reached_the_cap(self):
+        reset = fc.RESET_ANCHOR
+        runs = [(reset + fc.timedelta(hours=h), 5.0) for h in (1, 5, 10, 15, 20)]  # 25 by hour 20
+        runs += [(reset + fc.timedelta(days=7, hours=1), 3.0)]  # a week that never reached it
+        pace = fc.eval_pace(runs, 25.0, reset + fc.timedelta(days=14))
+        self.assertEqual(pace, {"points_per_hour": 1.25, "weeks": 1})
+        self.assertIsNone(fc.eval_pace(runs[-1:], 25.0, reset + fc.timedelta(days=14)))

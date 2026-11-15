@@ -44,11 +44,25 @@ their calibrated points are taken off. That method leans on the eval cost
 calibration, so the script uses the eval-free span whenever one of at least
 2 days exists.
 
-At 122.8 points a week, the 80% account stop leaves evals no meter room
-([`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
-`--set new_fixtures_per_week_open=2`). Automatic jobs alone take 29.3 of the
-80. Evals get any room only when interactive use falls under about 51 points
-a week, and the full 25-point cap only under about 26.
+**Evals run first in the week, so they still get their cap** (Adam, Nov 15,
+12:44 PM ET). The guard's fixed cap is a floor (`allowance_guard.py` `room`),
+so from the Monday reset evals fire until the cap is spent. The 80% stop binds
+only on the other use that builds up meanwhile. The forecast now models this
+with `eval_points_per_hour`, measured from `routine-results`: the median over
+the two weeks that reached the cap is 0.88 points an hour, so the cap is gone
+about 28 hours after the reset. About 21 points of other use build up by then,
+which comes to 46, under the 80% stop.
+
+| | |
+|---|---|
+| Eval room | the full 25-point cap |
+| Catch-up | **Jan 7, 2027** (Dec 30 to Jun 8), or **Dec 15** with the API credit |
+| Keep-up | $119 a week, with 2 new fixtures a week |
+| Your own work | at 122.8 + 25 = 148 points a week, it hits the weekly limit about **2.7 days before the reset** (`owner_squeeze`) |
+
+Run: [`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
+`--set new_fixtures_per_week_open=2`. Before this change, the forecast took the
+account stop off the whole week and showed evals no room at all.
 
 ## How the rates and costs are taken
 

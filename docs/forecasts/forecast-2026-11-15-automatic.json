@@ -2,7 +2,7 @@
  "inputs": {
   "verdict_as_of": "20261115T164035Z",
   "newest_run": "20261112T022642Z",
-  "weekly_cap_points": 0.0,
+  "weekly_cap_points": 25.0,
   "usd_per_point": [
    6.67,
    7.5
@@ -31,6 +31,7 @@
    "skill_text_edits_per_week": 2,
    "guidance_rest_changes_per_week": 1,
    "non_eval_points_per_week": 122.80778482396677,
+   "eval_points_per_hour": 0.8825779120167886,
    "interactive_points_per_week": 93.50177282396677,
    "start": "2026-11-16T19:00:00Z"
   },
@@ -56,6 +57,10 @@
    "to": "2026-11-15T17:39:35+00:00",
    "readings": 689
   },
+  "owner_squeeze": {
+   "week_total_points": 147.80778482396676,
+   "days_at_limit_before_reset": 2.725026709401709
+  },
   "automatic_spend_as_of": "2026-11-15T18:00:00+00:00",
   "automatic_unmeasured_jobs": 6,
   "assumption_sources": {
@@ -74,6 +79,7 @@
    "skill_text_edits_per_week": "assumptions",
    "guidance_rest_changes_per_week": "assumptions",
    "start": "assumptions",
+   "eval_points_per_hour": "routine-results: median over 2 week(s) of the hours from the reset until evals spent the cap",
    "non_eval_points_per_week": "--automatic-spend categories + the rest of --meter-history's measured total",
    "interactive_points_per_week": "--meter-history measured total less --automatic-spend categories"
   },
@@ -420,28 +426,28 @@
  "median_subject_usd": 9.92247937317241,
  "kept_subjects": 7,
  "capacity_usd_per_week": {
-  "plan_low": 0.0,
-  "plan_high": 0.0,
-  "plan_central": 0.0
+  "plan_low": 166.75,
+  "plan_high": 187.5,
+  "plan_central": 177.125
  },
  "scenarios": {
   "plan_cap_only": {
-   "capacity_usd": 0.0,
-   "weeks_central": Infinity,
-   "weeks_fast": Infinity,
-   "weeks_slow": Infinity,
-   "done_central": null,
-   "done_fast": null,
-   "done_slow": null
+   "capacity_usd": 177.125,
+   "weeks_central": 7.400142217097006,
+   "weeks_fast": 6.274292332775962,
+   "weeks_slow": 29.161542258093963,
+   "done_central": "2027-01-07T14:13:26.012900+00:00",
+   "done_fast": "2026-12-30T17:04:52.002863+00:00",
+   "done_slow": "2027-06-08T22:08:20.757695+00:00"
   },
   "plan_cap_plus_api_credit": {
-   "capacity_usd": 46.0,
-   "weeks_central": Infinity,
-   "weeks_fast": Infinity,
-   "weeks_slow": Infinity,
-   "done_central": null,
-   "done_fast": null,
-   "done_slow": null
+   "capacity_usd": 223.125,
+   "weeks_central": 4.121303468371685,
+   "weeks_fast": 3.7468666836961915,
+   "weeks_slow": 14.806125961550899,
+   "done_central": "2026-12-15T15:22:44.337671+00:00",
+   "done_fast": "2026-12-13T00:28:24.970299+00:00",
+   "done_slow": "2027-02-28T10:25:44.981546+00:00"
   }
  }
 }
