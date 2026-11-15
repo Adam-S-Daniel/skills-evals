@@ -86,6 +86,18 @@ distinct cloud ids counted. Coverage is records seen, never complete: uses
 after a session's last successful upload are lost with the container. There
 are no cloud `skill` rows, so no sum rule ties them to one.
 
+SKILL READS (Adam, 2026-11-15): a session that reads `SKILL.md`, or any other
+file inside an INSTALLED copy of a skill (`~/.claude/skills/<name>/`, a
+project's `.claude/skills/<name>/`, or a plugin copy under `.claude/plugins/`),
+used that skill even with no Skill tool call. A `skill-read` row counts those
+sessions: `name` keyed as a `skill` row's, `invocations` and `sessions` both
+the number of sessions with a read use that week (at most one per session and
+skill, in the week of its first read), on `surface` local (transcripts) or
+cloud (the shards' `skill-read` lines, under the cloud `skill-records`
+source). A session that also called the skill counts only the call, so a
+`skill-read` row never repeats a `skill` or cloud `skill-digest` use, and
+`weight` adds both. A registry checkout is maintenance, never a read use.
+
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
 name, repo. `sessions` is the number of distinct transcript files that invoked the
 name that week; `sessions_scanned` is how many transcript files were read
@@ -129,6 +141,8 @@ TRACKED_FIELD = "skill_keys"
 #: #562: the source of the `skill-digest` rows, one per surface.
 DIGEST_SCOPE = "skill-records"
 DIGEST_KIND = "skill-digest"
+#: Sessions that read an installed copy of a skill without calling it.
+READ_KIND = "skill-read"
 #: Why a `skill-digest` row names no prefix. The first eight are the private
 #: records' `DIGEST_NULL_REASONS` (scripts/model_usage_census.py; a test keeps
 #: them equal); the last three are decided when the rows are built. Fixed: a
@@ -152,6 +166,16 @@ def row(iso_week_label: str, kind: str, name: str, invocations: int,
             "repo": None, "surface": SURFACE_LOCAL, "invocations": invocations,
             "sessions": sessions, "blocked": None, "overridden": None,
             "outcome": None, "runner": None}
+
+
+def read_row(week_monday_text: str, name: str, sessions: int,
+             surface: str = SURFACE_LOCAL) -> dict:
+    """One `skill-read` row: `sessions` sessions in the week starting
+    `week_monday_text` used skill `name` only by reading its installed files,
+    on `surface`. Each session is one use, so `invocations` equals `sessions`."""
+    return {"week": week_monday_text, "kind": READ_KIND, "name": name, "repo": None,
+            "surface": surface, "invocations": sessions, "sessions": sessions,
+            "blocked": None, "overridden": None, "outcome": None, "runner": None}
 
 
 def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
@@ -293,7 +317,7 @@ def _sort_key(entry: dict) -> tuple:
 #: row is never carried.
 CARRIED = (("cloud", CLOUD_SCOPE, SESSION_KINDS, SURFACE_CLOUD),
            ("skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_LOCAL),
-           ("cloud skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_CLOUD),
+           ("cloud skill copies", DIGEST_SCOPE, (DIGEST_KIND, READ_KIND), SURFACE_CLOUD),
            ("cloud hooks", CLOUD_HOOK_SCOPE, ("hook",), SURFACE_CLOUD))
 
 
@@ -355,7 +379,7 @@ def check_public(doc, allowlist, public_repos) -> list[str]:
         if kind != DIGEST_KIND:
             if "digest" in row:
                 problems.append("a digest on a row that is not skill-digest")
-            if kind == "skill" and not (row.get("name") == "other"
+            if kind in ("skill", READ_KIND) and not (row.get("name") == "other"
                                         or row.get("name") in allowlist):
                 problems.append("a skill name outside the allowlist")
             continue
@@ -441,6 +465,9 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     double count: the census counts a use whose id was also seen locally once,
     as local, so a cloud digest row never repeats a local use, and local
     `skill-digest` rows (which would repeat the `skill` rows) are never added.
+    Read uses (`skill-read` rows, every surface) are added too: the census
+    writes one only for a session that never called the skill, so it never
+    repeats a call.
 
     None when `doc` is None or stale (unknown); 0 when a fresh census has no
     row for it.
@@ -453,7 +480,7 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
         return 0
     return sum(entry["invocations"] for entry in doc["rows"]
                if isinstance(entry, dict)
-               and (entry.get("kind") == "skill"
+               and (entry.get("kind") in ("skill", READ_KIND)
                     or (entry.get("kind") == DIGEST_KIND
                         and entry.get("surface") == SURFACE_CLOUD))
                and isinstance(entry.get("name"), str)

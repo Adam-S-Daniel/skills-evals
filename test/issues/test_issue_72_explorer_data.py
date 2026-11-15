@@ -1131,8 +1131,8 @@ class QueueConfidenceUsageTests(unittest.TestCase):
                          "sessions_scanned": 40}]})
         doc = t.build()
         by = {s["name"]: s for s in doc["skills"]}
-        self.assertEqual(by["alpha"]["usage"], {"invocations": 5})
-        self.assertEqual(by["beta"]["usage"], {"invocations": 0})
+        self.assertEqual(by["alpha"]["usage"], {"invocations": 5, "reads": 0})
+        self.assertEqual(by["beta"]["usage"], {"invocations": 0, "reads": 0})
         self.assertEqual(doc["usage"], {"from": "2026-10-19T00:00:00Z",
                                         "to": "2026-10-31T16:00:00Z",
                                         "sessions_scanned": 40, "surface": "local",
@@ -1163,12 +1163,43 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         doc = t.build()
         by = {s["name"]: s for s in doc["skills"]}
         # Local 2 plus cloud 3; a local digest row repeats a skill row, so it never adds.
-        self.assertEqual(by["alpha"]["usage"], {"invocations": 5})
-        self.assertEqual(by["beta"]["usage"], {"invocations": 0})
+        self.assertEqual(by["alpha"]["usage"], {"invocations": 5, "reads": 0})
+        self.assertEqual(by["beta"]["usage"], {"invocations": 0, "reads": 0})
         self.assertEqual(doc["usage"]["cloud"], {"from": "2026-10-26T00:00:00Z",
                                                  "to": "2026-10-31T16:00:00Z",
                                                  "events_scanned": 3})
         explorer_data.finish(doc)
+
+    def test_usage_counts_reads_apart_from_calls_on_every_surface(self):
+        # Adam, 2026-11-15: a session that read a skill's installed files used
+        # it. Reads stay apart from calls so the page can show both.
+        t = Tree(self)
+        t.pair("alpha", "20261030T100000Z", [Tree.trial(5, 5, 8.0, 0.25)],
+               [Tree.trial(1, 5, 4.0, 0.25)])
+        base = {"repo": None, "blocked": None, "overridden": None, "outcome": None}
+        rows = [{**base, "week": "2026-10-26", "kind": "skill", "name": "alpha",
+                 "surface": "local", "invocations": 2, "sessions": 1},
+                {**base, "week": "2026-10-26", "kind": "skill-read", "name": "alpha",
+                 "surface": "local", "invocations": 1, "sessions": 1},
+                {**base, "week": "2026-10-26", "kind": "skill-read", "name": "alpha",
+                 "surface": "cloud", "invocations": 2, "sessions": 2},
+                {**base, "week": "2026-10-26", "kind": "skill-read", "name": "gamma",
+                 "surface": "local", "invocations": 4, "sessions": 4}]
+        t.write_json("usage/weekly-local.json", {
+            "generated_at": "2026-10-31T16:00:00Z", "schema": 1, "rows": rows,
+            "sources": [{"surface": "local", "scope": "transcripts",
+                         "from": "2026-10-19T00:00:00Z", "to": "2026-10-31T16:00:00Z",
+                         "sessions_scanned": 40}]})
+        doc = t.build()
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["usage"], {"invocations": 2, "reads": 3})
+        self.assertEqual(by["beta"]["usage"], {"invocations": 0, "reads": 0})
+        explorer_data.finish(doc)
+        explorer_data.validate(doc)
+        # The contract holds `reads` to a count.
+        by["alpha"]["usage"]["reads"] = -1
+        with self.assertRaises(explorer_data.Refused):
+            explorer_data.validate(doc)
 
 
 class FixtureQueueFieldTests(unittest.TestCase):

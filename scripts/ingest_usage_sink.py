@@ -15,7 +15,9 @@ the files the census already reads (`model_usage_census.py`):
   * a guidance record -> events/<YYYY-MM of its ts>/cloud-guidance.jsonl
     (read by `cloud_guidance_tally`), unless its `session` already appears in
     any events/*/cloud-guidance.jsonl;
-  * a skill line -> events/<YYYY-MM of its ts>/cloud-skills/<session>.jsonl
+  * a skill line (kind `skill`, or `skill-read` for a session that read an
+    installed copy's files without calling it) ->
+    events/<YYYY-MM of its ts>/cloud-skills/<session>.jsonl
     (read by `cloud_skill_records`), unless its `id` is already in that shard;
   * a hook line (an agent-checks run, optional key `hooks`, below) ->
     events/<YYYY-MM of its ts>/cloud-hooks/<session>.jsonl (read by
@@ -55,7 +57,9 @@ anything under `drop/`, with any key, date part and content. So:
     before VALIDATOR_VERSION 3, and one WITH `setups` before version 4. That
     reason is permanent, so the hook that sends `hooks` and the setup script
     that sends `setups` must only be deployed after the version that accepts
-    them is live.
+    them is live. A skill line of kind `skill-read` was an invalid record
+    before version 5; an invalid record is dropped from an object recorded as
+    ingested, so it too is lost for good if sent before version 5 is live.
   * EACH RECORD is checked on its own. A skill line must pass the census's
     own reader (`_cloud_line_ok`, the ADR 0036 shape); a guidance record
     must pass `guidance_record_ok`; a hook line must pass `hook_line_ok`:
@@ -149,7 +153,7 @@ import model_usage_census as census  # noqa: E402
 
 #: Bumped whenever validation accepts more than before, so that keys rejected
 #: by an older version (except for good: PERMANENT_REASONS) are planned again.
-VALIDATOR_VERSION = 4
+VALIDATOR_VERSION = 5
 
 #: The hook's object key: `drop/<UTC day of send>/<32 hex from os.urandom>.json`.
 KEY_RE = re.compile(r"drop/([0-9]{4}-[0-9]{2})-[0-9]{2}/[0-9a-f]{32}\.json", re.ASCII)

@@ -3,7 +3,7 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
-import { purposeOf, nextKey } from '../core/items.js';
+import { purposeOf, nextKey, usesOf } from '../core/items.js';
 import { gainOf, gainPer100Words, runsOf } from '../core/stats.js';
 import { hashFor } from '../core/route.js';
 import { navLink, table, badge } from './bits.js';
@@ -63,9 +63,14 @@ export function discardedLine(d) {
   return h('p', { class: 'meta' }, STRINGS.discarded(d.total, usd, unknown, rows.join(', ')));
 }
 
+/* Uses are calls plus reads; the split shows only when some use was a read,
+   so a skill used only through the Skill tool reads as before. */
 export function usageLine(u, window, refMs) {
-  if (!u || typeof u.invocations !== 'number' || !window) return null;
-  return h('p', { class: 'meta' }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs)));
+  const n = usesOf(u);
+  if (n === null || !window) return null;
+  const reads = Number.isInteger(u.reads) ? u.reads : 0;
+  return h('p', { class: 'meta' }, STRINGS.used(n, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs))
+    + (reads > 0 ? ' ' + STRINGS.usedSplit(u.invocations, reads) : ''));
 }
 
 // #562: uses by which copy they loaded, counted from `copies.loaded`; nothing
@@ -106,7 +111,7 @@ function nextCell(nt, refMs, verdict, removal) {
    uses, sections their size; each name opens its page. */
 export function subjectTable(items, kind, refMs) {
   const guidance = kind === 'guidance';
-  const uses = (it) => (it.raw.usage && Number.isInteger(it.raw.usage.invocations) ? it.raw.usage.invocations : -1);
+  const uses = (it) => (usesOf(it.raw.usage) === null ? -1 : usesOf(it.raw.usage));
   const gain = (it) => gainOf(it.pooled.all, guidance ? 'guidance' : 'skills');
   const rows = items.slice().sort((a, b) => TABLE_RANK.indexOf(a.chip) - TABLE_RANK.indexOf(b.chip) || (guidance ? 0 : uses(b) - uses(a)));
   return table([

@@ -1743,6 +1743,22 @@ await test('a calendar day shows as its US Eastern day, and a census window edge
   const skills = flat(renderRoute(doc({ generated_at: '2026-11-12T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage: { from: '2026-09-21T00:00:00Z', to: '2026-11-10T17:37:15Z' } }), { name: 'skills', id: null }, {}));
   ok(skills.includes('Sep 21') && skills.includes(STRINGS.utcNote), 'the census window edges are UTC days, and the page says so: ' + skills.slice(0, 400));
 });
+await test('uses are calls plus reads: the table ranks by the sum and the skill page splits them', () => {
+  // Adam, 2026-11-15: a session that read a skill's files used it.
+  const usage = { from: '2026-09-21T00:00:00Z', to: '2026-11-14T17:37:16Z', sessions_scanned: 40, surface: 'local', cloud: null };
+  const d = doc({ generated_at: '2026-11-15T16:00:00Z', usage, skills: [
+    { name: 'calls-only', status: 'covered', usage: { invocations: 3, reads: 0 } },
+    { name: 'read-mostly', status: 'covered', usage: { invocations: 2, reads: 3 } },
+    { name: 'older-data', status: 'covered', usage: { invocations: 1 } }] });
+  const list = flat(renderRoute(d, { name: 'skills', id: null }, {}));
+  ok(list.indexOf('read-mostly') < list.indexOf('calls-only') && list.indexOf('calls-only') < list.indexOf('older-data'), 'ranked by calls plus reads: ' + list.slice(0, 600));
+  ok(list.includes('read its files without calling it'), 'the note says what a use is');
+  const page = flat(renderRoute(d, { name: 'skills', id: 'read-mostly' }, {}));
+  ok(page.includes('Used 5 times') && page.includes('2 calls, 3 by reading its files.'), page.slice(0, 600));
+  const plain = flat(renderRoute(d, { name: 'skills', id: 'calls-only' }, {}));
+  ok(plain.includes('Used 3 times') && !plain.includes('by reading its files'), 'no split without a read: ' + plain.slice(0, 600));
+  ok(flat(renderRoute(d, { name: 'skills', id: 'older-data' }, {})).includes('Used 1 time'), 'data without reads still counts its calls');
+});
 await test('the skills page says cloud sessions are counted, and from when, once the census counts them', () => {
   const page = (usage) => flat(renderRoute(doc({ generated_at: '2026-11-15T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage }), { name: 'skills', id: null }, {}));
   const local = { from: '2026-09-21T00:00:00Z', to: '2026-11-14T17:37:16Z', sessions_scanned: 40, surface: 'local' };

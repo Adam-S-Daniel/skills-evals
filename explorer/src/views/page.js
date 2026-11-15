@@ -4,7 +4,7 @@
 import { STRINGS } from '../core/strings.js';
 import { parseTime } from '../core/format.js';
 import { h } from '../core/h.js';
-import { skillItems, sectionItems, wholeGuidance, purposeOf } from '../core/items.js';
+import { skillItems, sectionItems, wholeGuidance, purposeOf, usesOf } from '../core/items.js';
 import { groupOf, GROUPS, hashFor } from '../core/route.js';
 import { DEFAULT_DATA_URL } from '../adapters/web.js';
 import { wholeView } from './whole.js';
@@ -27,9 +27,9 @@ import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
 /* How many tested skills had no real-work use in the census window: the ones
    whose count is 0. Nothing without a census. */
 function unusedSkills(items, u, refMs) {
-  const have = items.filter((i) => i.raw.usage && Number.isInteger(i.raw.usage.invocations));
+  const have = items.filter((i) => usesOf(i.raw.usage) !== null);
   if (!u || !have.length) return null;
-  const none = have.filter((i) => i.raw.usage.invocations === 0).length;
+  const none = have.filter((i) => usesOf(i.raw.usage) === 0).length;
   return h('p', null, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs), cloudFrom(u, refMs)));
 }
 

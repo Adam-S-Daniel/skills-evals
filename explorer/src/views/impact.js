@@ -3,7 +3,7 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtUtcDay, fmtDay, fmtDayKey, fmtWeekStart, fmtDateTime, fmtCount, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
-import { skillItems } from '../core/items.js';
+import { skillItems, usesOf } from '../core/items.js';
 import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
 import { cloudNote, runsCell } from './hooks.js';
 import { hashFor } from '../core/route.js';
@@ -40,13 +40,13 @@ function hookWeeksView(doc, refMs) {
 
 function skillUseView(doc, refMs) {
   const u = doc.usage;
-  const rows = skillItems(doc).filter((s) => s.raw.usage && typeof s.raw.usage.invocations === 'number');
+  const rows = skillItems(doc).filter((s) => usesOf(s.raw.usage) !== null);
   if (!rows.length || !u) return null;
   return [srcLineFor(doc, 'usage'), h('p', { class: 'note' }, STRINGS.impactUseSkillsNote(fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs))),
     table([
       { label: STRINGS.colName, sort: (s) => s.name, cell: (s) => navLink(hashFor('skills', s.name), clean(s.name)) },
-      { label: STRINGS.colUses, num: true, sort: (s) => s.raw.usage.invocations, cell: (s) => fmtCount(s.raw.usage.invocations) }
-    ], rows.sort((a, b) => b.raw.usage.invocations - a.raw.usage.invocations || (a.name < b.name ? -1 : 1)), { tall: true })];
+      { label: STRINGS.colUses, num: true, sort: (s) => usesOf(s.raw.usage), cell: (s) => fmtCount(usesOf(s.raw.usage)) }
+    ], rows.sort((a, b) => usesOf(b.raw.usage) - usesOf(a.raw.usage) || (a.name < b.name ? -1 : 1)), { tall: true })];
 }
 
 function checkUseView(doc) {

@@ -30,7 +30,7 @@ heading above and the first carrying its predecessor, the routing sentence
 "becomes a check first" in "Finding your unknowns" (2026-10-26).
 
 Impact is copied from the same document, never recomputed: a check's 8-week
-`window_totals` (runs, blocks) and verdict, a skill's `usage.invocations` and
+`window_totals` (runs, blocks) and verdict, a skill's `usage.invocations` and `usage.reads` and
 verdict, a section's verdict and runs on its current text.
 
 Nothing personal leaves this module: no author names, emails or commit
@@ -170,7 +170,8 @@ def build(doc: dict, guidance: Path | None, registries: dict, manifest: list | N
 
     for sk in doc.get("skills") or []:
         ident, reg = sk["name"], sk.get("registry")
-        impact = {"invocations": (sk.get("usage") or {}).get("invocations"),
+        usage = sk.get("usage") or {}
+        impact = {"invocations": usage.get("invocations"), "reads": usage.get("reads"),
                   "verdict": sk.get("verdict")}
         commit, method = (reg_caps.get(reg) or {}).get(("skill", ident)), "trailer"
         if commit is None and reg in reg_ok:
@@ -213,6 +214,7 @@ def summarize(items: list[dict]) -> dict:
             row["agent_runs"] = sum(i["impact"].get("runs") or 0 for i in agent)
             row["agent_blocked"] = sum(i["impact"].get("blocked") or 0 for i in agent)
         if kind == "skill":
-            row["agent_invocations"] = sum(i["impact"].get("invocations") or 0 for i in agent)
+            row["agent_invocations"] = sum((i["impact"].get("invocations") or 0)
+                                           + (i["impact"].get("reads") or 0) for i in agent)
         out[kind] = row
     return out

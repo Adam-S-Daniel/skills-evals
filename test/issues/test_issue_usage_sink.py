@@ -363,7 +363,7 @@ class ApplyTests(SinkCase):
         proc = self.apply(unreadable=[KEY, KEY3])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.index("rejected"),
-                         [f"{KEY3} unreadable v4", f"{KEY} unreadable v4"])
+                         [f"{KEY3} unreadable v5", f"{KEY} unreadable v5"])
         self.assertEqual(self.index("ingested"), [])
         self.assertIn("1 planned but missing", proc.stdout)
         self.assertIn("rejected by reason: unreadable 2", proc.stdout)
@@ -399,7 +399,7 @@ class EnvelopeTests(SinkCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.events(), [], "nothing from a rejected object is written")
         self.assertEqual(self.index("ingested"), [])
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
         self.assertIn("rejected by reason: bad-envelope 1", proc.stdout)
 
     def test_control_the_valid_object_is_accepted(self):
@@ -545,7 +545,7 @@ class VersionTests(SinkCase):
         self.assertEqual([line.split(" ")[0] for line in self.index("ingested")], [KEY])
         self.assertEqual(self.index("rejected"),
                          [f"{KEY} bad-skill-record", f"{KEY2} bad-envelope v1"])
-        self.assertEqual(sink.VALIDATOR_VERSION, 4)
+        self.assertEqual(sink.VALIDATOR_VERSION, 5)
 
 
 class DedupeTests(SinkCase):
@@ -745,7 +745,7 @@ class HookLineTests(SinkCase):
                 self.setUp()
                 self.put(KEY, drop(None, [], hooks=bad))
                 self.assertEqual(self.apply().returncode, 0)
-                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
                 self.assertEqual(self.events(), [])
 
     def test_hooks_beyond_the_cap_are_dropped(self):
@@ -881,7 +881,7 @@ class SetupRecordTests(SinkCase):
     def test_more_than_one_setup_rejects_the_envelope(self):
         self.put(KEY, self.setup_only(setup(), setup(id="1" * 32)))
         self.assertEqual(self.apply().returncode, 0)
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
         self.assertEqual(self.events(), [])
 
     def test_setups_must_be_a_list(self):
@@ -890,7 +890,7 @@ class SetupRecordTests(SinkCase):
                 self.setUp()
                 self.put(KEY, drop([], [], setups=bad))
                 self.assertEqual(self.apply().returncode, 0)
-                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v4"])
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
                 self.assertEqual(self.events(), [])
 
     def test_an_empty_setups_list_is_valid(self):
