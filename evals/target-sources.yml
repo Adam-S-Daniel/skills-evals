@@ -1,0 +1,66 @@
+# Where each kind of target (git hooks, skills, guidance sections) is
+# defined, read by scripts/target_arrivals.py to count how many of each were
+# added and removed per ISO week from git history. target-arrivals.yml
+# publishes the count as arrivals/targets.json on persistent/eval-results,
+# and scripts/forecast_catch_up.py takes its arrival rates from that file.
+#
+# This file is the one list of the repositories counted. Skills are not
+# listed here: every registry in harness/registries.yml (name, url, layout,
+# private) is counted, so a registry added there is counted with no edit
+# here. Only a registry with `private: false` has its skill names published;
+# a private one contributes counts alone.
+#
+# Each source:
+#   kind    git-hook | guidance-section
+#   repo    owner/name on GitHub
+#   path    the file read at each first-parent commit of the default branch
+#   parser  agent-checks   the fleet runner's check ids (the explorer's own
+#                          Tree-sitter parse, scripts/explorer_public.py)
+#           repo-local     one `repo-local:<repo>` target while the file exists
+#           eval-coverage  the row ids of _agent-guidance's
+#                          agents-md/eval-coverage.yml
+#
+# A repo-local source is a repository whose `.agent-checks/local.sh` the hook
+# explorer lists (explorer-data.yml's public context repositories); add one
+# here when a repository gains its own checks elsewhere.
+
+# Weeks, ending at the run's as-of time, the published rates average over.
+rate_weeks: 4
+
+sources:
+  - kind: git-hook
+    repo: Adam-S-Daniel/_agent-guidance
+    path: templates/agent-checks/agent-checks
+    parser: agent-checks
+  - kind: git-hook
+    repo: Adam-S-Daniel/skills-evals
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/_agent-guidance
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/adam-agentskills
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/cms-platform
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/adamdaniel.ai
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/repo-settings
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: git-hook
+    repo: Adam-S-Daniel/wsl-automation
+    path: .agent-checks/local.sh
+    parser: repo-local
+  - kind: guidance-section
+    repo: Adam-S-Daniel/_agent-guidance
+    path: agents-md/eval-coverage.yml
+    parser: eval-coverage

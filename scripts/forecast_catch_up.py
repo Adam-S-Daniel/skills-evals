@@ -32,8 +32,13 @@ Usage:
       --as-of 2026-11-15T14:27:23Z --out-json forecast.json [--assumptions a.yml]
 
 `--assumptions` (YAML) supplies the measured rates the verdict document
-does not hold; each key is documented in ASSUMPTION_KEYS. Every value the
-run used is echoed in the output, with its source.
+does not hold; each key is documented in ASSUMPTION_KEYS. The arrival rates
+(new git hooks, skills and sections a week, and the share of new skills and
+sections that get evaluated) default to `arrivals/targets.json` in the
+results tree (or `--arrivals`), counted daily from git history by
+scripts/target_arrivals.py; a stale document or an incomplete kind is not
+used. The assumptions file and `--set` override it. Every value the run
+used is echoed in the output, with its source (`assumption_sources`).
 """
 from __future__ import annotations
 
@@ -64,10 +69,15 @@ ASSUMPTION_KEYS = {
     "fire_overhead_usd": (0.19, "routine session cost per eval fire, outside the run's own calls"),
     "pairs_per_fire": (2.0, "pairs (one fixture x one model, both arms) one fire carries"),
     "api_credit_usd_per_week": (0.0, "extra eval dollars a week from the monthly API credit lane"),
-    "new_skills_per_week": (None, "skills added per week; default: batches/current.json rate"),
-    "new_sections_per_week": (None, "guidance sections added per week; default: same file"),
-    "first_use_share": (None, "share of new skills that get a recorded use and so are evaluated"),
-    "evaluated_section_share": (None, "share of new sections that get fixtures (not skipped)"),
+    "new_hooks_per_week": (None, "git hooks added per week; default: arrivals/targets.json "
+                                 "(reported, not priced)"),
+    "new_skills_per_week": (None, "skills added per week; default: arrivals/targets.json, "
+                                  "else batches/current.json rate"),
+    "new_sections_per_week": (None, "guidance sections added per week; default: as skills"),
+    "first_use_share": (None, "share of new skills that get a recorded use and so are evaluated; "
+                              "default: arrivals/targets.json, else 1"),
+    "evaluated_section_share": (None, "share of new sections that get fixtures (not skipped); "
+                                      "default: arrivals/targets.json, else 1"),
     "new_fixtures_per_week_open": (0.0, "fixtures added per week to subjects still open"),
     "skill_text_edits_per_week": (0.0, "evaluated skills whose text changes per week "
                                        "(restarts their evidence)"),
@@ -78,6 +88,50 @@ ASSUMPTION_KEYS = {
                                        "account stop it can cap the eval points"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
 }
+
+
+#: The assumptions arrivals/targets.json (scripts/target_arrivals.py,
+#: published daily by target-arrivals.yml) supplies: key -> (kind, rate field).
+ARRIVAL_KEYS = {
+    "new_hooks_per_week": ("git-hook", "added_per_week"),
+    "new_skills_per_week": ("skill", "added_per_week"),
+    "new_sections_per_week": ("guidance-section", "added_per_week"),
+    "first_use_share": ("skill", "eligible_share"),
+    "evaluated_section_share": ("guidance-section", "eligible_share"),
+}
+#: An arrivals document older than this at --as-of is not used.
+ARRIVALS_MAX_AGE = timedelta(days=8)
+
+
+def arrival_assumptions(doc, now: datetime) -> dict:
+    """{assumption key: value} from an arrivals document: each rate of a
+    kind whose sources were all read (`complete`) and that is a number. {}
+    for a missing, malformed or stale document (older than ARRIVALS_MAX_AGE
+    at `now`, or dated after it): unknown, so the run falls back."""
+    if not isinstance(doc, dict) or doc.get("schema") != 1 or not isinstance(doc.get("rates"), dict):
+        return {}
+    try:
+        as_of = datetime.fromisoformat(str(doc.get("as_of")).replace("Z", "+00:00"))
+    except ValueError:
+        return {}
+    if as_of.tzinfo is None or not timedelta(0) <= now - as_of <= ARRIVALS_MAX_AGE:
+        return {}
+    out = {}
+    for key, (kind, field) in ARRIVAL_KEYS.items():
+        rate = doc["rates"].get(kind)
+        if isinstance(rate, dict) and rate.get("complete") is True and _number(rate.get(field)):
+            out[key] = float(rate[field])
+    return out
+
+
+def merge_assumptions(given: dict, arrivals: dict) -> tuple[dict, dict]:
+    """(assumptions, {key: source}): the --assumptions file and --set values
+    win; arrivals fill only the keys they leave unset."""
+    merged = dict(arrivals)
+    merged.update(given)
+    sources = {k: "arrivals/targets.json" for k in arrivals}
+    sources.update({k: "assumptions" for k in given})
+    return merged, sources
 
 
 def _number(value) -> bool:
@@ -344,6 +398,9 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--assumptions", type=Path, default=None)
     p.add_argument("--guidance", type=Path, default=None,
                    help="_agent-guidance checkout: its eval-coverage skipped rows are left out")
+    p.add_argument("--arrivals", type=Path, default=None,
+                   help="arrivals document (scripts/target_arrivals.py); default: "
+                        "arrivals/targets.json in --results-tree")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
@@ -373,8 +430,26 @@ def main(argv: list | None = None) -> int:
     unknown = set(assumptions) - set(ASSUMPTION_KEYS)
     if unknown:
         p.error(f"unknown assumption keys: {sorted(unknown)}")
+    arrivals_path = args.arrivals or args.results_tree / "arrivals" / "targets.json"
+    try:
+        arrivals_doc = json.loads(arrivals_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        if args.arrivals:
+            p.error(f"--arrivals {args.arrivals}: not a readable JSON file")
+        arrivals_doc = None
+    from_arrivals = arrival_assumptions(arrivals_doc, now)
+    assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
-    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions or {}, skipped)
+    doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped)
+    doc["inputs"]["assumption_sources"] = sources
+    # Why an arrival rate fell back, so a reader can tell a default from data.
+    doc["inputs"]["arrivals_status"] = (
+        "missing" if arrivals_doc is None
+        else "unused: stale, malformed or no complete kind" if not from_arrivals
+        else "used for " + ", ".join(sorted(from_arrivals)))
+    doc["inputs"]["arrivals_as_of"] = arrivals_doc.get("as_of") \
+        if isinstance(arrivals_doc, dict) and any(v == "arrivals/targets.json"
+                                                  for v in sources.values()) else None
     args.out_json.write_text(json.dumps(doc, indent=1, default=str) + "\n", encoding="utf-8")
     s = doc["scenarios"]["plan_cap_only"]
     print(f"open subjects {len(doc['subjects'])}, backlog ${doc['backlog_usd']['central']:.0f} "

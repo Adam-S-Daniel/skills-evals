@@ -234,17 +234,31 @@ def build_evals(tree: Path, report_base: str, skill_names: set, section_ids: set
 # --- hooks -------------------------------------------------------------------------
 
 def fleet_checks(agent_checks_dir: Path | None) -> list | None:
-    """The fleet runner's check ids, from its source parsed as Bash (never a
-    line scan): the literal first argument of every `note_ran` call, and the
-    words of the `lesson_checks` assignment. None without a readable runner
-    or the parser, or when the source does not parse."""
+    """The fleet runner's check ids (`fleet_check_ids`) as catalog entries.
+    None without a readable runner or the parser, or when the source does not
+    parse."""
     if agent_checks_dir is None:
         return None
     try:
         source = (Path(agent_checks_dir) / "agent-checks").read_bytes()
+    except OSError:
+        return None
+    ids = fleet_check_ids(source)
+    if ids is None:
+        return None
+    return [{"name": i, "where": "fleet", "repo": None, "source_url": RUNNER_URL}
+            for i in sorted(ids)]
+
+
+def fleet_check_ids(source: bytes) -> set | None:
+    """The check ids in the fleet runner's source, parsed as Bash (never a
+    line scan): the literal first argument of every `note_ran` call, and the
+    words of the `lesson_checks` assignment, less `repo-local`. None without
+    the parser or when the source does not parse."""
+    try:
         from scorers import bash_ast  # harness/scorers
         root = bash_ast.parse_bash(source)
-    except (OSError, ValueError, ImportError):
+    except (ValueError, ImportError):
         return None
     ids: set = set()
     pending = [root]
@@ -262,9 +276,7 @@ def fleet_checks(agent_checks_dir: Path | None) -> list | None:
                     and not any(c.type in ("expansion", "simple_expansion", "command_substitution")
                                 for c in value.named_children):
                 ids.update(value.text.decode("utf-8", "replace").strip("\"'").split())
-    ids = {i for i in ids if _CHECK_ID_RE.fullmatch(i)} - {REPO_LOCAL}
-    return [{"name": i, "where": "fleet", "repo": None, "source_url": RUNNER_URL}
-            for i in sorted(ids)]
+    return {i for i in ids if _CHECK_ID_RE.fullmatch(i)} - {REPO_LOCAL}
 
 
 def repo_checks(context_repos: dict | None, public: frozenset | None) -> list:

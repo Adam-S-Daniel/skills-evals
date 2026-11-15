@@ -21,17 +21,13 @@ fire_overhead_usd: 0.19
 # the "plus API credit" scenario.
 api_credit_usd_per_week: 46
 
-# Skills: batches/current.json measured 1.8 a week (2026-10-26 to 11-09); 0
-# were added 2026-11-08 to 11-15. Under the first-use rule only used skills
-# are evaluated: 7 of 38 catalog skills have any recorded use (explorer,
-# local since 2026-09-21 plus cloud since 2026-11-02). Central 1.0, between
-# the 4-week rate and last week's zero.
-new_skills_per_week: 1.0
-first_use_share: 0.2
-# Sections: 1.0 a week (batches/current.json). 12 of 32 rows in
-# eval-coverage.yml are skipped, the newest (eval-rules) among them.
-new_sections_per_week: 1.0
-evaluated_section_share: 0.6
+# Arrival rates (new skills, sections and git hooks per week, and the share
+# of new skills and sections that get evaluated) are no longer set here:
+# forecast_catch_up.py reads them from arrivals/targets.json on
+# persistent/eval-results (scripts/target_arrivals.py, counted daily from git
+# history). The 2026-11-15 runs used these hand-set values; to reproduce
+# them, pass --set new_skills_per_week=1.0 --set first_use_share=0.2
+# --set new_sections_per_week=1.0 --set evaluated_section_share=0.6.
 
 # Fixtures added: 49 guidance and 32 skill fixtures in the 28 days to
 # 2026-11-15 (git log --diff-filter=A on evals/**/fixture.yaml, the
