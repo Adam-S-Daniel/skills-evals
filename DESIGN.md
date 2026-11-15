@@ -153,7 +153,8 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   harness's baseline commit lands on whatever branch `setup:` leaves checked
   out, and fails if nothing is left uncommitted. In a fixture meant for
   routine runs, avoid `command_succeeds` checks: they need `bwrap`, and
-  where it is missing (`command -v bwrap`) the check fails closed. Prefer
+  where the harness finds none (it checks `/usr/bin`, `/bin` and
+  `~/.local/bin`, not `PATH`) the check fails closed. Prefer
   `file_matches` on files the agent leaves behind (reflogs, stand-in
   records). `file_matches` reads in text mode and cannot see a carriage
   return.
