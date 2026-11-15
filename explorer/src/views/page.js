@@ -30,7 +30,14 @@ function unusedSkills(items, u, refMs) {
   const have = items.filter((i) => i.raw.usage && Number.isInteger(i.raw.usage.invocations));
   if (!u || !have.length) return null;
   const none = have.filter((i) => i.raw.usage.invocations === 0).length;
-  return h('p', null, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs)));
+  return h('p', null, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs), cloudFrom(u, refMs)));
+}
+
+/* The day cloud skill uses are counted from, or null when the census counts
+   none (an older document has no `cloud`). */
+function cloudFrom(u, refMs) {
+  const c = u && u.cloud;
+  return c && c.from && Number.isFinite(parseTime(c.from)) ? fmtUtcDay(parseTime(c.from), refMs) : null;
 }
 
 /* The Skills or the Guidance list: one table row per subject, the coverage and
@@ -53,7 +60,7 @@ export function buildPage(doc, mode, opts) {
   return h('div', null,
     timesLine(doc, ['runs', 'coverage', 'usage']),
     h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
-      u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
+      u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'), cloudFrom(u, refMs))) : null,
       chipSummary(items, mode),
       unusedSkills(items, u, refMs),
       items.length ? subjectTable(items, 'skills', refMs) : h('p', null, STRINGS.noCards)),
