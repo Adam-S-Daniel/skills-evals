@@ -73,6 +73,17 @@ to the procedure is a pull request here, never an edit to the task.
 
 ### Every run, in order
 
+**Keep the big listings out of the main session.** Steps 1, 2, 3 and 5 (with its fire cost
+ledger) call tools whose output is large: every thread, every thread's messages, every
+session and every scheduled task. Hand each of those steps to a subagent with
+`model: "haiku"`. The subagent makes the calls, writes the result straight to the file or
+helper script the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the
+run list for step 6 to `$REFRESH_WORK/runs.json`), and returns one line: its counts, or the
+`STOP:` text a helper printed. The main session never reads the raw listings; it runs steps
+4 and 6 to 11 from those files (`"$(cat "$REFRESH_WORK/arg1.json")"` as arg 1) and handles
+every `STOP:` itself. Why: on 2026-11-15 a run that made these calls itself grew to 324k
+tokens and cost $5.43, for a task that fires twice a day.
+
 0. **Setup.** In a skills-evals checkout run `git fetch origin main && git checkout --detach origin/main`
    before anything else (helpers are read from that commit; `refresh.sh` never checks out),
    and `export DASHBOARD_HOME=<private folder>`; run every later step from the checkout's root.
@@ -148,10 +159,10 @@ to the procedure is a pull request here, never an edit to the task.
     that cadence.
 11. **Log.** Append one line to `$DASHBOARD_HOME/watch/log.md`:
     `- <UTC start> <UTC end> refresh: <counts, what changed>`.
-12. **Backstop.** `send_later` to this session at the next scheduled time plus 90 minutes, text:
-    "Refresh backstop: if watch/log.md has no refresh line from the last 13 hours, run the full
-    refresh now (dashboard/README.md "Refresh") and log it as a backstop run; otherwise end with
-    no reply." A scheduler can skip a fire with no trace; this catches the next one.
+12. **No backstop wake.** Do not `send_later` to this session. The task starts a fresh thread
+    each run, and a wake into a finished run's thread reloads its whole context (300k tokens or
+    more) just to read one log line. A run that never happens is caught by the next one, whose
+    build prints `MISSED:` (step 7); that run says so in its log line and in its thread.
 
 ### Standing rules
 
