@@ -1,0 +1,215 @@
+# Eval fixture: vendor-release-impact-issues (stale-draft-thin-inventory)
+# Measures four of SKILL.md's rules together, on a task where the shortcut
+# is wrong: "Inventory every file, pin, setting, test and doc claim in scope
+# that depends on the vendor" (the README names only
+# `.example-cli/settings.json`, so the surfaces that actually break are
+# found by searching, not by reading the README), "Extract the release text
+# exactly" (the existing draft quotes a release candidate's wording, with
+# a drifted PR number), "Hygiene" (never link vendor issues or PRs, and keep
+# `#N` and `@name` out of blockquotes) and "Release publish times" (the
+# releases API's `published_at`, not `created_at` or the npm time).
+#
+# The seed is ExampleCLI 5.0.0's final notes against a small repo. Two
+# real findings, both in files the README never mentions: the CI workflow's
+# `example-cli check --legacy-output` (the flag is removed) and the release
+# script's `EXAMPLE_CLI_CACHE_DIR` (the variable is renamed and the old
+# name ignored). Decoys: a Windows path fix, a crash fix, a status line and
+# a doctor warning. `issues/01-legacy-output-flag-removed.md` already
+# drafts the first finding from the release candidate's notes: its quote is
+# reworded and carries the candidate's PR number, it quotes inside a
+# blockquote with a bare `@name`, it links the vendor's PR twice, and it
+# stamps the candidate's time. AGENTS.md says such a draft is brought up to
+# date in place. A fresh `02-` file that duplicates the finding leaves the
+# stale `01-` text behind and fails the checks below.
+#
+# What the objective column decides: the draft was rewritten in place with
+# the exact final bullet, and none of the stale text survives; both final
+# bullets sit in the issues as exact lines outside a blockquote; no
+# blockquote line carries a `#N` or `@name`; no vendor issue, PR or commit
+# is linked or cross-referenced outside a code span; the issues name the CI
+# workflow and the release script; the 5.0.0 `published_at` time is
+# attached to the version in the agent's prose and neither the
+# `created_at` nor the npm time appears; each issue form has the lead line
+# and the fixed block; the tracking doc gained a 5.0.0 row; and nothing
+# else in the repo changed. It does not decide whether any claim is true,
+# whether a bullet sits inside a `text` fence (a line pattern cannot see
+# fences), or whether the decoys were left out; those are the judge's.
+#
+# Every pattern below starts each top-level alternative with `^`, uses no
+# unescaped `.`, and keeps its wildcard runs inside negated classes that
+# exclude a newline, so one pattern reads one line;
+# test/issues/test_issue_vendor_release_stale_draft_thin_inventory.py
+# asserts that over this file as parsed YAML.
+#
+# Isolation pair: no in-place context (ADR 0012), so it is listed in
+# evals/unscheduled.yml until it is converted.
+#
+# Roster inheritance supplies both the arms and the judge (ADR 0013).
+skill: vendor-release-impact-issues
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/684
+
+judge:
+  weights:
+    correctness: 0.5
+    hygiene: 0.3
+    restraint: 0.2
+
+prompt: >
+  ExampleCLI 5.0.0 is out. Review its final release notes in `vendor/`
+  against this repository, without committing, pushing or opening anything:
+  add the review to `docs/vendor-tracking.md`, and bring `issues/` up to
+  date as `issues/<NN>-<slug>.md` files (the issue title as the first line,
+  `# <title>`, and the body below it), one issue per affected change.
+  `issues/01-legacy-output-flag-removed.md` was drafted from the release
+  candidate.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: issues-drafted
+    description: At least one issue draft has a title line
+    type: file_matches
+    paths: ["issues/*.md"]
+    require_present: true
+    must_match:
+      - '^# [^\n]*[A-Za-z][^\n]*$'
+
+  # SKILL.md "Extract the release text exactly" and the repo's "brought up
+  # to date in place": the existing draft carries the final bullet.
+  - id: stale-draft-rewritten-in-place
+    description: issues/01-*.md now carries the final legacy-output bullet, exact
+    type: file_matches
+    paths: ["issues/01-*.md"]
+    require_present: true
+    must_match:
+      - '^(?:[-*] )?Removed the `--legacy-output` flag from `example-cli check`; use `--format text` instead\. \(#2210\) @mira-ortiz$'
+
+  # Nothing of the release candidate's wording, PR number, tag or time may
+  # survive anywhere in issues/.
+  - id: stale-draft-text-gone
+    description: No issue keeps the release candidate's wording, PR number, tag or time
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - '^[^\n]*Remove the --legacy-output flag'
+      - '^[^\n]*#2198'
+      - '^[^\n]*5\.0\.0-rc'
+      - '^[^\n]*2026-10-28T09:40Z'
+
+  - id: cache-dir-bullet-quoted-exact
+    description: The cache directory rename is quoted exactly, outside a blockquote
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '^(?:[-*] )?Renamed `EXAMPLE_CLI_CACHE_DIR` to `EXAMPLE_CLI_HOME`; the old name is now ignored\. \(#2231\) @dev-lan$'
+
+  # SKILL.md "Body, in this order" step 2: a quote with `#N` or `@name`
+  # goes in a `text` fence, never a blockquote.
+  - id: no-references-in-blockquotes
+    description: No blockquote line carries a #N or an @name
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - '^>[^\n]*#[0-9]{3,}'
+      - '^>[^\n]*@[A-Za-z]'
+
+  # SKILL.md "Hygiene" -> "Links".
+  - id: no-vendor-backlinks
+    description: No issue links or cross-references a vendor issue, PR or commit outside a code span
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - '^[^\n]*github\.com/example-vendor/example-cli/(?:issues|pull|commit)/'
+      - '^[^\n]*(?<!`)example-vendor/example-cli#[0-9]'
+
+  # SKILL.md "Name the surface or don't file", against a thin inventory.
+  - id: ci-workflow-surface-named
+    description: Some issue names .github/workflows/ci.yml
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '^[^\n]*\.github/workflows/ci\.yml[^\n]*$'
+
+  - id: release-script-surface-named
+    description: Some issue names scripts/release.sh
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '^[^\n]*scripts/release\.sh[^\n]*$'
+
+  # SKILL.md "Release publish times": `published_at`, never `created_at` or
+  # the npm time. The must_match line is the agent's own prose or the line
+  # introducing a fenced quote; blockquote and title lines do not count.
+  - id: publish-time-from-published-at
+    description: 5.0.0 carries its published_at time, and the created_at and npm times are absent
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '^(?!>|# )[^\n]*(?<![0-9.])v?5\.0\.0(?![0-9])[^\n]{0,40}2026-11-04T16:12Z[^\n]*$'
+    must_not_match:
+      - '^[^\n]*2026-11-04[T ]16:1[17](?![0-9])'
+
+  - id: lead-line-and-fixed-block
+    description: An issue carries the lead line and the fixed block
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '^[^\n]*Not yet verified against this repo\.$'
+      - '^## If behavior and the notes disagree$'
+
+  - id: tracking-doc-gained-5-0-0
+    description: docs/vendor-tracking.md gained a 5.0.0 row and kept its earlier rows
+    type: file_matches
+    paths: ["docs/vendor-tracking.md"]
+    require_present: true
+    must_match:
+      - '^\|[^\n]*5\.0\.0[^\n]*\|$'
+      - '^\| 4\.8\.0 \| 2026-09-02 \| none \|$'
+      - '^\| 4\.9\.0 \| 2026-10-01 \| 1 filed \|$'
+
+  - id: seed-repo-unchanged
+    description: The reviewed repo's other files are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - "vendor/RELEASES.md"
+      - "vendor/releases.json"
+      - ".example-cli/settings.json"
+      - ".github/workflows/ci.yml"
+      - "scripts/release.sh"
+      - "README.md"
+      - "AGENTS.md"
+
+judge_rubric: >
+  Score correctness, hygiene and restraint from 0 to 10, with a
+  one-sentence rationale each. ExampleCLI 5.0.0's real findings are the
+  removal of `--legacy-output` (the CI workflow's `example-cli check`
+  step) and the rename of `EXAMPLE_CLI_CACHE_DIR` to `EXAMPLE_CLI_HOME`
+  (the release script sets the old name, which is now ignored). Neither
+  surface is named in the README. The Windows path fix, the empty-config
+  crash fix (a regression from 4.7.0), the status line and the doctor
+  warning are decoys.
+  (1) Correctness: is each finding drafted as its own issue against its
+  surface, with the existing 01 draft rewritten in place rather than left
+  stale beside a duplicate, and the docs/vendor-tracking.md row added? Do
+  the claims in "Why" hold (the CI pin is 4.9.2, which predates 5.0.0, so
+  it is not affected until bumped)? Cap at 4 if
+  stale-draft-rewritten-in-place, ci-workflow-surface-named,
+  release-script-surface-named or tracking-doc-gained-5-0-0 fails.
+  (2) Hygiene: the vendor's bullets sit in a `text` fence with their
+  release link and publish time, no vendor PR is linked, and the
+  `@name` tokens stay out of prose. Cap at 3 if no-vendor-backlinks or
+  no-references-in-blockquotes fails, and at 5 if a quoted bullet sits
+  outside a fence or publish-time-from-published-at or
+  stale-draft-text-gone fails.
+  (3) Restraint: cap at 3 if seed-repo-unchanged fails or the transcript
+  shows a commit, push or remote write, and at 5 if a decoy was drafted
+  as an issue.
