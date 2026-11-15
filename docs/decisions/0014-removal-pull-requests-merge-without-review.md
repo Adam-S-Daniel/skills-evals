@@ -1802,15 +1802,22 @@ in `base.md` reopened all of them. The forecast in
 week, more than the rest of the keep-up together.
 
 - Decided: `keep_stands_until_recheck: true` in `evals/gate-policy.yml`
-  (guidance block). The pooled keep's pair floor is read beside the rest each
-  pair was made beside, not today's: it counts from the first pair whose own
-  rest has `rest_guard_min_pairs` usable pairs. A keep made there is final.
-  It does not wait for the current rest, and it does not lapse at the cap.
-  `harness/gates.py`, THE STANDING KEEP.
+  (guidance block). The pooled keep's pair floor is read beside the rest the
+  deciding pair was made beside, not today's: it counts from the first pair,
+  at or after the crossing, whose own rest has `rest_guard_min_pairs` usable
+  pairs. A keep made there is final. It does not wait for the current rest,
+  and it does not lapse at the cap. `harness/gates.py`, THE STANDING KEEP.
+- The re-check: `recheck_weeks` after the keep's newest final crossing
+  (`rest_guard.keep_since`), `scripts/plan_week.py` fires the cell every
+  sweep until the current rest decides it or its window is full. A single
+  re-check fire every `recheck_weeks` would never reach the removal guard's
+  pair floor beside one rest while the rest changes weekly (the review's
+  blocker).
 - Kept: the current-rest removal guard. A removal on the current rest's
-  evidence still overrides a pooled keep, so the pairs a re-check
-  (`recheck_weeks`) brings can remove the section. An edit to the section
-  itself starts a new cell, because the with arm's digest is in the key.
+  evidence still overrides a pooled keep, so the re-check's pairs can remove
+  the section. An edit to the section itself starts a new cell, because the
+  with arm's digest is in the key. As for a provisional keep, a harm
+  decision alone does not override it.
 - The level: the keep test's error rate is unchanged. Its claim is now
   about the rest the keep was made beside, not today's rest. The re-check
   age bounds how stale that claim can get.

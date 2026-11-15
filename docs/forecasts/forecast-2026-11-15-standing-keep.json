@@ -144,6 +144,19 @@
   },
   {
    "kind": "guidance",
+   "subject": "name-becomes-scanner-data",
+   "route": "keep",
+   "open_cells": 4,
+   "unprojected_cells": 0,
+   "pairs_central": 13,
+   "pairs_low": 13,
+   "pairs_high": 80,
+   "usd_central": 5.542319256756758,
+   "usd_low": 5.542319256756758,
+   "usd_high": 53.02937062937063
+  },
+  {
+   "kind": "guidance",
    "subject": "pinning-github-actions",
    "route": "keep",
    "open_cells": 4,
@@ -341,27 +354,27 @@
  ],
  "dormant_zero_use_usd": 517.0363636363633,
  "backlog_usd": {
-  "central": 509.70093497212247,
-  "low": 509.70093497212247,
-  "high": 1336.8599471390096
+  "central": 515.2432542288792,
+  "low": 515.2432542288792,
+  "high": 1389.8893177683804
  },
  "backlog_pairs": {
-  "central": 775.0,
-  "low": 775.0,
-  "high": 2015
+  "central": 788.0,
+  "low": 788.0,
+  "high": 2095
  },
- "backlog_points_central": 71.94085179564185,
- "keep_up_usd_per_week": 80.78475986580987,
+ "backlog_points_central": 72.72311280576983,
+ "keep_up_usd_per_week": 79.4356568429881,
  "keep_up_items": {
   "new skills (first use only)": 2.1585648365148367,
   "new guidance sections": 6.4756945095445095,
   "new fixtures on open subjects": 39.77202797202798,
   "skill text edits": 21.585648365148366,
-  "re-checks of kept subjects": 10.792824182574183,
+  "re-checks of kept subjects": 9.44372115975241,
   "guidance keeps re-proved after a rest change": 0.0
  },
  "median_subject_usd": 10.792824182574183,
- "kept_subjects": 8,
+ "kept_subjects": 7,
  "capacity_usd_per_week": {
   "plan_low": 166.75,
   "plan_high": 187.5,
@@ -370,21 +383,21 @@
  "scenarios": {
   "plan_cap_only": {
    "capacity_usd": 177.125,
-   "weeks_central": 5.290633843782947,
-   "weeks_fast": 4.776271264827723,
-   "weeks_slow": 15.551168647376501,
-   "done_central": "2026-12-23T19:49:35.348720+00:00",
-   "done_fast": "2026-12-20T05:24:48.860968+00:00",
-   "done_slow": "2027-03-05T15:35:46.797933+00:00"
+   "weeks_central": 5.2743035993266,
+   "weeks_fast": 4.767930282796957,
+   "weeks_slow": 15.918224515175355,
+   "done_central": "2026-12-23T17:04:58.816873+00:00",
+   "done_fast": "2026-12-20T04:00:44.235036+00:00",
+   "done_slow": "2027-03-08T05:15:42.186778+00:00"
   },
   "plan_cap_plus_api_credit": {
    "capacity_usd": 223.125,
-   "weeks_central": 3.5808632505580005,
-   "weeks_fast": 3.337590501931901,
-   "weeks_slow": 10.130394532526978,
-   "done_central": "2026-12-11T20:35:06.093937+00:00",
-   "done_fast": "2026-12-10T03:42:54.735568+00:00",
-   "done_slow": "2027-01-26T16:54:22.613272+00:00"
+   "weeks_central": 3.585813971366434,
+   "weeks_fast": 3.3443381101088283,
+   "weeks_slow": 10.4256547709306,
+   "done_central": "2026-12-11T21:25:00.289882+00:00",
+   "done_fast": "2026-12-10T04:50:55.688994+00:00",
+   "done_slow": "2027-01-28T18:30:36.005459+00:00"
   }
  }
 }

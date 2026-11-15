@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -443,18 +443,54 @@ class StandingKeepTests(unittest.TestCase):
                 self.assertFalse(plan_week.provisional_keep(cell))
                 self.assertEqual(verdict(both, STANDS)["verdict"], "keep")
 
-    def test_the_floor_is_read_beside_one_rest(self):
-        # Five gaining pairs beside each of two older rests: no single rest
-        # holds the floor (6), so no keep. Six beside one rest keeps.
+    def test_the_floor_is_read_beside_the_deciding_pairs_rest(self):
+        # Five gaining pairs beside each of two older rests: no rest holds
+        # the floor (6) where the crossing comes, so no keep.
         split = strat(OLD, GAIN[:5], LOSS[:5]) + strat(OLDER, GAIN[:5], LOSS[:5], start=10)
         cell = cell_of(split, STANDS)
         self.assertEqual(cell["class"], "insufficient", cell["reason"])
         self.assertEqual(cell["keep_tests"][0]["p"], 1.0)
-        held = strat(OLD, GAIN[:6], LOSS[:6]) + strat(OLDER, GAIN[:5], LOSS[:5], start=10)
+        # The review's m2: a rest with no gain holds the floor, then one
+        # gaining pair beside each of nine rests carries the crossing. The
+        # rests that gained never held the floor, so no keep.
+        scattered = strat(OLD, FLAT[:6], FLAT[:6])
+        for i in range(9):
+            scattered += strat(f"rest-{i}", GAIN[:1], LOSS[:1], start=10 + i)
+        cell = cell_of(scattered, STANDS)
+        self.assertNotEqual(cell["class"], "benefit", cell["reason"])
+        # Ten gaining pairs beside one rest keep, whatever comes after.
+        held = strat(OLD, GAIN, LOSS) + strat(OLDER, GAIN[:3], LOSS[:3], start=10)
         cell = cell_of(held, STANDS)
         self.assertEqual(cell["class"], "benefit", cell["reason"])
-        self.assertGreaterEqual(cell["rest_guard"]["pooled_keep_at"], 1)
         self.assertGreaterEqual(cell["decided_at"], 6)
+        self.assertLessEqual(cell["decided_at"], 10)
+
+    def test_the_keep_reports_when_it_was_made(self):
+        # `keep_since`, the with run's timestamp at the standing keep's
+        # pair, is what the planner's re-check age reads.
+        runs = strat(OLD, GAIN, LOSS)
+        cell = cell_of(runs, STANDS)
+        guard = cell["rest_guard"]
+        self.assertIs(guard["keep_stands"], True)
+        withs = sorted((r for r in runs if r["role"] == "with"), key=lambda r: r["timestamp"])
+        self.assertEqual(guard["keep_since"], withs[cell["decided_at"] - 1]["timestamp"])
+        # Off, neither field is reported.
+        self.assertNotIn("keep_since", cell_of(runs + strat(MAIN, FLAT[:6], FLAT[:6], start=20))
+                         ["rest_guard"])
+
+    def test_run_utility_puts_the_decision_at_the_standing_keep(self):
+        # The review's m3: a later current-rest keep does not move the
+        # decision point of a keep that was already final.
+        runs = strat(OLD, GAIN, LOSS) + strat(MAIN, GAIN, LOSS, start=20)
+        cell = cell_of(runs, STANDS)
+        guard = cell["rest_guard"]
+        self.assertLess(cell["decided_at"], guard["current_keep_at"])
+        rows, day = gates.cell_utility([r for r in runs if r["role"] == "with"],
+                                       [r for r in runs if r["role"] == "without"],
+                                       STANDS, cell, {"keys": None, "current": MAIN,
+                                                      "min_pairs": 6, "keep_stands": True})
+        decisive = sum(1 for _, cls, _ in rows if cls == "decisive")
+        self.assertEqual(decisive, 2 * cell["decided_at"])
 
     def test_it_does_not_lapse_at_the_cap(self):
         # The noisy current rest that ends a provisional keep at its cap
@@ -477,9 +513,15 @@ class StandingKeepTests(unittest.TestCase):
         self.assertEqual(cell["keep_tests"][0]["p"], 1.0)
 
     def test_off_is_the_rule_of_2026_11_07(self):
-        runs = StaleKeepTests.stale(None, 20)
-        self.assertEqual(cell_of(runs, {**STANDS, "keep_stands_until_recheck": False}),
-                         cell_of(runs))
+        off = {**STANDS, "keep_stands_until_recheck": False}
+        cases = {"stale": StaleKeepTests.stale(None, 20),
+                 "removal first": StaleKeepTests.stale(None, 30),
+                 "at the cap": StaleKeepTests.noisy(None, 40)[0],
+                 "one rest": strat(MAIN, GAIN, LOSS),
+                 "old rest only": strat(OLD, GAIN, LOSS)}
+        for name, runs in cases.items():
+            with self.subTest(name):
+                self.assertEqual(cell_of(runs, off), cell_of(runs))
 
 
 class RemovalGuardTests(unittest.TestCase):
@@ -968,6 +1010,33 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(self.bands_of([cell]), {"focus": [(cell["fixture"], "model-a")]})
         # At the cap the window is frozen: no fire.
         self.assertEqual(self.bands_of([{**cell, "at_cap": True}]), {})
+
+    def test_a_standing_keep_is_fired_only_once_its_recheck_is_due(self):
+        # THE STANDING KEEP: not fired while fresh; once `recheck_weeks`
+        # past its newest confirmation, fired every sweep (not once per
+        # age) until the current rest decides it or its window is full.
+        gate = cell_of(StaleKeepTests().stale(3), STANDS)
+        self.assertEqual(gate["class"], "benefit", gate["reason"])
+        cell = self.kept_cell(gate)
+        cell["keep_since"] = gate["rest_guard"]["keep_since"]
+        self.assertFalse(cell["provisional_keep"])
+        since = plan_week._stamp_time(cell["keep_since"])
+        age = plan_week.recheck_after(cell)
+
+        def bands_at(now, cells):
+            bands, _ = plan_week.eval_items(self.ctx(cells), now)
+            return {b: [(i["fixture"], i["model"]) for i in items]
+                    for b, items in bands.items() if items}
+
+        self.assertEqual(bands_at(since + age - timedelta(hours=1), [cell]), {})
+        due = since + age
+        self.assertEqual(bands_at(due, [cell]),
+                         {"guidance-rest": [(cell["fixture"], "model-a")]})
+        # Fired again on the next sweep, though its newest run is new.
+        fresh = {**cell, "newest": due.strftime("%Y%m%dT%H%M%SZ")}
+        self.assertEqual(bands_at(due + timedelta(hours=1), [fresh]),
+                         {"guidance-rest": [(cell["fixture"], "model-a")]})
+        self.assertEqual(bands_at(due, [{**cell, "at_cap": True}]), {})
 
     def test_the_plans_cells_carry_the_provisional_keep(self):
         # eval_cells_and_outages, on the committed evals/ and a gates

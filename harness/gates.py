@@ -326,17 +326,21 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     current rest's own keep crosses or its window is full.
   * THE STANDING KEEP (Adam, 2026-11-15; `keep_stands_until_recheck`, on
     in evals/gate-policy.yml): the pooled keep's pair floor is read beside
-    the rest each pair was made beside (the rest then on main), not today's:
-    it counts from the first pair whose own rest has `rest_guard_min_pairs`
-    usable pairs by then. A keep made there is final (`keep_final` true):
-    it neither waits for the current rest nor lapses at its cap, so an edit
-    to another section does not reopen it. It is re-tested when the planner's
-    re-check age comes (`recheck_weeks`), and an edit to the section itself
-    starts a new cell (the with arm's digest is in the key). A removal on
-    the current rest's evidence still overrides it, as above, so a re-check's
-    pairs can remove the section. The keep test's level is unchanged; what
-    changes is what it is about: the rest the keep was made beside, not
-    today's, with the re-check bounding how stale it gets.
+    the rest the deciding pair was made beside (the rest then on main), not
+    today's: it counts from the first pair, at or after the pooled crossing,
+    whose own rest has `rest_guard_min_pairs` usable pairs by then. A keep
+    made there is final (`keep_final` true): it neither waits for the
+    current rest nor lapses at its cap, so an edit to another section does
+    not reopen it. `rest_guard.keep_since` is the with run's timestamp at its
+    newest final crossing; `recheck_weeks` after it, scripts/plan_week.py
+    fires the cell every sweep until the current rest decides it (its own
+    keep crosses and moves `keep_since`, or a removal on its evidence
+    overrides the keep) or its window is full. An edit to the section itself
+    starts a new cell (the with arm's digest is in the key). The keep test's
+    level is unchanged; what changes is what it is about: the rest the keep
+    was made beside, not today's, with the re-check bounding how stale it
+    gets. (Known limit, as for a provisional keep: a harm decision alone does
+    not override it; the remove test's null is the easier one to reject.)
 
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
@@ -1356,14 +1360,19 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         stands = bool(rest.get("keep_stands"))
         if stands:
             # THE STANDING KEEP (Adam, 2026-11-15): the floor is read beside
-            # the rest each pair was made beside, the rest then on main: the
-            # first pair n whose own rest has `min_pairs` usable pairs among
-            # 1..n. A keep made there stands when the rest later changes.
+            # the rest the deciding pair was made beside, the rest then on
+            # main: the keep counts from the first pair n, at or after the
+            # pooled crossing, whose own rest has `min_pairs` usable pairs
+            # among 1..n (with no crossing, the first such pair at all, for
+            # the route's p). Whether pair n qualifies depends only on pairs
+            # 1..n, so the keep test keeps its level; a crossing made of one
+            # pair each beside many rests never keeps (the review's m2).
             seen_by_rest: dict = {}
             floor_at = None
             for i, key in enumerate(usable_keys):
                 seen_by_rest[key] = seen_by_rest.get(key, 0) + 1
-                if seen_by_rest[key] >= rest["min_pairs"]:
+                if seen_by_rest[key] >= rest["min_pairs"] \
+                        and (pooled_keep is None or i + 1 >= pooled_keep):
                     floor_at = i + 1
                     break
         else:
@@ -1449,6 +1458,19 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             # A removal on the current rest's evidence still overrides it,
             # which a re-check's pairs can bring.
             final = True
+        if stands:
+            out["rest_guard"]["keep_stands"] = True
+            if final:
+                # The keep's newest confirmation, a final crossing's pair:
+                # scripts/plan_week.py re-checks it `recheck_weeks` later,
+                # and fires it until the current rest decides (THE STANDING
+                # KEEP). The with run's timestamp of that pair.
+                current_final = current_keep is not None and (
+                    remove_decided is None or current_keep <= remove_decided)
+                last = max(k for k in (pooled_keep if not removed else None,
+                                       current_keep if current_final else None)
+                           if k is not None and k <= len(usable))
+                out["rest_guard"]["keep_since"] = usable[last - 1][0]["timestamp"]
         # Round 3's M1: a provisional keep does not stand at the current
         # rest's cap either. No more pairs can test it there, so the cell
         # ends on the current rest's own rules, as a `current` cell would:
@@ -1526,8 +1548,9 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             return awaiting(remove_at, "no benefit")
         over = "" if rest is None or pooled_keep is None else (
             f", beside today's rest whatever older rests showed; the pooled keep test's "
-            f"crossing at pair {pooled_keep} does not stand against it (a pooled keep is "
-            "not final)")
+            f"crossing at pair {pooled_keep} does not stand against it ("
+            + ("a removal on the current rest overrides a standing keep" if stands
+               else "a pooled keep is not final") + ")")
         return done(
             "no-benefit", f"the remove test decided at pair {remove_decided} (crossed at "
             f"{remove_at}): confident at {policy['retire_confidence']:.0%} that the gain "
@@ -1876,6 +1899,8 @@ def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
         final_at = guard.get("current_keep_at")
         if guard.get("keep_final") is False:
             at = None
+        elif guard.get("keep_stands"):
+            pass  # THE STANDING KEEP is final where it crossed.
         elif isinstance(final_at, int) and not isinstance(final_at, bool) and final_at > at:
             at = final_at
     out = [(r, "discarded", why) for r, why in discards]

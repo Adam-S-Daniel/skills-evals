@@ -1949,6 +1949,19 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # Round 3's m5: a decided cell at the cap is not re-checked; a
             # new pair cannot enter its frozen window.
             band, order = None, None
+        elif cell.get("keep_since") and _stamp_time(cell["keep_since"]) is not None \
+                and now - _stamp_time(cell["keep_since"]) >= recheck_after(cell):
+            # THE STANDING KEEP's re-check (Adam, 2026-11-15: a guidance keep
+            # stands until its re-check). Due `recheck_weeks` after its newest
+            # confirmation, it is fired like an undecided guidance cell, every
+            # sweep, until the current rest decides it: its own keep crosses
+            # (which moves `keep_since`), a removal on its evidence overrides
+            # the keep, or its window is full (`at_cap`, above). One fire per
+            # age would never reach the removal guard's pair floor beside one
+            # rest (the review's blocker). Like a provisional keep, it is
+            # exempt from a batch that leaves its section out.
+            band, order = _guidance_band(cell, focused, near_order)
+            provisional = True
         elif cell.get("provisional_keep") and cell.get("section") not in final_kept:
             # The pooled adversarial rounds 2 and 4: a pooled keep is not
             # final (a removal on the current rest's evidence overrides it,
@@ -3665,6 +3678,11 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # it is fired until the current rest's own keep crosses or
                 # its window is full (`eval_items`).
                 "provisional_keep": provisional_keep(cell),
+                # A standing keep's newest confirmation (gates' THE STANDING
+                # KEEP): its re-check comes `recheck_weeks` after it
+                # (`eval_items`). None for any other cell.
+                "keep_since": ((cell or {}).get("rest_guard") or {}).get("keep_since")
+                if (cell or {}).get("class") == "benefit" else None,
                 "at_cap": (cell or {}).get("at_cap") is True,
                 # DEEP BEFORE WIDE (`pairs_to_verdict`): the gate's own state
                 # the projection reads, the keep and remove tests so far, the
