@@ -171,3 +171,53 @@ class Forecast(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Arrivals(unittest.TestCase):
+    """The arrival rates come from arrivals/targets.json (scripts/
+    target_arrivals.py), never a hand count, unless the run overrides them."""
+
+    NOW = fc.datetime(2026, 11, 16, tzinfo=fc.timezone.utc)
+
+    def doc(self, **kw):
+        rate = {"complete": True, "added_per_week": 1.5, "eligible_share": 0.25}
+        out = {"schema": 1, "as_of": "2026-11-15T10:00:00Z",
+               "rates": {"git-hook": {**rate, "eligible_share": None, "added_per_week": 3.0},
+                         "skill": dict(rate),
+                         "guidance-section": {**rate, "added_per_week": 1.0,
+                                              "eligible_share": 0.4}}}
+        out.update(kw)
+        return out
+
+    def test_every_rate_is_taken_from_a_fresh_document(self):
+        self.assertEqual(fc.arrival_assumptions(self.doc(), self.NOW), {
+            "new_hooks_per_week": 3.0, "new_skills_per_week": 1.5, "first_use_share": 0.25,
+            "new_sections_per_week": 1.0, "evaluated_section_share": 0.4})
+
+    def test_an_incomplete_kind_or_null_rate_is_left_out(self):
+        doc = self.doc()
+        doc["rates"]["skill"]["complete"] = False
+        got = fc.arrival_assumptions(doc, self.NOW)
+        self.assertNotIn("new_skills_per_week", got)
+        self.assertNotIn("first_use_share", got)
+        self.assertEqual(got["new_sections_per_week"], 1.0)
+
+    def test_a_stale_or_missing_document_gives_nothing(self):
+        self.assertEqual(fc.arrival_assumptions(self.doc(as_of="2026-11-01T00:00:00Z"),
+                                                self.NOW), {})
+        self.assertEqual(fc.arrival_assumptions(None, self.NOW), {})
+        self.assertEqual(fc.arrival_assumptions(self.doc(schema=2), self.NOW), {})
+
+    def test_the_run_overrides_and_sources_are_recorded(self):
+        merged, sources = fc.merge_assumptions({"new_skills_per_week": 2.0},
+                                               {"new_skills_per_week": 1.5,
+                                                "new_hooks_per_week": 3.0})
+        self.assertEqual(merged, {"new_skills_per_week": 2.0, "new_hooks_per_week": 3.0})
+        self.assertEqual(sources, {"new_skills_per_week": "assumptions",
+                                   "new_hooks_per_week": "arrivals/targets.json"})
+
+    def test_every_arrival_key_is_an_assumption(self):
+        self.assertLessEqual(set(fc.ARRIVAL_KEYS), set(fc.ASSUMPTION_KEYS))
+        import target_arrivals
+        self.assertEqual({kind for kind, _ in fc.ARRIVAL_KEYS.values()},
+                         set(target_arrivals.KINDS))
