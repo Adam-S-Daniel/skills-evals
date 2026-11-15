@@ -1913,6 +1913,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         kept = cell.get("verdict") == "keep"
         due = newest is not None and now - newest >= recheck_after(cell)
         provisional = False
+        rechecking = False
         # DEEP BEFORE WIDE: read only by the verdict-seeking bands below.
         depth = depth_order(cell, ctx, item["cost"], started)
         near_order = (rank, *depth, least, price, -item["weight"])
@@ -1931,6 +1932,23 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                     parked["section"] = cell["section"]
                 work.append(parked)
             band, order = None, None
+        elif cell["class"] == "benefit" and recheck_due_at(cell) is not None:
+            # THE RE-CHECK WINDOW (Adam, 2026-11-15): a kept cell's re-check
+            # is tested on its own pairs, so it is fired every sweep from
+            # when it fell due until it ends (a removal, the early stop at the
+            # margin, or `max_runs_per_cell` pairs; harness/gates.py), its
+            # window cap and its newest run notwithstanding. A guidance cell
+            # goes where an undecided one would, exempt from a batch that
+            # leaves its section out, as a provisional keep is; a skill cell
+            # to the recheck band.
+            rechecking = True
+            if now < recheck_due_at(cell):
+                band, order = None, None
+            elif cell.get("section"):
+                band, order = _guidance_band(cell, focused, near_order)
+                provisional = True
+            else:
+                band, order = "recheck", (rank, recheck_due_at(cell).timestamp())
         elif cell.get("at_cap") is True and cell["class"] == "insufficient":
             # Round 2's C1: `max_runs_per_cell` pairs freeze the window, so
             # another fire cannot change the class. It is blocking instead,
@@ -1949,18 +1967,6 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # Round 3's m5: a decided cell at the cap is not re-checked; a
             # new pair cannot enter its frozen window.
             band, order = None, None
-        elif standing_recheck_at(cell) is not None and now >= standing_recheck_at(cell):
-            # THE STANDING KEEP's re-check (Adam, 2026-11-15: a guidance keep
-            # stands until its re-check). Due `recheck_weeks` after its newest
-            # confirmation, it is fired like an undecided guidance cell, every
-            # sweep, until the current rest decides it: its own keep crosses
-            # (which moves `keep_since`), a removal on its evidence overrides
-            # the keep, or its window is full (`at_cap`, above). One fire per
-            # age would never reach the removal guard's pair floor beside one
-            # rest (the review's blocker). Like a provisional keep, it is
-            # exempt from a batch that leaves its section out.
-            band, order = _guidance_band(cell, focused, near_order)
-            provisional = True
         elif cell.get("provisional_keep") and cell.get("section") not in final_kept:
             # The pooled adversarial rounds 2 and 4: a pooled keep is not
             # final (a removal on the current rest's evidence overrides it,
@@ -1993,7 +1999,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
-        if band == "recheck" and _retiring(ctx, subject):
+        if (band == "recheck" or rechecking) and _retiring(ctx, subject):
             continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
                 and not provisional:
@@ -3476,47 +3482,12 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
     return verdicts
 
 
-def standing_recheck_at(cell: dict) -> datetime | None:
-    """When a standing keep's re-check is due (harness/gates.py, THE
-    STANDING KEEP), or None for any other cell. Due `recheck_after` its
-    newest confirmation (`keep_since`); a re-check passes at the pair by
-    which one rest holds `rest_guard_min_pairs` pairs made since it fell due
-    (the removal guard's floor, so a removal could have decided), and the
-    next one is due `recheck_after` that pair. So a change of the rest never
-    makes it due early, and a re-check that has had its pairs ends; one
-    also ends at `max_runs_per_cell` pairs made since it fell due, over every
-    rest, so a rest that keeps changing cannot hold it open."""
-    since = _stamp_time(cell.get("keep_since"))
-    if since is None:
-        return None
-    age = recheck_after(cell)
-    floor = cell.get("rest_guard_min_pairs")
-    stamps = sorted((t, rest) for t, rest in (
-        (_stamp_time(s), r) for s, r in (cell.get("pair_stamps") or [])
-        if isinstance(s, str)) if t is not None)
-    if not isinstance(floor, int) or floor < 1:
-        return since + age
-    # The third review's should-fix: a rest that changes before any one rest
-    # holds the floor would keep a re-check open for good, and the cap
-    # counts only today's rest. So a re-check also ends at
-    # `max_runs_per_cell` pairs made since it fell due, over every rest.
-    block = _committed_gate_policy()
-    cap = (block.get("guidance") or block["skills"])["max_runs_per_cell"]
-    while True:
-        due = since + age
-        seen: dict = {}
-        passed = None
-        total = 0
-        for t, rest in stamps:
-            if t >= due:
-                seen[rest] = seen.get(rest, 0) + 1
-                total += 1
-                if seen[rest] >= floor or total >= cap:
-                    passed = t
-                    break
-        if passed is None:
-            return due
-        since = passed
+def recheck_due_at(cell: dict) -> datetime | None:
+    """When a kept cell's open re-check fell due (harness/gates.py, THE
+    RE-CHECK WINDOW: `recheck.due`), or None: no re-check window (the
+    policy's `recheck_window` off, or not a kept cell)."""
+    return _stamp_time((cell.get("recheck") or {}).get("due")) \
+        if isinstance(cell.get("recheck"), dict) else None
 
 
 def provisional_keep(gate_cell: dict | None) -> bool:
@@ -3720,13 +3691,10 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # it is fired until the current rest's own keep crosses or
                 # its window is full (`eval_items`).
                 "provisional_keep": provisional_keep(cell),
-                # A standing keep's newest confirmation (gates' THE STANDING
-                # KEEP): its re-check comes `recheck_weeks` after it
-                # (`eval_items`). None for any other cell.
-                "keep_since": ((cell or {}).get("rest_guard") or {}).get("keep_since")
+                # A kept cell's re-check (gates' THE RE-CHECK WINDOW): when
+                # the open one fell due and its pairs so far (`eval_items`).
+                "recheck": (cell or {}).get("recheck")
                 if (cell or {}).get("class") == "benefit" else None,
-                "pair_stamps": ((cell or {}).get("rest_guard") or {}).get("pair_stamps"),
-                "rest_guard_min_pairs": ((cell or {}).get("rest_guard") or {}).get("min_pairs"),
                 "at_cap": (cell or {}).get("at_cap") is True,
                 # DEEP BEFORE WIDE (`pairs_to_verdict`): the gate's own state
                 # the projection reads, the keep and remove tests so far, the

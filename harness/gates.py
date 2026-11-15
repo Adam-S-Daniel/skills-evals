@@ -333,18 +333,49 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     current rest nor lapses at its cap, so an edit to another section does
     not reopen it. `rest_guard.keep_since` is the with run's timestamp at its
     newest confirmation (the latest crossing of the pooled keep test or of
-    any one rest's own keep test), and `rest_guard.pair_stamps` each usable
-    pair's timestamp and rest. scripts/plan_week.py (`standing_recheck_at`)
-    makes it due `recheck_weeks` after that, fires it every sweep until one
-    rest holds `rest_guard_min_pairs` pairs made since it fell due (the
-    removal guard's floor, so a removal could decide) and then counts the
-    re-check as passed from that pair, or until its own keep crosses again,
-    a removal overrides the keep, or its window is full. An edit to the section itself
+    any one rest's own keep test), from which THE RE-CHECK WINDOW (below)
+    times its re-check. An edit to the section itself
     starts a new cell (the with arm's digest is in the key). The keep test's
     level is unchanged; what changes is what it is about: the rest the keep
     was made beside, not today's, with the re-check bounding how stale it
     gets. (Known limit, as for a provisional keep: a harm decision alone does
     not override it; the remove test's null is the easier one to reject.)
+
+THE RE-CHECK WINDOW (Adam, 2026-11-15; `recheck_window`, on in both blocks
+of evals/gate-policy.yml). Before it, a keep was final once its keep test
+crossed: later pairs fell outside the frozen window or came after the keep,
+and a later removal could not override an earlier keep, so a re-check's
+pairs could not change it. Now a final `benefit` cell (not a provisional
+pooled keep) is re-tested on its own: from the keep's newest confirmation
+(the with run's timestamp at its deciding pair, or a standing keep's
+`rest_guard.keep_since`), a re-check falls due `recheck_weeks` later
+(`recheck_weeks_high` for a high-stakes subject; compute_gates passes it as
+`recheck_after_weeks`). Its pairs are the cell's pairs made since then,
+every window and rest. It ends at the first of:
+
+  * a REMOVAL: the remove test over its pairs (at 1 - `retire_confidence`,
+    with pairs spanning `min_cli_versions`; pooled, over its pairs beside
+    the current rest only, at least `rest_guard_min_pairs` of them) crosses.
+    The cell is then `no-benefit`, overriding the keep;
+  * THE EARLY STOP: the keep test against "the gain is at most
+    `objective_margin`" over its pairs crosses at 1 - `retire_confidence`.
+    The removal's null then holds, and a cell whose gain is under the
+    margin stops early at most that often (Ville's inequality);
+  * `max_runs_per_cell` pairs, room for a removal to decide (on the Nov 15
+    keeps, a gain that fell to 0 took most of that to remove).
+
+A passed re-check is a new confirmation, and the next falls due
+`recheck_weeks` after it. A keep test that crosses on a re-check's own pairs
+is not one: only the re-check ends it. Pooled, THE EARLY STOP reads the
+current rest's pairs only, as the removal does; the cap counts every pair. A
+removal that agent-errored trials or a skipped run block (below) ends the
+re-check and the keep stands (`recheck.blocked`). Each re-check spends its
+own alpha, so a cell whose gain sits at the margin risks a false removal at
+each one; a removal PR is reverted by hand if it proves wrong. Each kept cell reports `recheck` (`due`, the open
+re-check's due time, which scripts/plan_week.py fires from; its `pairs`;
+`passed`; `removed_at`; and `projected_pairs`, where the early stop would
+cross over the cell's own differences repeated, for the forecast). A re-check
+pair beyond the cell's window is still reported `over_cap` by RUN UTILITY.
 
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
@@ -455,7 +486,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -562,6 +593,11 @@ DEFAULT_REST_GUARD_MIN_PAIRS = 6
 #: rest it was made beside held the pair floor stands through later changes
 #: of the rest (module docstring, THE STANDING KEEP).
 DEFAULT_KEEP_STANDS_UNTIL_RECHECK = False
+#: `recheck_window` of a block that names none: off, the rule before
+#: 2026-11-15 (a re-check's pairs could not change a keep). On (Adam,
+#: 2026-11-15), a keep's re-check is tested on its own pairs (module
+#: docstring, THE RE-CHECK WINDOW).
+DEFAULT_RECHECK_WINDOW = False
 #: The keys only the guidance block takes, each optional with its default.
 GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs", "keep_stands_until_recheck")
 
@@ -606,7 +642,7 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     fall back to silently."""
     if not isinstance(block, dict):
         raise GatePolicyError(f"gate policy {name} must be a mapping")
-    allowed = set(SKILL_KEYS) | {"retirement_mode"} | (
+    allowed = set(SKILL_KEYS) | {"retirement_mode", "recheck_window"} | (
         set(GUIDANCE_ONLY_KEYS) if guidance else set())
     unknown = sorted(set(block) - allowed)
     if unknown:
@@ -623,6 +659,10 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
                               f"{SKILL_KEYS['max_runs_high_cell'][0]}")
     mode = block.get("retirement_mode")
     out["retirement_mode"] = mode if mode in MODES else "proposal"
+    window = block.get("recheck_window", DEFAULT_RECHECK_WINDOW)
+    if not isinstance(window, bool):
+        raise GatePolicyError(f"gate policy {name}.recheck_window must be true or false")
+    out["recheck_window"] = window
     if guidance:
         rest_policy = block.get("rest_policy", DEFAULT_REST_POLICY)
         if not isinstance(rest_policy, str) or rest_policy not in REST_POLICIES:
@@ -1471,10 +1511,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                 # current-rest test runs), before any removal decided. Every
                 # rest's counts, not just today's, so a change of the rest
                 # never moves it back (the review's round 2 blocker).
-                # Reporting only: the keep is decided above. With
-                # `pair_stamps`, each usable pair's with run timestamp and
-                # its rest's ordinal, scripts/plan_week.py times the re-check
-                # (`standing_recheck_at`).
+                # Reporting only: the keep is decided above; THE RE-CHECK
+                # WINDOW times its re-check from it (`classify_cell`).
                 confirmed = [k for k in (pooled_keep, current_keep) if k is not None]
                 for key in dict.fromkeys(usable_keys):
                     own = [i + 1 for i, k in enumerate(usable_keys) if k == key]
@@ -1486,9 +1524,10 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                              and (remove_decided is None or k <= remove_decided)]
                 if confirmed:
                     out["rest_guard"]["keep_since"] = usable[max(confirmed) - 1][0]["timestamp"]
-                ordinal = {k: i for i, k in enumerate(dict.fromkeys(usable_keys))}
-                out["rest_guard"]["pair_stamps"] = [
-                    [w["timestamp"], ordinal[k]] for (w, _), k in zip(usable, usable_keys)]
+                    # Every confirmation, so a re-check can ignore one its
+                    # own pairs made (the Fable review's 2).
+                    out["rest_guard"]["keep_confirmations"] = sorted(
+                        {usable[k - 1][0]["timestamp"] for k in confirmed})
         # Round 3's M1: a provisional keep does not stand at the current
         # rest's cap either. No more pairs can test it there, so the cell
         # ends on the current rest's own rules, as a `current` cell would:
@@ -2008,6 +2047,94 @@ def pool_discard(run: dict, skill: str, models: list, expected: dict, strata: bo
     return "context_unmatched"
 
 
+def _stamp(timestamp: str):
+    """A results timestamp (YYYYMMDDTHHMMSSZ) as an aware datetime, or None."""
+    try:
+        return datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _recheck(pairs: list, keep_stamps: list, policy: dict, bet_prior: dict | None,
+             current=None, min_pairs: int = 1) -> dict:
+    """THE RE-CHECK WINDOW of a kept cell (module docstring): {"due": the
+    open re-check's due timestamp, "pairs": its pairs so far, "passed": the
+    timestamps each earlier re-check passed at, "removed_at": the timestamp
+    a re-check's removal decided at or None, "projected_pairs": how many
+    pairs a re-check of this cell is projected to take}.
+
+    `pairs` are every pair of the cell with a run mean on both arms, in time
+    order, windows ignored; `keep_stamps` are the with runs' timestamps at the
+    keep's confirmations; one made by pairs at or after a re-check's due
+    time does not move it, as only the re-check itself ends it. `current` (a pooled cell) is the rest on main:
+    the removal then reads only the re-check's pairs beside it, at least
+    `min_pairs` of them, as THE CURRENT-REST GUARD does."""
+    weeks = policy.get("recheck_after_weeks", policy["recheck_weeks"])
+    cap = policy["max_runs_per_cell"]
+    margin = policy["objective_margin"]
+    alpha = 1 - policy["retire_confidence"]
+    need = policy["min_cli_versions"]
+    stamps = sorted(t for t in (_stamp(k) for k in keep_stamps) if t is not None)
+    since = stamps[0] if stamps else None
+    out = {"due": None, "pairs": 0, "passed": [], "removed_at": None,
+           "projected_pairs": None}
+    if since is None:
+        return out
+    stamped = [(_stamp(w["timestamp"]), w, o) for w, o in pairs]
+    stamped = [x for x in stamped if x[0] is not None]
+    while True:
+        due = since + timedelta(weeks=weeks)
+        later = [t for t in stamps if since < t < due]
+        if later:
+            since = later[-1]
+            continue
+        window = [(t, w, o) for t, w, o in stamped if t >= due]
+        ds, removal, versions, passed = [], [], set(), None
+        for n, (t, w, o) in enumerate(window, 1):
+            d = w["numbers"]["run_mean"] - o["numbers"]["run_mean"]
+            ds.append(d)
+            if current_pair(w, current):
+                removal.append(d)
+                versions.update(v for r in (w, o) for v in r["cli_versions"])
+            if len(removal) >= min_pairs and len(versions) >= need and first_crossing(
+                    remove_wealth(removal, margin, bet_prior), alpha) is not None:
+                out.update(removed_at=w["timestamp"], pairs=n,
+                           due=due.strftime("%Y%m%dT%H%M%SZ"))
+                return out
+            # THE EARLY STOP reads the same pairs the removal does (a pooled
+            # cell: the current rest's only, the review's 3); the cap counts
+            # every pair, so a churning rest cannot hold it open.
+            if (removal and current_pair(w, current) and first_crossing(
+                    keep_wealth(removal, bet_prior, margin), alpha) is not None) \
+                    or n >= cap:
+                passed = t
+                break
+        if passed is None:
+            out.update(due=due.strftime("%Y%m%dT%H%M%SZ"), pairs=len(window))
+            return out
+        out["passed"].append(passed.strftime("%Y%m%dT%H%M%SZ"))
+        since = passed
+
+
+def current_pair(with_run: dict, current) -> bool:
+    """Whether a pair counts toward a re-check's tests: always for a
+    single-rest cell (`current` None), else only beside the current rest."""
+    return current is None or with_run.get("pair_key") == current
+
+
+def _recheck_projection(ds: list, policy: dict, bet_prior: dict | None) -> int:
+    """Pairs a re-check of a cell whose differences look like `ds` is
+    projected to take: where THE EARLY STOP crosses over `ds` repeated to
+    the cap, else the cap. Reporting only (scripts/forecast_catch_up.py)."""
+    cap = policy["max_runs_per_cell"]
+    if not ds:
+        return cap
+    seq = (ds * (cap // len(ds) + 1))[:cap]
+    hit = first_crossing(keep_wealth(seq, bet_prior, policy["objective_margin"]),
+                         1 - policy["retire_confidence"])
+    return hit if hit is not None else cap
+
+
 def classify_cell(with_runs: list, without_runs: list, policy: dict,
                   judge_carried: bool = False, family: int = 1, bet_prior=None,
                   errored_blocks: bool = True, rest: dict | None = None) -> dict:
@@ -2027,6 +2154,45 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
     if callable(bet_prior):
         bet_prior = bet_prior(pairs[0][0]["timestamp"]) if pairs else None
     full = _classify(pairs, policy, family, bet_prior, rest_info)
+    guard = full.get("rest_guard")
+    if policy.get("recheck_window") and full["class"] == "benefit" \
+            and not (isinstance(guard, dict) and guard.get("keep_final") is False):
+        # THE RE-CHECK WINDOW: a final keep is re-tested on the pairs made
+        # since its re-check fell due, apart from the pairs that made it.
+        _, usable = _cell_split(with_runs, without_runs, policy, "benefit", rest)
+        at = full.get("decided_at")
+        keep_stamps = list((guard or {}).get("keep_confirmations") or []) \
+            if isinstance(guard, dict) else []
+        if not keep_stamps and isinstance(at, int) and 0 < at <= len(usable):
+            keep_stamps = [usable[at - 1][0]["timestamp"]]
+        every = sorted(((w, o) for w, o in pairs if w["numbers"]["run_mean"] is not None
+                        and o["numbers"]["run_mean"] is not None),
+                       key=lambda p: _order(p[0]))
+        pooled_cell = isinstance(guard, dict)
+        recheck = _recheck(every, keep_stamps, policy, bet_prior,
+                           rest_info["current"] if pooled_cell else None,
+                           rest_info["min_pairs"] if pooled_cell else 1)
+        recheck["projected_pairs"] = _recheck_projection(differences(usable), policy,
+                                                         bet_prior)
+        full = {**full, "recheck": recheck}
+        errored_all = sum(r["numbers"]["errored_trials"] for r in with_runs + without_runs)
+        if recheck["removed_at"] is not None and (
+                (errored_all and errored_blocks) or NO_CHECKS_REASON in skipped):
+            # An agent's errors can only help keep (below): the keep stands,
+            # and its re-check ends there rather than firing on (the
+            # review's 4).
+            recheck = {**recheck, "removed_at": None, "due": None,
+                       "blocked": "agent-errored trial(s) or a skipped run"}
+            full = {**full, "recheck": recheck}
+        if recheck["removed_at"] is not None:
+            stamps = [w["timestamp"] for w, _ in usable]
+            decided = stamps.index(recheck["removed_at"]) + 1 \
+                if recheck["removed_at"] in stamps else (len(usable) or None)
+            full = {**full, "class": "no-benefit", "decided_at": decided,
+                    "reason": f"a re-check's own pairs decided at {recheck['removed_at']}: "
+                              f"confident at {policy['retire_confidence']:.0%} that the "
+                              f"gain is now under {policy['objective_margin']} (THE "
+                              "RE-CHECK WINDOW), which overrides the earlier keep"}
     cls, reason = full["class"], full["reason"]
     errored = sum(r["numbers"]["errored_trials"] for r in with_runs + without_runs)
     if cls in ("no-benefit", "no-clear-effect") \

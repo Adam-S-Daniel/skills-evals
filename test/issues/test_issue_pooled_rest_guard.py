@@ -492,38 +492,6 @@ class StandingKeepTests(unittest.TestCase):
         self.assertGreater(since, cell_of(strat(OLD, GAIN, LOSS), STANDS)
                            ["rest_guard"]["keep_since"])
 
-    def test_a_recheck_passes_once_one_rest_holds_the_floor(self):
-        # The round 2 review's should-fix: a re-check ends. Due 8 weeks
-        # after the confirmation; passed at the pair by which one rest holds
-        # 6 pairs made since; due again 8 weeks after that pair.
-        t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        stamp = lambda t: t.strftime("%Y%m%dT%H%M%SZ")
-        cell = {"section": "sec", "keep_since": stamp(t0), "rest_guard_min_pairs": 6}
-        age = plan_week.recheck_after(cell)
-        due = t0 + age
-        before = [[stamp(t0 + timedelta(days=d)), 0] for d in range(1, 8)]
-        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": before}), due)
-        after = [[stamp(due + timedelta(hours=h)), 1] for h in range(5)]
-        self.assertEqual(plan_week.standing_recheck_at(
-            {**cell, "pair_stamps": before + after}), due)
-        # Five beside one rest and one beside the next: not yet.
-        split = after + [[stamp(due + timedelta(hours=9)), 2]]
-        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": split}), due)
-        six = after + [[stamp(due + timedelta(hours=9)), 1]]
-        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": six}),
-                         due + timedelta(hours=9) + age)
-        self.assertIsNone(plan_week.standing_recheck_at({"keep_since": None}))
-        # No pairs, or no floor: due 8 weeks after the confirmation.
-        self.assertEqual(plan_week.standing_recheck_at(cell), due)
-        self.assertEqual(plan_week.standing_recheck_at(
-            {"section": "sec", "keep_since": stamp(t0), "pair_stamps": six}), due)
-        # The third review's should-fix: a new rest for every pair never
-        # holds the floor, so the re-check ends at the cap's count instead.
-        cap = gates.load_gate_policy()["guidance"]["max_runs_per_cell"]
-        churn = [[stamp(due + timedelta(hours=h)), 10 + h] for h in range(cap + 3)]
-        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": churn}),
-                         due + timedelta(hours=cap - 1) + age)
-
     def test_run_utility_puts_the_decision_at_the_standing_keep(self):
         # The review's m3: a later current-rest keep does not move the
         # decision point of a keep that was already final.
@@ -1057,32 +1025,43 @@ class PlannerTests(unittest.TestCase):
         # At the cap the window is frozen: no fire.
         self.assertEqual(self.bands_of([{**cell, "at_cap": True}]), {})
 
-    def test_a_standing_keep_is_fired_only_once_its_recheck_is_due(self):
-        # THE STANDING KEEP: not fired while fresh; once `recheck_weeks`
-        # past its newest confirmation, fired every sweep (not once per
-        # age) until the current rest decides it or its window is full.
-        gate = cell_of(StaleKeepTests().stale(3), STANDS)
-        self.assertEqual(gate["class"], "benefit", gate["reason"])
+    def test_a_standing_keeps_recheck_reads_the_current_rest_for_removal(self):
+        # THE RE-CHECK WINDOW on a pooled cell: its removal reads only the
+        # re-check's pairs beside the current rest, as the guard does.
+        policy = {**STANDS, "recheck_window": True, "recheck_weeks": 1}
+        kept = strat(OLD, GAIN, LOSS)
+        late = 10 + 7 * 24
+        elsewhere = kept + strat(OLDER, FLAT * 2, FLAT * 2, start=late) \
+            + strat(MAIN, FLAT[:1], FLAT[:1], start=late + 40)
+        cell = cell_of(elsewhere, policy)
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertIsNone(cell["recheck"]["removed_at"])
+        here = kept + strat(MAIN, FLAT * 2, FLAT * 2, start=late)
+        # Beside the current rest the section is removed (the guard's own
+        # evidence or the re-check's, whichever decides first).
+        cell = cell_of(here, policy)
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+
+    def test_a_kept_cell_is_fired_from_its_recheck_due_time(self):
+        policy = {**STANDS, "recheck_window": True, "recheck_weeks": 1}
+        gate = cell_of(strat(OLD, GAIN, LOSS), policy)
         cell = self.kept_cell(gate)
-        cell["keep_since"] = gate["rest_guard"]["keep_since"]
-        self.assertFalse(cell["provisional_keep"])
-        since = plan_week._stamp_time(cell["keep_since"])
-        age = plan_week.recheck_after(cell)
+        cell["recheck"] = gate["recheck"]
+        due = plan_week.recheck_due_at(cell)
+        self.assertIsNotNone(due)
 
         def bands_at(now, cells):
             bands, _ = plan_week.eval_items(self.ctx(cells), now)
             return {b: [(i["fixture"], i["model"]) for i in items]
                     for b, items in bands.items() if items}
 
-        self.assertEqual(bands_at(since + age - timedelta(hours=1), [cell]), {})
-        due = since + age
-        self.assertEqual(bands_at(due, [cell]),
+        self.assertEqual(bands_at(due - timedelta(hours=1), [cell]), {})
+        self.assertEqual(bands_at(due, [cell]), {"guidance-rest": [(cell["fixture"], "model-a")]})
+        # Its cap and its newest run do not hold it back.
+        self.assertEqual(bands_at(due + timedelta(days=30),
+                                  [{**cell, "at_cap": True, "newest": None}]),
                          {"guidance-rest": [(cell["fixture"], "model-a")]})
-        # Fired again on the next sweep, though its newest run is new.
-        fresh = {**cell, "newest": due.strftime("%Y%m%dT%H%M%SZ")}
-        self.assertEqual(bands_at(due + timedelta(hours=1), [fresh]),
-                         {"guidance-rest": [(cell["fixture"], "model-a")]})
-        self.assertEqual(bands_at(due, [{**cell, "at_cap": True}]), {})
+        self.assertIsNone(plan_week.recheck_due_at({**cell, "recheck": None}))
 
     def test_the_plans_cells_carry_the_provisional_keep(self):
         # eval_cells_and_outages, on the committed evals/ and a gates
