@@ -148,3 +148,5 @@ fixtures:
     readiness: "Added by a fixture pull request for skills-evals#848: a census that counts local checkouts as the denominator; the section says take it from a registry or the remote, never the disk. Isolation pair of four guidance arms, unpinned. No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them."
   - path: evals/guidance/fleet-spans-two-owners/audit-script-enumeration
     readiness: "Added by a fixture pull request for skills-evals#848: an audit script that enumerates one owner; the section says enumerate both owners and never hardcode one. Isolation pair of four guidance arms, unpinned. No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them."
+  - path: evals/vendor-release-impact-issues/stale-draft-thin-inventory
+    readiness: "Promoted automatically on 2026-11-15 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/_agent-guidance at acb23735bbb4 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
