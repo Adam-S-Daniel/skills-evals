@@ -116,6 +116,23 @@ identity federation, not the Claude Code subscription. A measured run on
 seconds wall clock and cost **$1.71**: Sonnet 5 arms $0.89, Opus 4.8 judge
 $0.78, Haiku preflight $0.04. The judge is about 45% of a run.
 
+**The monthly API-credit lane** (Adam, 2026-11-15). The organization gets a
+use-or-lose Claude Platform credit grant each month, and eval.yml is the one
+workflow that spends it in bulk, so `.github/workflows/credit-lane.yml` now
+dispatches it on its own instead of a thread doing it by hand. Every three
+hours `scripts/credit_lane.py plan` decides whether to dispatch one eval.yml
+run: only inside the window that opens on the grant's day each month, never
+in the eval pause, never while another eval.yml run is in flight, and not
+again for the rest of the window once any eval.yml dispatch in it failed,
+was cancelled or timed out. It runs the waiting guidance subjects' isolation
+fixtures from `batches/current.json`, alternating between the policy's models
+and preferring the fixtures run least this window, and sizes each dispatch
+so the window's eval.yml spend (from `results/`, through
+`scripts/run_costs.py`) plus the estimate stays under a soft cap that leaves
+room for the credit's other users. Every value is in
+`evals/credit-policy.yml`, which the script requires key by key. A manual
+dispatch with `dry_run` plans and reports without dispatching.
+
 Running the arms or the judge on the account's Claude subscription instead —
 the weekly allowance, not dollars — was evaluated on 2026-09-23 and not
 adopted: see ADR
