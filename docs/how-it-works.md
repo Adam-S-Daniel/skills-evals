@@ -325,8 +325,8 @@ past its pair cap, with at least three pairs measured, goes last and is a
 `cell-projected-past-cap` work item (a step summary count, not an issue). A
 cell with no measured difference yet keeps the band's old order behind the
 projected ones. Only a route that can still decide counts: a provisional
-pooled keep is projected to the current rest's own keep test (its lapse at
-the cap is no keep), a cell whose without arm is too high to show the margin
+pooled keep (only while `keep_stands_until_recheck` is off) is projected to
+the current rest's own keep test (its lapse at the cap is no keep), a cell whose without arm is too high to show the margin
 to its ceiling stop at the high-cell cap (its remove test cannot decide it), and a
 crossed remove test still waiting for a second Claude Code version has no
 projection. The two-week batch already caps how many subjects are open

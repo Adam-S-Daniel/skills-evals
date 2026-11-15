@@ -1789,3 +1789,45 @@ or more times stays a refusal (exit 2).
   workflow's tokens reach skills-evals and adam-agentskills only, so a person
   closing an unmerged `retire-skill/*` pull request in cms-platform or
   adamdaniel.ai is not read as a decline.
+
+## Addendum (2026-11-15): a guidance keep stands until its re-check
+
+Adam chose "Keep stands until its re-check" on 2026-11-15, after the Nov 13
+change to `agents-md/base.md` reopened every guidance keep. Under the
+pooled-rest addendum a pooled keep was provisional: it counted only once the
+current rest had `rest_guard_min_pairs` pairs, waited for the current rest's
+own keep test, and lapsed at the current rest's cap. So every edit anywhere
+in `base.md` reopened all of them. The forecast in
+`docs/forecasts/catch-up-2026-11-15.md` put that re-work at about $107 a
+week, more than the rest of the keep-up together.
+
+- Decided: `keep_stands_until_recheck: true` in `evals/gate-policy.yml`
+  (guidance block). The pooled keep's pair floor is read beside the rest the
+  deciding pair was made beside, not today's: it counts from the first pair,
+  at or after the crossing, whose own rest has `rest_guard_min_pairs` usable
+  pairs. A keep made there is final. It does not wait for the current rest,
+  and it does not lapse at the cap. `harness/gates.py`, THE STANDING KEEP.
+- The re-check: `rest_guard.keep_since` is the keep's newest confirmation,
+  the latest crossing of the pooled keep test or of any one rest's own keep
+  test, so a change of the rest never moves it back. `recheck_weeks` after
+  it, `scripts/plan_week.py` (`standing_recheck_at`) fires the cell every
+  sweep until one rest holds `rest_guard_min_pairs` pairs made since it fell
+  due. That is the removal guard's floor, so a removal could have decided.
+  The re-check then counts as passed at that pair, and the next is due
+  `recheck_weeks` later. It also ends at `max_runs_per_cell` pairs made since
+  it fell due, over every rest, so a rest that keeps changing cannot hold it
+  open. A single re-check fire every `recheck_weeks` would
+  never reach the floor beside one rest while the rest changes weekly (the
+  first review's blocker). Known limit: the floor counts per rest digest, so
+  a base.md reverted to an earlier version counts that rest's old pairs
+  again.
+- Kept: the current-rest removal guard. A removal on the current rest's
+  evidence still overrides a pooled keep, so the re-check's pairs can remove
+  the section. An edit to the section itself starts a new cell, because the
+  with arm's digest is in the key. As for a provisional keep, a harm
+  decision alone does not override it.
+- The level: the keep test's error rate is unchanged. Its claim is now
+  about the rest the keep was made beside, not today's rest. The re-check
+  age bounds how stale that claim can get.
+- Switch back with `false`, which restores the 2026-11-07 rule exactly. A
+  test pins that.

@@ -52,6 +52,16 @@
         "judgeMargin"
       ]
     },
+    "gate-policy.yml#guidance.keep_stands_until_recheck": {
+      "value": true,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.keep_stands_until_recheck",
+      "names": [
+        "keep_stands_until_recheck",
+        "KEEP_STANDS_UNTIL_RECHECK",
+        "keepStandsUntilRecheck"
+      ]
+    },
     "gate-policy.yml#guidance.max_removal_pauses": {
       "value": 3,
       "source": "evals/gate-policy.yml",
