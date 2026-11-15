@@ -156,7 +156,13 @@ tokens and cost $5.43, for a task that fires twice a day.
    ArtifactData `files/index.html` (field `text`) with `if_version`; keep the `dash/look` doc.
    Then `bash dashboard/refresh/mark_published.sh` (add `page` if you wrote the page): it copies
    what is now live into `$DASHBOARD_HOME/ds`, the baseline the next run compares against.
-9. **Spend.** Build with `--spend` (below) and, when the weeks changed, push only
+9. **Spend.** First sparse-clone `.github/workflows` of `Adam-S-Daniel/_agent-guidance` to
+   `<root>/_agent-guidance/.github/workflows` (`git clone --depth 1 --filter=blob:none --sparse`,
+   then `git sparse-checkout set .github/workflows`), keep `ROUTINE_FIRES_LEDGER` exported from
+   step 5, and build with `--spend` (below) plus `--workflows-root <root>`: the spend file's
+   `loop_jobs` (the loop's automatic jobs' weekly meter use) needs both, and
+   `scripts/allowance_guard.py` refuses every fire once it is missing or 3 days old. When the
+   weeks or `loop_jobs` changed, push only
    `spend/weekly.json` from a detached worktree at origin/main to
    `claude/spend-<YYYYMMDDTHHMMSSZ>` (noreply identity); check the "Ingest routine eval results"
    run is green.
@@ -226,7 +232,11 @@ With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 `spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
 `plan_meter_points`, `run_usd`, `api_usd` and `thread_spend_usd`, and one `total`
 (`since`, `usd`, `run_usd`, `thread_spend_usd`, `api_usd`, `verdicts`, `cost_per_verdict`:
-the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one. No
+the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one.
+`loop_jobs` (`as_of`, `points_per_week`, `usd_per_week`) is the loop's own automatic jobs'
+weekly meter use from `scripts/automatic_spend.py`, over `inputs/triggers.json`, the
+`ROUTINE_FIRES_LEDGER` fires and `--workflows-root`; it is left out when the ledger is unset, and
+`scripts/explorer_public.py` never copies it. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
 `evals/public-export.yml` sets `include_spend`), and the public Spend and use group

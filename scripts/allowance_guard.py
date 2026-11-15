@@ -209,6 +209,17 @@ of the week gone (ahead of the 27% pace) it still released 14 points, and the
 sweep fired 7 evals past a 25-point cap the evals had already spent twice
 over. Now the same reading gives none.
 
+Loop reserve (Adam, 2026-11-15): every automated part of the continuous
+improvement system fits inside the 25% weekly cap, not only the evals. So
+`account` reserves the loop's own automatic scheduled jobs out of it: the cap
+the state carries is `weekly_cap` less `loop_jobs.points_per_week` / 100 from
+`<results tree>/spend/weekly.json` (measured by dashboard/build.py --spend from
+scripts/automatic_spend.py; no typed-in number), floored at 0. The state keeps
+`cap_configured` (`weekly_cap`) and `loop_reserve`. A missing file or key, or
+an `as_of` more than `LOOP_RESERVE_MAX_AGE` (3 days) old, refuses with a
+message naming the file and the fix: no hidden default. `pace_room` and the
+account stop are unchanged.
+
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
 
@@ -320,6 +331,11 @@ IMPROVE_MODES = ("improve", "guidance-improve")
 #: whole account week. Following weekly_cap means a temporary raise loosens
 #: this cap too, Adam's lever. `improve_cap` enforces it for every dispatcher.
 IMPROVE_WEEKLY_SHARE = 0.20
+#: The loop reserve (Adam, 2026-11-15, module docstring): where the measured
+#: figure is read from under the results tree, and how old its `as_of` may be.
+LOOP_RESERVE_FILE = "spend/weekly.json"
+LOOP_RESERVE_MAX_AGE = timedelta(days=3)
+LOOP_RESERVE_MAX_BYTES = 64 * 1024
 # A refusal exits 3, apart from 1 (an unreadable spend, fail closed): the
 # weekly planner plans surplus fires at their historical cost, so the guard
 # refusing one at full reservation is the planned outcome (#524). The fire
@@ -804,6 +820,48 @@ def session_hold(runs: list[Path], limits: dict, now: datetime) -> bool:
     return used >= limit and resets > now.timestamp()
 
 
+def loop_reserve_fraction(tree: Path, now: datetime) -> float:
+    """The loop's automatic jobs' weekly meter use as a fraction of the
+    allowance (points / 100), from `LOOP_RESERVE_FILE`'s `loop_jobs`. Raises
+    GuardError, saying how to fix it, when the file or key is missing,
+    unreadable or malformed, or its `as_of` is older than
+    `LOOP_RESERVE_MAX_AGE` (or ahead of `now` by more than an hour)."""
+    fix = ("run the dashboard refresh (dashboard/README.md, Refresh step 9) with "
+           "ROUTINE_FIRES_LEDGER set so spend/weekly.json carries a fresh loop_jobs block, "
+           "and let routine-eval-ingest.yml place it on the results branch")
+    path = tree / LOOP_RESERVE_FILE
+    where = f"{LOOP_RESERVE_FILE} on the results branch"
+    try:
+        if path.is_symlink() or path.stat().st_size > LOOP_RESERVE_MAX_BYTES:
+            raise GuardError(f"{where} is a symlink or too large; {fix}")
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise GuardError(f"the loop reserve cannot be read: {where} is missing; {fix}") from None
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise GuardError(f"the loop reserve cannot be read: {where} is not readable JSON; "
+                         f"{fix}") from None
+    jobs = doc.get("loop_jobs") if isinstance(doc, dict) else None
+    if not isinstance(jobs, dict):
+        raise GuardError(f"the loop reserve cannot be read: {where} has no loop_jobs block; {fix}")
+    points = jobs.get("points_per_week")
+    if not _number(points) or points < 0:
+        raise GuardError(f"{where}: loop_jobs.points_per_week is not a non-negative number; {fix}")
+    as_of = jobs.get("as_of")
+    try:
+        if not isinstance(as_of, str) or not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", as_of):
+            raise ValueError
+        measured = datetime.strptime(as_of, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise GuardError(f"{where}: loop_jobs.as_of is not a UTC timestamp; {fix}") from None
+    if now - measured > LOOP_RESERVE_MAX_AGE:
+        raise GuardError(f"the loop reserve is stale: {where} was measured {as_of}, more than "
+                         f"{LOOP_RESERVE_MAX_AGE.days} days before this check; {fix}")
+    if measured - now > timedelta(hours=1):
+        raise GuardError(f"{where}: loop_jobs.as_of is ahead of the clock; {fix}")
+    return points / 100
+
+
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
             since: datetime | None = None,
@@ -811,7 +869,8 @@ def account(tree: Path, limits: dict, now: datetime,
             eval_started: list | None = None,
             improve_by_kind: dict | None = None,
             improve_in_flight: dict | None = None,
-            improve_fires: list | None = None) -> dict:
+            improve_fires: list | None = None,
+            loop_reserve: bool = True) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed, improve_fires, improve_charge,
     improve_covered, eval_inside} for the
@@ -840,6 +899,11 @@ def account(tree: Path, limits: dict, now: datetime,
     `improve_by_kind` and `improve_in_flight`, dicts keyed by improve mode
     (`improve_kind_counts`), are the successful and the not-completed
     improve fires of each kind, stored for `improve_cap` only (#572).
+    `cap` is `weekly_cap` less the loop reserve (`loop_reserve_fraction`,
+    module docstring, 2026-11-15), with `cap_configured` and `loop_reserve`
+    kept beside it; `loop_reserve=False` (the dashboard page, which must still
+    build when the file is stale) leaves the cap as configured and the
+    reserve 0.
     `improve_fires`, one {mode, target, started} per successful improve fire
     of the window (`improve_details`; as many as `improve`'s count), lets each
     be matched to its cost record (`match_fires`, #577): a matched fire is
@@ -884,6 +948,7 @@ def account(tree: Path, limits: dict, now: datetime,
                 for mode, count in given.items()):
             raise GuardError("improve counts by kind are not non-negative integers")
         kinds.append({mode: given.get(mode, 0) for mode in IMPROVE_MODES})
+    reserved = loop_reserve_fraction(tree, now) if loop_reserve else 0.0
     if since is None:
         since = window_start(now)
     runs = ingested_runs(tree, now, since)
@@ -977,7 +1042,9 @@ def account(tree: Path, limits: dict, now: datetime,
             "bound": bound, "stop_left": stop_left,
             "stop": limits["stop_when_account_above"], "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
-            "cap": limits["weekly_cap"], "pace_room": room,
+            "cap": max(0.0, limits["weekly_cap"] - reserved),
+            "cap_configured": limits["weekly_cap"], "loop_reserve": reserved,
+            "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
             "improve_fires": improve_7d + len(matched), "improve_charge": charge,
             "improve_matched": len(matched),
@@ -1106,7 +1173,11 @@ def describe(state: dict) -> str:
             f"{state['runs']} ingested run(s), pending {points(state['pending'])} "
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
             f"results ({state['recent']} from the last {hold_hours}h held in full), this run reserves {points(state['reservation'])}, cap "
-            f"{points(state['cap'])} (since the account's weekly reset, at most 7 days)")
+            f"{points(state['cap'])} ("
+            + (f"{points(state['cap_configured'])} configured less "
+               f"{points(state['loop_reserve'])} reserved for the loop's automatic jobs; "
+               if "cap_configured" in state else "")
+            + "since the account's weekly reset, at most 7 days)")
     if state.get("improve_fires"):
         line += (f"; {state['improve_fires']} improve fire(s) held at "
                  f"{points(state['improve_charge'])} points each")

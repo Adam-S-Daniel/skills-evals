@@ -295,7 +295,8 @@ class DashboardBuildTests(unittest.TestCase):
         bad.mkdir(parents=True)
         (bad / "summary.json").write_text("{")
         runs = g.ingested_runs(er, now, g.window_start(now))
-        state = g.account(er, limits, now, (len(runs), 0), since=g.window_start(now))
+        state = g.account(er, limits, now, (len(runs), 0), since=g.window_start(now),
+                          loop_reserve=False)
         row = build.allowance(er, now)[0]
         self.assertAlmostEqual(row["points"], state["spent"] * 100)
         self.assertAlmostEqual(row["room_points"], g.room(state) * 100)
@@ -784,6 +785,28 @@ class DashboardBuildTests(unittest.TestCase):
         write(tree / "spend" / "weekly.json", doc)
         got = explorer_public.build_spend(tree, True)
         self.assertEqual([w["week"] for w in got["weeks"]], ["2026-10-26", "2026-10-19"], "the public export reads it whole")
+
+    def test_spend_carries_loop_jobs_only_with_a_fire_ledger(self):
+        """--spend adds `loop_jobs` when ROUTINE_FIRES_LEDGER names a ledger, and omits it otherwise."""
+        import os
+        from unittest import mock
+        now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+        ledger = self.tmp / "routine-fires.jsonl"
+        ledger.write_text("")
+        for name, env in (("with", {"ROUTINE_FIRES_LEDGER": str(ledger)}), ("without", {})):
+            spend = self.tmp / f"{name}.json"
+            with mock.patch.dict(os.environ, env):
+                if not env:
+                    os.environ.pop("ROUTINE_FIRES_LEDGER", None)
+                build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                            "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"),
+                            "--now", now.isoformat(), "--spend", str(spend)])
+            doc = json.loads(spend.read_text())
+            if env:
+                self.assertEqual(set(doc["loop_jobs"]), {"as_of", "points_per_week", "usd_per_week"})
+                self.assertEqual(doc["loop_jobs"]["as_of"], "2026-10-30T12:00:00Z")
+            else:
+                self.assertNotIn("loop_jobs", doc)
 
     def test_spend_file_keeps_full_precision(self):
         raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,

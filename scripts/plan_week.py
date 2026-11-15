@@ -4393,15 +4393,17 @@ def gather(args, now: datetime) -> dict:
                                            now, private_skills(evals_dir)),
             "skill_edit_lessons": lesson_evidence.skill_evidence(args.lessons, "skill-edit"),
             # THE BATCH: only with --batch-policy (the weekly workflow's).
-            **batch_inputs(args, registries, limits, now),
+            **batch_inputs(args, registries, limits, now, state["cap"]),
             "private_skills": private_skills(evals_dir)}
 
 
-def batch_inputs(args, registries: dict, limits: dict, now: datetime) -> dict:
+def batch_inputs(args, registries: dict, limits: dict, now: datetime,
+                 cap: float | None = None) -> dict:
     """THE BATCH's ctx keys: the policy and the previous record, and what a
     new batch is sized and fitted with (Adam's 2026-11-03 decision): the
     measured addition rates, the period's budget (`weekly_cap` x the
-    period's weeks) and each roster model's measured cost per pair. All None
+    period's weeks, the guard's cap less the loop reserve when
+    `cap` is given) and each roster model's measured cost per pair. All None
     without --batch-policy."""
     policy = load_batch_policy(args.batch_policy) if args.batch_policy is not None else None
     if policy is None:
@@ -4419,7 +4421,7 @@ def batch_inputs(args, registries: dict, limits: dict, now: datetime) -> dict:
             print(f"batch: the {kind} addition rate is the policy's constant")
     return {"batch_policy": policy, "previous_batch": read_batch(args.results_tree),
             "batch_rates": rates,
-            "batch_budget": limits["weekly_cap"] * (policy["period"] / timedelta(weeks=1)),
+            "batch_budget": (limits["weekly_cap"] if cap is None else cap) * (policy["period"] / timedelta(weeks=1)),
             "batch_pair_costs": pair_costs(index["runs"] + index["guidance_runs"],
                                            args.results_tree, now, policy["cost_window"])}
 

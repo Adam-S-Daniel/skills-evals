@@ -569,6 +569,27 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(inputs["batch_pair_costs"], {})
         self.assertIsNone(inputs["previous_batch"])
 
+    def test_the_batch_budget_follows_the_guards_reduced_cap(self):
+        """The cap the guard's state carries (less the loop reserve) sizes the
+        batch, not `weekly_cap` as configured."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "skills").mkdir()
+            (base / "guide").mkdir()
+            skills = history_repo(base / "skills", plan_week.BATCH_SKILL_HISTORY, [
+                (NOW - timedelta(days=40), layout("a", "b"))])
+            guide = history_repo(base / "guide", plan_week.BATCH_GUIDANCE_HISTORY, [
+                (NOW - timedelta(days=40), coverage("s1"))])
+            (base / "tree").mkdir()
+            (base / "evals").mkdir()
+            args = argparse.Namespace(batch_policy=ROOT / "evals/batch-policy.yml",
+                                      guidance=guide, results_tree=base / "tree",
+                                      evals_dir=base / "evals",
+                                      as_of="2026-11-09T18:00:00+00:00")
+            inputs = plan_week.batch_inputs(
+                args, {"adam-agentskills": {"path": skills}}, {"weekly_cap": 0.25}, NOW, 0.2)
+        self.assertEqual(inputs["batch_budget"], 0.4)
+
     def test_without_the_policy_there_are_no_batch_inputs(self):
         args = argparse.Namespace(batch_policy=None)
         self.assertEqual(plan_week.batch_inputs(args, {}, {"weekly_cap": 0.25}, NOW), {
