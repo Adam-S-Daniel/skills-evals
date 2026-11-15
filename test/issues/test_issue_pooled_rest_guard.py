@@ -43,6 +43,7 @@ def shows_ceiling(cell: dict) -> bool:
 
 POOLED = {**TEST_POLICY, "rest_policy": "pooled-with-current-guard", "rest_guard_min_pairs": 6}
 CURRENT = {**TEST_POLICY, "rest_policy": "current"}
+STANDS = {**POOLED, "keep_stands_until_recheck": True}
 #: A with arm 0.2 above FLAT's without arm, which has headroom (0.8 < 0.85).
 HELP = [(100, 100, 100)] * 40
 #: A without arm with nothing left to gain.
@@ -83,6 +84,9 @@ class PolicySettingTests(unittest.TestCase):
         committed = gates.load_gate_policy()
         self.assertEqual(committed["guidance"]["rest_policy"], "pooled-with-current-guard")
         self.assertEqual(committed["guidance"]["rest_guard_min_pairs"], 6)
+        # Adam, 2026-11-15: off unless named, on in the committed file.
+        self.assertIs(parsed["keep_stands_until_recheck"], False)
+        self.assertIs(committed["guidance"]["keep_stands_until_recheck"], True)
         self.assertNotIn("rest_policy", committed["skills"])
         parsed = gates.parse_gate_policy(self.text(rest_policy="current",
                                                    rest_guard_min_pairs=10))["guidance"]
@@ -101,6 +105,13 @@ class PolicySettingTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(gates.GatePolicyError) as caught:
                 gates.parse_gate_policy(self.text(rest_guard_min_pairs=bad))
             self.assertIn("rest_guard_min_pairs", str(caught.exception))
+
+    def test_a_bad_keep_stands_setting_fails(self):
+        for bad in (1, 0, "'true'", "[true]", "null"):
+            with self.subTest(bad=bad), self.assertRaises(gates.GatePolicyError) as caught:
+                gates.parse_gate_policy(self.text(keep_stands_until_recheck=bad))
+            self.assertIn("keep_stands_until_recheck must be true or false",
+                          str(caught.exception))
 
     def test_the_skills_block_has_no_rest(self):
         base = "".join(f"  {k}: {v}\n" for k, v in TEST_POLICY.items())
@@ -407,6 +418,68 @@ class StaleKeepTests(unittest.TestCase):
         cell = cell_of(strat(MAIN, GAIN, LOSS), CURRENT)
         self.assertEqual(cell["class"], "benefit")
         self.assertIsNone(cell.get("rest_guard"))
+
+
+class StandingKeepTests(unittest.TestCase):
+    """THE STANDING KEEP (Adam, 2026-11-15, "Keep stands until its
+    re-check"): with `keep_stands_until_recheck` on, a pooled keep made
+    while the rest it was made beside held the pair floor is final. A change
+    of the rest does not reopen it and it does not lapse at the cap; a
+    removal on the current rest's evidence still overrides it."""
+
+    def test_a_keep_made_beside_an_older_rest_stands_after_the_rest_changes(self):
+        # Ten pairs gaining 0.4 beside an older rest, none beside today's:
+        # the Nov 13 case, where one edit elsewhere reopened every keep.
+        runs = strat(OLD, GAIN, LOSS)
+        for current in (0, 3):
+            with self.subTest(current=current):
+                both = runs + strat(MAIN, FLAT[:current], FLAT[:current], start=20)
+                self.assertEqual(cell_of(both)["class"], "insufficient")
+                cell = cell_of(both, STANDS)
+                self.assertEqual(cell["class"], "benefit", cell["reason"])
+                self.assertIs(cell["rest_guard"]["keep_final"], True)
+                self.assertNotIn("not final", cell["reason"])
+                self.assertLess(cell["keep_tests"][0]["p"], 1.0)
+                self.assertFalse(plan_week.provisional_keep(cell))
+                self.assertEqual(verdict(both, STANDS)["verdict"], "keep")
+
+    def test_the_floor_is_read_beside_one_rest(self):
+        # Five gaining pairs beside each of two older rests: no single rest
+        # holds the floor (6), so no keep. Six beside one rest keeps.
+        split = strat(OLD, GAIN[:5], LOSS[:5]) + strat(OLDER, GAIN[:5], LOSS[:5], start=10)
+        cell = cell_of(split, STANDS)
+        self.assertEqual(cell["class"], "insufficient", cell["reason"])
+        self.assertEqual(cell["keep_tests"][0]["p"], 1.0)
+        held = strat(OLD, GAIN[:6], LOSS[:6]) + strat(OLDER, GAIN[:5], LOSS[:5], start=10)
+        cell = cell_of(held, STANDS)
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertGreaterEqual(cell["rest_guard"]["pooled_keep_at"], 1)
+        self.assertGreaterEqual(cell["decided_at"], 6)
+
+    def test_it_does_not_lapse_at_the_cap(self):
+        # The noisy current rest that ends a provisional keep at its cap
+        # (StaleKeepTests) leaves a standing keep standing.
+        runs, _ = StaleKeepTests.noisy(None, 40)
+        self.assertEqual(cell_of(runs)["class"], "no-clear-effect")
+        cell = cell_of(runs, STANDS)
+        self.assertTrue(cell["at_cap"])
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertNotIn("lapsed", cell["reason"])
+        self.assertIs(cell["rest_guard"]["keep_final"], True)
+
+    def test_a_removal_on_the_current_rest_still_overrides_it(self):
+        # A re-check's pairs that show no gain beside today's rest remove
+        # the section, as without the setting.
+        runs = StaleKeepTests.stale(None, 30)
+        cell = cell_of(runs, STANDS)
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertLess(cell["rest_guard"]["pooled_keep_at"], cell["remove_decided_at"])
+        self.assertEqual(cell["keep_tests"][0]["p"], 1.0)
+
+    def test_off_is_the_rule_of_2026_11_07(self):
+        runs = StaleKeepTests.stale(None, 20)
+        self.assertEqual(cell_of(runs, {**STANDS, "keep_stands_until_recheck": False}),
+                         cell_of(runs))
 
 
 class RemovalGuardTests(unittest.TestCase):

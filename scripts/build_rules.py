@@ -270,7 +270,11 @@ def render_md(doc: dict) -> str:
         "toward removal also needs at least "
         f"{v('gate-policy.yml#guidance.rest_guard_min_pairs')} pairs "
         f"({ref('gate-policy.yml#guidance.rest_guard_min_pairs')}) beside the current rest, "
-        "deciding at the remove level on its own.",
+        "deciding at the remove level on its own. With "
+        f"`keep_stands_until_recheck` {v('gate-policy.yml#guidance.keep_stands_until_recheck')} "
+        f"({ref('gate-policy.yml#guidance.keep_stands_until_recheck')}), a keep made beside "
+        "an earlier version of the rest stands when another section changes: it is "
+        "re-tested at its re-check age, or when its own text changes.",
         "",
         "## Removal",
         "",

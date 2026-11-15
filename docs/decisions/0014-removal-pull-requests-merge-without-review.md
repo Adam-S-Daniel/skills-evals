@@ -1789,3 +1789,30 @@ or more times stays a refusal (exit 2).
   workflow's tokens reach skills-evals and adam-agentskills only, so a person
   closing an unmerged `retire-skill/*` pull request in cms-platform or
   adamdaniel.ai is not read as a decline.
+
+## Addendum (2026-11-15): a guidance keep stands until its re-check
+
+Adam chose "Keep stands until its re-check" on 2026-11-15, after the Nov 13
+change to `agents-md/base.md` reopened every guidance keep. Under the
+pooled-rest addendum a pooled keep was provisional: it counted only once the
+current rest had `rest_guard_min_pairs` pairs, waited for the current rest's
+own keep test, and lapsed at the current rest's cap. So every edit anywhere
+in `base.md` reopened all of them. The forecast in
+`docs/forecasts/catch-up-2026-11-15.md` put that re-work at about $107 a
+week, more than the rest of the keep-up together.
+
+- Decided: `keep_stands_until_recheck: true` in `evals/gate-policy.yml`
+  (guidance block). The pooled keep's pair floor is read beside the rest each
+  pair was made beside, not today's: it counts from the first pair whose own
+  rest has `rest_guard_min_pairs` usable pairs. A keep made there is final.
+  It does not wait for the current rest, and it does not lapse at the cap.
+  `harness/gates.py`, THE STANDING KEEP.
+- Kept: the current-rest removal guard. A removal on the current rest's
+  evidence still overrides a pooled keep, so the pairs a re-check
+  (`recheck_weeks`) brings can remove the section. An edit to the section
+  itself starts a new cell, because the with arm's digest is in the key.
+- The level: the keep test's error rate is unchanged. Its claim is now
+  about the rest the keep was made beside, not today's rest. The re-check
+  age bounds how stale that claim can get.
+- Switch back with `false`, which restores the 2026-11-07 rule exactly. A
+  test pins that.
