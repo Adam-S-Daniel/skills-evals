@@ -27,6 +27,7 @@ sys.path.insert(0, str(ISSUES))
 import compute_gates  # noqa: E402
 import gates  # noqa: E402
 import plan_week  # noqa: E402
+import test_issue_70_retirement  # noqa: E402
 from test_issue_70_retirement import FLAT, GAIN, LOSS, TEST_POLICY, series  # noqa: E402
 
 #: One-week re-checks, so a canned month of hourly runs holds a keep and
@@ -113,11 +114,39 @@ class RecheckWindowTests(unittest.TestCase):
                 o = {"timestamp": ts, "numbers": {"run_mean": max(-d, 0.0)},
                      "cli_versions": ["1"]}
                 pairs.append((w, o))
-            got = gates._recheck(pairs, t0.strftime("%Y%m%dT%H%M%SZ"), policy, None)
+            got = gates._recheck(pairs, [t0.strftime("%Y%m%dT%H%M%SZ")], policy, None)
             first_pass = gates._stamp(got["passed"][0]) if got["passed"] else None
             early += first_pass is not None and first_pass < t0 + timedelta(
                 weeks=9, hours=policy["max_runs_per_cell"] - 1)
         self.assertLessEqual(early / sims, 1 - policy["retire_confidence"])
+
+    def test_a_confirmation_inside_a_recheck_does_not_move_it(self):
+        # The review's 2: a keep test crossing on a re-check's own pairs
+        # would push the due time on and drop its evidence.
+        t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        fmt = "%Y%m%dT%H%M%SZ"
+        before, inside = t0 + timedelta(days=3), t0 + timedelta(days=12)
+        got = gates._recheck([], [t.strftime(fmt) for t in (t0, before, inside)], ON, None)
+        self.assertEqual(gates._stamp(got["due"]), before + timedelta(weeks=1))
+
+    def test_an_errored_trial_blocks_a_recheck_removal_and_ends_it(self):
+        # The review's 4: the keep stands rather than turning insufficient.
+        late = WEEK + 24
+        runs_with = series("with", GAIN, None) + series("with", FLAT * 2, None, start=late)
+        runs_without = series("without", LOSS, None) + series("without", FLAT * 2, None,
+                                                              start=late)
+        runs_with[0]["trials"].append(gates.trial_record(
+            test_issue_70_retirement.trial(error="agent_failed")))
+        got = gates.classify_cell(runs_with, runs_without, ON)
+        self.assertEqual(got["class"], "benefit", got["reason"])
+        self.assertIsNone(got["recheck"]["removed_at"])
+        self.assertIsNone(got["recheck"]["due"])
+        self.assertIn("blocked", got["recheck"])
+
+    def test_a_recheck_removal_has_a_decision_point(self):
+        got = cell(FLAT * 2, FLAT * 2)
+        self.assertEqual(got["class"], "no-benefit")
+        self.assertIsInstance(got["decided_at"], int)
 
     def test_a_projection_prices_a_recheck(self):
         policy = gates.load_gate_policy()["skills"]

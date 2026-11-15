@@ -1913,6 +1913,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         kept = cell.get("verdict") == "keep"
         due = newest is not None and now - newest >= recheck_after(cell)
         provisional = False
+        rechecking = False
         # DEEP BEFORE WIDE: read only by the verdict-seeking bands below.
         depth = depth_order(cell, ctx, item["cost"], started)
         near_order = (rank, *depth, least, price, -item["weight"])
@@ -1940,6 +1941,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # goes where an undecided one would, exempt from a batch that
             # leaves its section out, as a provisional keep is; a skill cell
             # to the recheck band.
+            rechecking = True
             if now < recheck_due_at(cell):
                 band, order = None, None
             elif cell.get("section"):
@@ -1997,7 +1999,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
-        if band == "recheck" and _retiring(ctx, subject):
+        if (band == "recheck" or rechecking) and _retiring(ctx, subject):
             continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
                 and not provisional:
