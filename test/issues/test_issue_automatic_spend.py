@@ -163,6 +163,21 @@ class CurrentModel(unittest.TestCase):
         self.assertEqual(aus.current_model_costs(self.ROWS, trig),
                          ("claude-sonnet-5-5", [2.0, 1.0], 1, True))
 
+    def test_odd_times_neither_crash_nor_decide_the_model(self):
+        rows = self.ROWS + [
+            {"session_id": "d", "fired_at": None, "total_cost_usd": 9.0,
+             "last_served_model": "claude-opus-5-5"},
+            {"session_id": "e", "fired_at": "2026-11-15T03:00:00", "total_cost_usd": None,
+             "last_served_model": "claude-sonnet-5-5"},
+        ]
+        trig = {"model": "claude-sonnet-5-5", "updated_at": 1763000000}
+        self.assertEqual(aus.current_model_costs(rows, trig),
+                         ("claude-sonnet-5-5", [2.0, 1.0], 2, False))
+
+    def test_a_fire_at_the_edit_counts_as_since(self):
+        trig = {"model": "claude-haiku-5-5", "updated_at": "2026-11-15T02:00:00Z"}
+        self.assertEqual(aus.current_model_costs(self.ROWS, trig)[0], "claude-sonnet-5-5")
+
     def test_no_set_model_uses_the_newest_fire(self):
         self.assertEqual(aus.current_model_costs(self.ROWS, {"model": ""})[:3],
                          ("claude-sonnet-5-5", [2.0, 1.0], 1))
@@ -194,12 +209,19 @@ class LoopMembership(unittest.TestCase):
             "t2": {"name": "Daily security alert triage", "cron_expression": "0 0 * * 1",
                    "enabled": True},
         }
-        fires = [{"trigger_id": "t1", "session_id": "a", "total_cost_usd": 3.0},
+        triggers["t1"].update(model="claude-haiku-5-5", updated_at="2026-11-10T00:00:00Z")
+        fires = [{"trigger_id": "t1", "session_id": "a", "total_cost_usd": 3.0,
+                  "fired_at": "2026-11-12T00:00:00Z", "last_served_model": "claude-opus-5-5"},
+                 {"trigger_id": "t1", "session_id": "c", "total_cost_usd": 8.0,
+                  "fired_at": "2026-11-01T00:00:00Z", "last_served_model": "claude-fable-5-2"},
                  {"trigger_id": "t2", "session_id": "b", "total_cost_usd": 2.0}]
         doc = aus.breakdown(self.CONFIG, triggers, fires, [], [], NOW, 14)
         self.assertAlmostEqual(doc["loop_meter_usd_per_week"], 3.0)
         self.assertAlmostEqual(doc["outside_loop_meter_usd_per_week"], 2.0)
         self.assertEqual(doc["loop_unassigned"], [])
+        fw = next(j for j in doc["jobs"] if j["name"] == "Fleet worker")
+        self.assertEqual((fw["model"], fw["cost_fires_other_model"], fw["model_mismatch"]),
+                         ("claude-opus-5-5", 1, True))
         fleet = next(c for c in doc["categories"] if c["id"] == "fleet")
         self.assertAlmostEqual(fleet["outside_loop_meter_usd_per_week"], 2.0)
 

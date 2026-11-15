@@ -238,6 +238,17 @@ def scan_boxy_tasks(checkout: Path) -> list:
 
 # --- breakdown ------------------------------------------------------------
 
+def _utc(value):
+    """An aware UTC datetime from an ISO string (naive read as UTC), else None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        t = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
 def current_model_costs(rows: list, trigger: dict | None = None):
     """(model, costs on it, fires on other models, mismatch) for one task.
 
@@ -245,10 +256,11 @@ def current_model_costs(rows: list, trigger: dict | None = None):
     model recorded and no set model keeps every cost."""
     trigger = trigger or {}
     set_model = trigger.get("model") or (trigger.get("derived_state") or {}).get("model") or None
-    edited = _when(trigger.get("updated_at"))
-    dated = sorted((r for r in rows if r.get("last_served_model")),
-                   key=lambda r: r.get("fired_at") or "")
-    since = [r for r in dated if edited is None or (_when(r.get("fired_at")) or edited) >= edited]
+    edited = _utc(trigger.get("updated_at"))
+    # Only fires with a model and a readable time can say which model is current.
+    dated = sorted((r for r in rows if r.get("last_served_model") and _utc(r.get("fired_at"))),
+                   key=lambda r: _utc(r["fired_at"]))
+    since = [r for r in dated if edited is None or _utc(r["fired_at"]) >= edited]
     if since:
         model = since[-1]["last_served_model"]
     elif set_model:
