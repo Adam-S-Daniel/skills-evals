@@ -1814,7 +1814,9 @@ week, more than the rest of the keep-up together.
   sweep until one rest holds `rest_guard_min_pairs` pairs made since it fell
   due. That is the removal guard's floor, so a removal could have decided.
   The re-check then counts as passed at that pair, and the next is due
-  `recheck_weeks` later. A single re-check fire every `recheck_weeks` would
+  `recheck_weeks` later. It also ends at `max_runs_per_cell` pairs made since
+  it fell due, over every rest, so a rest that keeps changing cannot hold it
+  open. A single re-check fire every `recheck_weeks` would
   never reach the floor beside one rest while the rest changes weekly (the
   first review's blocker). Known limit: the floor counts per rest digest, so
   a base.md reverted to an earlier version counts that rest's old pairs

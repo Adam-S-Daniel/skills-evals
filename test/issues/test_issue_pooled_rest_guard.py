@@ -513,6 +513,16 @@ class StandingKeepTests(unittest.TestCase):
         self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": six}),
                          due + timedelta(hours=9) + age)
         self.assertIsNone(plan_week.standing_recheck_at({"keep_since": None}))
+        # No pairs, or no floor: due 8 weeks after the confirmation.
+        self.assertEqual(plan_week.standing_recheck_at(cell), due)
+        self.assertEqual(plan_week.standing_recheck_at(
+            {"section": "sec", "keep_since": stamp(t0), "pair_stamps": six}), due)
+        # The third review's should-fix: a new rest for every pair never
+        # holds the floor, so the re-check ends at the cap's count instead.
+        cap = gates.load_gate_policy()["guidance"]["max_runs_per_cell"]
+        churn = [[stamp(due + timedelta(hours=h)), 10 + h] for h in range(cap + 3)]
+        self.assertEqual(plan_week.standing_recheck_at({**cell, "pair_stamps": churn}),
+                         due + timedelta(hours=cap - 1) + age)
 
     def test_run_utility_puts_the_decision_at_the_standing_keep(self):
         # The review's m3: a later current-rest keep does not move the

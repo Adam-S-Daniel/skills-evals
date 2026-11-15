@@ -3483,7 +3483,9 @@ def standing_recheck_at(cell: dict) -> datetime | None:
     which one rest holds `rest_guard_min_pairs` pairs made since it fell due
     (the removal guard's floor, so a removal could have decided), and the
     next one is due `recheck_after` that pair. So a change of the rest never
-    makes it due early, and a re-check that has had its pairs ends."""
+    makes it due early, and a re-check that has had its pairs ends; one
+    also ends at `max_runs_per_cell` pairs made since it fell due, over every
+    rest, so a rest that keeps changing cannot hold it open."""
     since = _stamp_time(cell.get("keep_since"))
     if since is None:
         return None
@@ -3494,14 +3496,22 @@ def standing_recheck_at(cell: dict) -> datetime | None:
         if isinstance(s, str)) if t is not None)
     if not isinstance(floor, int) or floor < 1:
         return since + age
+    # The third review's should-fix: a rest that changes before any one rest
+    # holds the floor would keep a re-check open for good, and the cap
+    # counts only today's rest. So a re-check also ends at
+    # `max_runs_per_cell` pairs made since it fell due, over every rest.
+    block = _committed_gate_policy()
+    cap = (block.get("guidance") or block["skills"])["max_runs_per_cell"]
     while True:
         due = since + age
         seen: dict = {}
         passed = None
+        total = 0
         for t, rest in stamps:
             if t >= due:
                 seen[rest] = seen.get(rest, 0) + 1
-                if seen[rest] >= floor:
+                total += 1
+                if seen[rest] >= floor or total >= cap:
                     passed = t
                     break
         if passed is None:
