@@ -12,10 +12,12 @@ const pct = (x) => Math.round(x * 100) + '%';
 /* The window's weeks from the data (evals/hook-policy.yml), or null. */
 const weeksOf = (w) => (Number.isInteger(w.weeks) && w.weeks > 0 ? w.weeks : null);
 
-/* The Runs cell: the count, or what is counted when CI's share is not. */
+/* The Runs cell: the counted (local and cloud) runs. CI never records how
+   often a check ran, for any check, so the column header says so once
+   rather than only on the rows that happen to have a red CI run. */
 function runsCell(it) {
   if (it.runs !== null) return fmtCount(it.runs);
-  if (it.runsCounted) return STRINGS.runsPartial(it.runsCounted);
+  if (it.runsCounted) return fmtCount(it.runsCounted);
   return h('span', { class: 'muted' }, STRINGS.runsNotCounted);
 }
 
@@ -149,7 +151,7 @@ export function hookPage(doc, name, ctx) {
       h('p', { class: 'meta' }, STRINGS.hookWhereLine(it.where, it.repo ? clean(it.repo) : null)),
       h('h3', null, STRINGS.verdictHeading),
       h('p', null, hookVerdict(it), ' ', clean(it.reason)),
-      h('p', { class: 'meta' }, STRINGS.colRuns + ': ', runsCell(it), '. '
+      h('p', { class: 'meta' }, STRINGS.colRunsWindow(null) + ': ', runsCell(it), '. '
         + STRINGS.colBlocked + ': ' + blockedCell(it) + '. ' + STRINGS.colOverrides + ': ',
         overrides(it), '.'),
       it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote),

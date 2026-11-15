@@ -1066,16 +1066,20 @@ function hooksDoc() {
     chk('pr-tldr', use('ci', null, 4), { invocations: null, invocations_counted: 0, blocked: 4, overridden: null, override_rate: null }, 'earning', 'blocked in 8 weeks; no source counts its overrides'),
     chk('dated-phrasing', use('local', 40, 0), { invocations: 40, invocations_counted: 40, blocked: 0, overridden: null, override_rate: null }, 'never-blocked', 'ran 40 times in 8 weeks, blocked none'),
     chk('counted-block', use('local', 30, 4), { invocations: 30, invocations_counted: 30, blocked: 4, overridden: null, override_rate: null }, 'earning', 'blocked in 8 weeks; no source counts its overrides'),
+    chk('mixed-ci', use('ci', null, 2).concat(use('local', 25, 1)), { invocations: null, invocations_counted: 25, blocked: 3, overridden: null, override_rate: null }, 'earning', 'blocked in 8 weeks; no source counts its overrides'),
     chk('agents-md-size', [], { invocations: 0, invocations_counted: 0, blocked: 0, overridden: null, override_rate: null }, 'never-ran', 'no recorded runs in 8 weeks')
   ] } });
 }
 test('the git hook table never shows a run count below its block count, and says what is not counted', () => {
   const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));
-  ok(t.includes('Runs, 8 weeks'), 'the header names the window');
+  ok(t.includes('Runs outside CI, 8 weeks'), 'the header names the window and says once that CI runs are not counted: ' + t);
+  ok(!t.includes('local, CI not counted'), 'never said per row: ' + t);
+  ok(/mixed-ci\s*Fleet\s*25\b/.test(t), 'a check with a red CI run shows its counted runs plainly: ' + t);
+  ok(/agents-md-size\s*Fleet\s*0\b/.test(t), 'zero counted runs is 0, not "not counted": ' + t);
   ok(t.includes('4 of 30 runs'), 'blocked of runs where runs are counted: ' + t);
   ok(t.includes('not counted'), 'unknown runs are said to be not counted');
   ok(!/pr-tldr\s*Fleet template\s*0\b/.test(t), 'pr-tldr is not shown with 0 runs');
-  ok(t.includes('hook telemetry'), 'the note says where local runs come from');
+  ok(t.includes('no check\'s CI runs are counted'), 'the note says CI runs are never counted, for any check');
 });
 test('the git hook verdicts say never blocked and never ran, not never fires', () => {
   const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));
