@@ -4,6 +4,8 @@ import { useGlossVoice } from './glosses.js';
 import { SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, pts, ordinal, countWord } from './rules.js';
 
 const ISSUES_URL = 'https://github.com/' + DATA_REPO + '/issues';
+/* What one skill use is (the census's skill and skill-read rows). */
+const STRINGS_USE_DEF = 'A use is a call of the skill, or a session that read its files without calling it.';
 
 /* `you` is true in the private build (the dashboard speaks to its owner) and
    false in the public one, which says "the owner" and names no person. */
@@ -145,9 +147,10 @@ function buildStrings(you) {
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in ' + W.whose + ' real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in ' + W.whose + ' real work from ' + from + ' to ' + to + '.',
+  usedSplit: (calls, reads) => calls + (calls === 1 ? ' call' : ' calls') + ', ' + reads + ' by reading its files.',
   copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
   copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',
-  usageNote: (sessions, cloudFrom) => 'Real-work counts come from ' + sessions + ' of ' + W.whose + ' Claude Code sessions on ' + W.own + ' computer' + (cloudFrom ? ', plus every skill use ' + W.whose + ' cloud sessions have recorded since ' + cloudFrom + '.' : '. Sessions in the cloud are not counted yet.'),
+  usageNote: (sessions, cloudFrom) => 'Real-work counts come from ' + sessions + ' of ' + W.whose + ' Claude Code sessions on ' + W.own + ' computer' + (cloudFrom ? ', plus every skill use ' + W.whose + ' cloud sessions have recorded since ' + cloudFrom + '.' : '. Sessions in the cloud are not counted yet.') + ' ' + STRINGS_USE_DEF,
   size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
 
   barWith: 'With the skill',
@@ -563,7 +566,7 @@ function buildStrings(you) {
   colUnknown: 'Unknown', agentMadeOlder: (n) => 'Older items (' + n + ')',
   agentMadeVerdicts: (list) => list ? 'verdicts: ' + list : 'no verdicts yet',
   impactUseSkills: 'Real-work use by skill',
-  impactUseSkillsNote: (from, to) => 'Uses from ' + from + ' to ' + to + '. Guidance has no direct use signal; its effect shows only in test results.',
+  impactUseSkillsNote: (from, to) => 'Uses from ' + from + ' to ' + to + '. ' + STRINGS_USE_DEF + ' Guidance has no direct use signal; its effect shows only in test results.',
   impactUseChecks: 'Real-work use by git hook check',
   impactSpend: 'Spend',
   impactSpendTotal: (since, usd, verdicts, each, tests, build, api) => 'Since ' + since + ': ' + usd + ' for ' + verdicts + ' decided verdicts, ' + each + ' each (tests ' + tests + ', building ' + build + ', API ' + api + ').',

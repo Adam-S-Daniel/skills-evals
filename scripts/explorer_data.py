@@ -1906,7 +1906,8 @@ def renumber(subjects: list) -> None:
 
 
 def usage_counts(tree: Path) -> tuple:
-    """({skill: invocations}, the window) from `usage/weekly-local.json`:
+    """({skill: {"invocations": calls, "reads": read uses}}, the window) from
+    `usage/weekly-local.json`:
     every week of the file summed, so a skill the census never saw is 0 while
     the file exists. ({}, None) without a readable file (unknown, not zero).
     The census already folds every non-public name into `other`; the caller
@@ -1917,7 +1918,12 @@ def usage_counts(tree: Path) -> tuple:
     locally and in the cloud once, as local, so the two never overlap (the
     same sum `skill_usage` reads for removal). The window's `cloud` names the
     cloud `skill-records` source ({from, to, events_scanned}), or is None when
-    the census has none (cloud uses not counted)."""
+    the census has none (cloud uses not counted).
+
+    `reads` sums the `skill-read` rows on every surface: sessions that used
+    the skill only by reading its installed files (Adam, 2026-11-15). The
+    census writes one only for a session that never called the skill, so
+    calls plus reads is the use count `skill_usage.weight` reads too."""
     doc = skill_usage.load(tree / "usage" / "weekly-local.json")
     if doc is None:
         return {}, None
@@ -1925,15 +1931,19 @@ def usage_counts(tree: Path) -> tuple:
     for row in doc["rows"]:
         if not isinstance(row.get("invocations"), int):
             continue
+        field = "invocations"
         if row["kind"] == "skill":
             name = row["name"]
+        elif row["kind"] == skill_usage.READ_KIND and isinstance(row.get("name"), str):
+            name, field = skill_usage.skill_basename(row["name"]), "reads"
         elif (row["kind"] == skill_usage.DIGEST_KIND
               and row.get("surface") == skill_usage.SURFACE_CLOUD
               and isinstance(row.get("name"), str)):
             name = skill_usage.skill_basename(row["name"])
         else:
             continue
-        counts[name] = counts.get(name, 0) + row["invocations"]
+        count = counts.setdefault(name, {"invocations": 0, "reads": 0})
+        count[field] += row["invocations"]
     source = next((s for s in doc["sources"] if s.get("scope") == "transcripts"), {})
     cloud = next((s for s in doc["sources"] if s.get("scope") == skill_usage.DIGEST_SCOPE
                   and s.get("surface") == skill_usage.SURFACE_CLOUD), None)
@@ -2218,7 +2228,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "next_test": queue.get(("skill", name), unqueued),
                        "stakes": stakes_of("skill", name),
                        "usage": None if usage_window is None
-                       else {"invocations": counts.get(name, 0)},
+                       else counts.get(name, {"invocations": 0, "reads": 0}),
                        "copies": copies,
                        "discarded_runs": discarded_runs(verdict),
                        "run_utility": run_utility(verdict),

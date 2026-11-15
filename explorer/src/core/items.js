@@ -44,6 +44,14 @@ export function byFaring(rank, subject) {
   };
 }
 
+/* A skill's real-work uses: its Skill calls plus the sessions that used it
+   only by reading its installed files (`reads`; absent in data older than it,
+   which counted calls alone). null without a census: unknown, never zero. */
+export function usesOf(usage) {
+  if (!usage || !Number.isInteger(usage.invocations)) return null;
+  return usage.invocations + (Number.isInteger(usage.reads) ? usage.reads : 0);
+}
+
 export const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 export function skillItems(doc) {
