@@ -24,11 +24,12 @@ api_credit_usd_per_week: 46
 # Skills: batches/current.json measured 1.8 a week (2026-10-26 to 11-09); 0
 # were added 2026-11-08 to 11-15. Under the first-use rule only used skills
 # are evaluated: 7 of 38 catalog skills have any recorded use (explorer,
-# local since 2026-09-21 plus cloud since 2026-11-02).
+# local since 2026-09-21 plus cloud since 2026-11-02). Central 1.0, between
+# the 4-week rate and last week's zero.
 new_skills_per_week: 1.0
 first_use_share: 0.2
-# Sections: 1.0 a week (batches/current.json); the newest (eval-rules) and
-# 11 of 32 rows in eval-coverage.yml are skipped.
+# Sections: 1.0 a week (batches/current.json). 12 of 32 rows in
+# eval-coverage.yml are skipped, the newest (eval-rules) among them.
 new_sections_per_week: 1.0
 evaluated_section_share: 0.6
 

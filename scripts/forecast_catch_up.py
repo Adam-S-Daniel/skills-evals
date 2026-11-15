@@ -112,7 +112,9 @@ def cell_estimate(cell: dict, ctx: dict, prior_pairs: float) -> dict:
     else:
         central = min(math.ceil(pairs), remaining)
     keep = projection.get("keep")
-    keep_route = _number(keep) and keep <= (projection.get("remove") or math.inf) \
+    remove = projection.get("remove")
+    remove = math.inf if remove is None else remove
+    keep_route = _number(keep) and keep <= remove \
         and math.ceil(keep) <= remaining
     out.update(central=central, low=central, high=remaining, keep_route=bool(keep_route))
     return out
@@ -255,7 +257,9 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     evaluated = a["evaluated_section_share"] if a["evaluated_section_share"] is not None else 1.0
     models = len(gates.get("roster_models") or costs or [1])
     decided = sum(1 for block in ("skills", "guidance")
-                  for s in (gates.get(block) or {}).values() if s.get("verdict") == "keep")
+                  for name, s in (gates.get(block) or {}).items()
+                  if s.get("verdict") == "keep"
+                  and not (block == "guidance" and name in skipped_sections))
     recheck_weeks = gates["policy"]["recheck_weeks"]
     keep_up_items = {
         "new skills (first use only)": new_skills * first_use * median,
@@ -328,7 +332,8 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--out-json", type=Path, required=True)
     args = p.parse_args(argv)
     gates = json.loads(args.gates.read_text(encoding="utf-8"))
-    now = datetime.fromisoformat(args.as_of.replace("Z", "+00:00")).astimezone(timezone.utc)
+    now = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
+    now = (now if now.tzinfo else now.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
     cells, _, _ = plan_week.eval_cells_and_outages(
         args.evals_dir, gates, [], now, plan_week.routine_git_version(args.results_tree))
     budget = yaml.safe_load((args.evals_dir / "budget.yml").read_text(encoding="utf-8"))
@@ -341,9 +346,13 @@ def main(argv: list | None = None) -> int:
     for item in args.set:
         key, _, value = item.partition("=")
         try:
-            assumptions[key] = float(value)
+            number = float(value)
         except ValueError:
             assumptions[key] = value
+            continue
+        if not math.isfinite(number):
+            p.error(f"--set {key}: not a finite number")
+        assumptions[key] = number
     unknown = set(assumptions) - set(ASSUMPTION_KEYS)
     if unknown:
         p.error(f"unknown assumption keys: {sorted(unknown)}")
