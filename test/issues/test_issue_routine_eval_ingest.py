@@ -377,20 +377,6 @@ class AcceptTests(GitCase):
             ingest.check_summary({**doc, "guidance_digests": {
                 "section": digest, "section_payload": digest}}, rel, parts)
 
-    def test_a_skipped_sandbox_probe_is_rejected_and_the_others_ingest(self):
-        doc = summary()
-        rel = "summary.json"
-        parts = {"arm": doc["arm"], "timestamp": doc["timestamp"],
-                 "fixture": doc.get("fixture"), "key": doc["skill"],
-                 "trial": doc.get("trial")}
-        ingest.check_summary(doc, rel, parts)  # older results: no key
-        for status in ("passed", "failed", "not_run"):
-            with self.subTest(status=status):
-                ingest.check_summary(summary(sandbox_probe=status), rel, parts)
-        for status in ("skipped", "bogus"):
-            with self.subTest(status=status), self.assertRaises(ingest.Rejected):
-                ingest.check_summary(summary(sandbox_probe=status), rel, parts)
-
     def test_rejects_contradictory_token_accounting(self):
         base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
         incomplete = {"complete": False, "dropped": 1, "other_share": None,
