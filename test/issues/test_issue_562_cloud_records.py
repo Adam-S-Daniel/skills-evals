@@ -343,7 +343,8 @@ class CloudCarryTests(unittest.TestCase):
 
     def test_the_carry_entry_is_scoped_to_cloud_skill_records(self):
         self.assertIn(("cloud skill copies", skill_usage.DIGEST_SCOPE,
-                       (skill_usage.DIGEST_KIND,), skill_usage.SURFACE_CLOUD),
+                       (skill_usage.DIGEST_KIND, skill_usage.READ_KIND),
+                       skill_usage.SURFACE_CLOUD),
                       skill_usage.CARRIED)
 
 

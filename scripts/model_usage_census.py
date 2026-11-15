@@ -68,6 +68,18 @@ that the published coverage census lists for a public registry
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
 
+SKILL READS (Adam, 2026-11-15): a session that reads a file inside an
+INSTALLED copy of a skill used it, even with no Skill call. A `Read`,
+`Grep`, `Glob`, `NotebookRead` or `Bash` tool call whose path or command names
+`.claude/skills/<name>` or `.claude/plugins/.../skills/<name>` (`skill_reads`)
+is a read use of `<name>`, keyed as a Skill call is (`skill_key`; a private
+plugin among the path's segments makes it `other`). A registry checkout
+(`.../adam-agentskills/plugins/<p>/skills/<name>/`) is maintenance, not use,
+and never matches. Reads count at most once per (session, skill), in the week
+of the session's first read, and not at all when the session (keyed by its
+`sessionId`, so subagent transcripts join their parent) also called or typed
+that skill: they become `skill-read` rows. The path never leaves this walk.
+
 HOOK RUNS from the fleet's git hook runner (agent-checks writes one JSON line
 per local run, `--hook-logs`) become `hook` rows in the same weekly file:
 per check id, per allowlisted public repository, runs and failures. A check
@@ -137,7 +149,10 @@ field checked, a malformed line skipped), and become `skill-digest` rows with
 this run's records or a machine file counts once, as local. No cloud `skill`
 rows are written, and cloud coverage is records seen, never complete. Readers
 add the cloud `skill-digest` rows' invocations to the skill rows
-(`harness/skill_usage.weight`, `has_recorded_use`).
+(`harness/skill_usage.weight`, `has_recorded_use`). A shard line of kind
+`skill-read` (the hook's read use, same shape) becomes a cloud `skill-read`
+row instead, never a `skill-digest` one, so copy alerts are unchanged; it is
+dropped when its session also has a `skill` line for that name.
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
@@ -415,6 +430,86 @@ def skill_key(raw, allowlist: frozenset[str],
     if name in allowlist and SKILL_KEY_RE.fullmatch(name):
         return name
     return OTHER_KEY
+
+
+# --- Read uses (Adam, 2026-11-15) -------------------------------------------
+# A tool call that reads an installed copy of a skill is a use of it. Either
+# separator, since Windows transcripts are read too; a name ends where the
+# directory-name characters end, so `~/.claude/skills/<name>` with no trailing
+# slash (a Glob or `ls` of the directory) counts as well.
+_READ_NAME = r"([A-Za-z0-9][A-Za-z0-9._-]{0,127})(?![A-Za-z0-9._-])"
+_USER_SKILL_RE = re.compile(r"[/\\]\.claude[/\\]skills[/\\]" + _READ_NAME)
+#: A plugin copy: the cache (`plugins/cache/<marketplace>/<plugin>/<version>/`)
+#: or a marketplace clone (`plugins/marketplaces/<marketplace>/plugins/<plugin>/`),
+#: then `skills/<name>`. The segments between are captured for the private check.
+_PLUGIN_SKILL_RE = re.compile(
+    r"[/\\]\.claude[/\\]plugins[/\\]((?:[^\s/\\\"'`]+[/\\])*?)skills[/\\]" + _READ_NAME)
+#: The input fields each reading tool names a path in. Bash's command is
+#: scanned whole: a path can sit anywhere in it.
+READ_FIELDS = {"Read": ("file_path",), "Grep": ("path",), "Glob": ("path", "pattern"),
+               "NotebookRead": ("notebook_path",), "Bash": ("command",)}
+
+
+def skill_reads(item: dict, private: frozenset[str] = frozenset()) -> list[tuple[str, bool]]:
+    """(skill directory name, whether a private plugin's copy) for each
+    installed skill copy a `tool_use` item's input points into; empty for
+    any other tool or input. A registry checkout never matches: it has no
+    `.claude/` segment before `skills/`."""
+    fields = READ_FIELDS.get(item.get("name"), ())
+    given = item.get("input")
+    if not fields or not isinstance(given, dict):
+        return []
+    found = []
+    for field in fields:
+        text = given.get(field)
+        if not isinstance(text, str):
+            continue
+        found += [(m.group(1), False) for m in _USER_SKILL_RE.finditer(text)]
+        for m in _PLUGIN_SKILL_RE.finditer(text):
+            segments = re.split(r"[/\\]", m.group(1))
+            found.append((m.group(2), any(seg in private for seg in segments)))
+    return found
+
+
+def _read_key(name: str, is_private: bool, allowlist: frozenset[str],
+              private: frozenset[str]) -> str:
+    """The key a read use of `name` counts under: a Skill call's (`skill_key`),
+    and `other` for a private plugin's copy whatever its name."""
+    return OTHER_KEY if is_private else skill_key(name, allowlist, private)
+
+
+def _note_reads(state: dict, entry: dict, message: dict, kind: str, when: datetime,
+                in_window: bool, allowlist: frozenset[str], private: frozenset[str],
+                read_ids: set) -> None:
+    """Record into one session's read `state` ({"called": basenames, "reads":
+    {basename: (first read time, key)}}) what this entry called and read.
+    Calls are noted whatever the week, so a call just outside the window still
+    suppresses the read; reads only inside it."""
+    if kind == "user":
+        command = _typed_command(message)
+        if command is not None:
+            state["called"].add(_skill_name(command))
+        return
+    if not isinstance(message.get("content"), list):
+        return
+    for item in message["content"]:
+        if not (isinstance(item, dict) and item.get("type") == "tool_use"):
+            continue
+        if item.get("name") == "Skill":
+            given = item.get("input")
+            raw = given.get("skill") if isinstance(given, dict) else None
+            if isinstance(raw, str):
+                state["called"].add(_skill_name(raw))
+            continue
+        reads = skill_reads(item, private)
+        if reads and isinstance(item.get("id"), str):
+            read_ids.add(item["id"])
+        if not in_window:
+            continue
+        for name, is_private in reads:
+            first = state["reads"].get(name)
+            if first is None or when < first[0]:
+                state["reads"][name] = (when, _read_key(name, is_private, allowlist, private))
 
 
 def _typed_command(message: dict) -> str | None:
@@ -1211,6 +1306,10 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     When `events` is a list (and `allowlist` is given), one private record
     per counted invocation is appended to it, the name as invoked; its
     `session_title` is the transcript's last `summary` or `custom-title`.
+
+    With `allowlist`, the tally also has "reads" ({key: {iso_week: sessions}},
+    the read uses: see the module docstring) and "read_ids" (every reading
+    tool_use id, so a cloud line for the same call counts once, as local).
     """
     wanted = set(window_weeks(now, weeks))
     oldest = window_start(now, weeks)
@@ -1236,11 +1335,19 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     #: ("t"|"c"|"u", id) of every turn, Skill call and typed entry counted
     #: under an earlier root.
     claimed: set[tuple[str, str]] = set()
+    #: {session: {"called", "reads"}} across every root, so a session stored
+    #: twice, or split into subagent transcripts, is one session.
+    tally["read_state"], tally["read_ids"] = {}, set()
     for root in roots:
         if root.is_dir():
             claimed |= _census_root(root, wanted, oldest, counts, tally, seen_files,
                                     claimed, allowlist, events if record else None,
                                     repos, machine, private, copies)
+    reads = tally["reads"] = {}
+    for state in tally.pop("read_state").values():
+        for name, (when, key) in state["reads"].items():
+            if name not in state["called"]:
+                _bump(reads, key, iso_week(when))
     return counts, tally
 
 
@@ -1348,6 +1455,13 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                     if when is None:
                         continue
                     week = iso_week(when)
+                    if allowlist is not None:
+                        session = entry.get("sessionId")
+                        state = tally["read_state"].setdefault(
+                            session if isinstance(session, str) and session
+                            else str(transcript), {"called": set(), "reads": {}})
+                        _note_reads(state, entry, message, kind, when, week in wanted,
+                                    allowlist, private, tally["read_ids"])
                     if week not in wanted:
                         continue
                     if kind == "user":
@@ -1474,6 +1588,9 @@ def build_weekly_document(tally: dict, now: datetime,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
             for week, n in by_week.items()]
+    rows += [skill_usage.read_row(skill_usage.week_monday(week), name, n)
+             for name, by_week in tally.get("reads", {}).items()
+             for week, n in by_week.items()]
     rows += [skill_usage.guidance_row(week, state, n)
              for state, by_week in tally.get("guidance", {}).items()
              for week, n in by_week.items()]
@@ -1800,6 +1917,9 @@ CLOUD_TS_RE = re.compile(
 #: Exactly these keys: a line with any other key, or without one, is skipped.
 CLOUD_KEYS = frozenset({"v", "id", "ts", "kind", "surface", "session", "cli", "name",
                         "base_kind", "registry", "ref", "digest", "digest_null_reason"})
+#: A Skill use, or a read use (the session read the copy's files; the copy
+#: fields describe the directory the path pointed into).
+CLOUD_SKILL_KINDS = ("skill", skill_usage.READ_KIND)
 
 
 def _cloud_line_ok(record: dict, month: str, session: str) -> bool:
@@ -1811,7 +1931,7 @@ def _cloud_line_ok(record: dict, month: str, session: str) -> bool:
     ts, digest, reason = record["ts"], record["digest"], record["digest_null_reason"]
     cli, registry, ref = record["cli"], record["registry"], record["ref"]
     if not (type(record["v"]) is int and record["v"] == 1
-            and record["kind"] == "skill" and record["surface"] == "cloud"
+            and record["kind"] in CLOUD_SKILL_KINDS and record["surface"] == "cloud"
             and record["session"] == session
             and isinstance(record["id"], str) and CLOUD_ID_RE.fullmatch(record["id"])
             and isinstance(record["name"], str) and CLOUD_NAME_RE.fullmatch(record["name"])
@@ -1853,7 +1973,10 @@ def store_digests(store) -> dict:
     is PRE_RECORD (a shard line always has one)."""
     lines: dict = {}
     records = [record for _, record in _machine_skill_records(store)]
-    for record in records + cloud_skill_records(store):
+    # A read line names the copy a session read, not one it loaded: it never
+    # resolves a use's copy, so the copy rows and alerts are the calls' alone.
+    calls = [r for r in cloud_skill_records(store) if r["kind"] == "skill"]
+    for record in records + calls:
         has_key, copy = _stored_copy(record)
         entry = lines.setdefault(record["id"], {"keyless": False, "copies": []})
         if not has_key:
@@ -1919,7 +2042,12 @@ def cloud_digest_plan(records: list, local_ids: set, stored: dict, start: dateti
     (`stored`), so lines of one id resolve together. `from` is the later of
     `start` and the Monday of the earliest valid line's week: the records
     promise nothing before the first one, and after it only what was
-    uploaded (records seen, never complete)."""
+    uploaded (records seen, never complete).
+
+    "reads" holds the read uses: one per (session, skill basename) over the
+    `skill-read` lines in the same window, at its earliest line, unless the
+    session has a `skill` line for that basename (the call wins) or the id is
+    in `local_ids`; `other` gets no row, as for the uses."""
     if not records:
         return None
     floor, uses, seen = start, [], set(local_ids)
@@ -1928,8 +2056,20 @@ def cloud_digest_plan(records: list, local_ids: set, stored: dict, start: dateti
     if earliest is not None:
         floor = max(start, datetime.fromisoformat(skill_usage.week_monday(
             iso_week(earliest))).replace(tzinfo=timezone.utc))
+    called = {(r["session"], _skill_name(r["name"])) for r in records if r["kind"] == "skill"}
+    first_reads: dict = {}
     for record in records:
         when = parse_ts(record["ts"])
+        if record["kind"] != "skill":
+            name = _skill_name(record["name"])
+            if (record["id"] in local_ids or when < floor or when > now
+                    or (record["session"], name) in called):
+                continue
+            key = skill_key(record["name"], allowlist, private)
+            first = first_reads.get((record["session"], name))
+            if key != OTHER_KEY and (first is None or when < first[0]):
+                first_reads[(record["session"], name)] = (when, key)
+            continue
         if record["id"] in seen or when < floor or when > now:
             continue
         seen.add(record["id"])
@@ -1939,7 +2079,9 @@ def cloud_digest_plan(records: list, local_ids: set, stored: dict, start: dateti
             continue
         uses.append({"week": skill_usage.week_monday(iso_week(when)), "name": key,
                      "session": record["session"], **copy})
-    return {"from": floor.strftime(skill_usage.STAMP), "uses": uses}
+    reads = [{"week": skill_usage.week_monday(iso_week(when)), "name": key, "session": session}
+             for (session, _), (when, key) in sorted(first_reads.items())]
+    return {"from": floor.strftime(skill_usage.STAMP), "uses": uses, "reads": reads}
 
 
 class MirrorCheck:
@@ -2020,6 +2162,13 @@ def digest_rows(plan: dict, entries: list[dict], mirrors: dict) -> tuple[list, b
             group[1].add(use["session"])
     rows = [skill_usage.digest_row(week, name, repo, shown, n, len(sessions), surface)
             for (surface, week, name, repo, shown), (n, sessions) in groups.items()]
+    # Cloud read uses ride the cloud part of the plan (a plan written before
+    # them has none); each is one session, so the row counts sessions.
+    reads: dict = {}
+    for read in plan.get("cloud", {}).get("reads", []):
+        reads[(read["week"], read["name"])] = reads.get((read["week"], read["name"]), 0) + 1
+    rows += [skill_usage.read_row(week, name, n, skill_usage.SURFACE_CLOUD)
+             for (week, name), n in reads.items()]
     return rows, check.unread
 
 
@@ -2200,6 +2349,7 @@ def main() -> int:
         if args.event_store is not None:
             stored, start = store_digests(args.event_store), window_from(now, args.weeks)
             local_ids = {e["id"] for e in events if isinstance(e.get("id"), str)}
+            local_ids |= tally.get("read_ids", set())
             cloud_plan = cloud_digest_plan(
                 cloud_skill_records(args.event_store),
                 local_ids | machine_skill_ids(args.event_store), stored, start, now,
@@ -2219,7 +2369,8 @@ def main() -> int:
                     build_weekly_document(tally, now, args.weeks, hooks, cloud, digests,
                                           allowlist, cloud_hooks))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
-        status += f"; {calls} skill invocations -> {args.weekly_out}"
+        reads = sum(sum(by_week.values()) for by_week in tally.get("reads", {}).values())
+        status += f"; {calls} skill invocations, {reads} skill reads -> {args.weekly_out}"
     if args.events_out is not None:
         write_events(args.events_out, events)
         status += f"; {len(events)} private events -> {args.events_out}"

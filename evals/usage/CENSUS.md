@@ -71,8 +71,20 @@ trigger a commit.
   `adam-private-anything-anywhere`) counts under `other`, even when the bare
   name is allowlisted. This protects prefixed invocations only: an unprefixed
   name resolves by the public allowlist alone.
-- **Blind spots.** Cloud sessions are not in local transcripts. A skill loaded
-  without the Skill tool (read straight from its `SKILL.md`) is not counted.
+- **Read uses (`skill-read` rows).** A session that reads `SKILL.md`, or any
+  other file inside an installed copy of a skill, used it even with no Skill
+  call (Adam, 2026-11-15). A `Read`, `Grep`, `Glob`, `NotebookRead` or `Bash`
+  call whose path or command points into `.claude/skills/<name>` (user skills,
+  the bootstrap's project copies) or `.claude/plugins/.../skills/<name>` (the
+  plugin cache, a marketplace clone) is a read use of `<name>`, keyed as a
+  Skill call is. A registry checkout (`.../adam-agentskills/plugins/<p>/skills/<name>/`)
+  is maintenance and never counts. At most one read use per session and skill,
+  in the week of the first read, and none when that session (its `sessionId`,
+  subagent transcripts included) also called or typed the skill: the call
+  counts instead. `invocations` and `sessions` are both that number of
+  sessions. Readers add them to the calls (`skill_usage.weight`, the
+  explorer's Uses).
+- **Blind spots.** Cloud sessions are not in local transcripts.
   Local eval sessions do not inflate the counts: `local_eval.py` runs a
   one-turn arm without session persistence and moves a multi-turn arm's
   transcripts out of `~/.claude/projects` when it ends.
@@ -301,6 +313,11 @@ month of its own `ts`.
  "name", "base_kind", "registry", "ref", "digest", "digest_null_reason"}
 ```
 
+A read use (the session read an installed copy's files and, when the hook ran,
+had no Skill call for that name) is the same shape with `"kind": "skill-read"`:
+`id` is the first qualifying read's tool_use id, and the copy fields describe
+the directory the path pointed into.
+
 - *Read strictly.* Only a month directory `YYYY-MM` and a 16-hex stem are
   read, never through a link. A line must have exactly these keys: `v` 1,
   `id` `[A-Za-z0-9_-]{1,128}`, `ts` UTC with `Z` in the shard's month,
@@ -319,6 +336,12 @@ month of its own `ts`.
   and the Monday of the earliest shard line's week; present only when the
   store was read and holds at least one well-formed shard line (before the
   hook ships, cloud copies are unknown, not zero).
+- *Read lines.* A `skill-read` line becomes a cloud `skill-read` row, never a
+  `skill-digest` one, so copy rows and alerts are the calls' alone: one per
+  (session, skill) at its earliest line, dropped when the session has a
+  `skill` line for the same name (a later call wins) or its id is a local
+  read (a teleported session counts once, as local). They ride the cloud
+  `skill-records` source and are carried with it.
 - *Coverage is records seen, never complete.* Uses after a session's last
   successful upload die with the container, and a session that cannot reach
   the private repository records nothing.
