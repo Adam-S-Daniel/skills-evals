@@ -91,6 +91,22 @@ class ProducerTests(unittest.TestCase):
         got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
         self.assertAlmostEqual(got["usd_per_week"], 14.0)
 
+    def test_a_never_costed_task_is_priced_at_the_dearest_loop_fire(self):
+        # t2 (in the loop, daily) has no fire yet: $2 a fire like t1, so $28 a week in all.
+        write_json(self.inputs / "triggers.json",
+                   {"t1": {"enabled": True, "cron_expression": "0 9 * * *"},
+                    "t2": {"enabled": True, "cron_expression": "0 10 * * *", "name": "Eval scope review"}})
+        got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
+        self.assertAlmostEqual(got["usd_per_week"], 28.0)
+
+    def test_an_unreadable_rate_omits_the_block(self):
+        # A task fired by a workflow that was not scanned has no rate: omit, never undercount.
+        write_json(self.inputs / "triggers.json",
+                   {"t1": {"enabled": True, "cron_expression": "0 9 * * *"},
+                    "t2": {"enabled": True, "name": "Fleet worker", "last_run": "2026-11-15T00:00:00Z"}})
+        self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW,
+                                          str(self.ledger)))
+
     def test_the_block_passes_the_schema_and_the_ingest_gate(self):
         import jsonschema
         doc = spend_doc()

@@ -792,7 +792,13 @@ class DashboardBuildTests(unittest.TestCase):
         from unittest import mock
         now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
         ledger = self.tmp / "routine-fires.jsonl"
-        ledger.write_text("")
+        ledger.write_text(json.dumps({"trigger_id": "trig_example_worker", "fired_at": "2026-10-29T12:00:00Z",
+                                      "total_cost_usd": 1.0, "last_served_model": "model-a"}) + "\n")
+        # The example Fleet worker is fired by this workflow; without it its rate is unknown.
+        wf = self.tmp / "roots" / "_agent-guidance" / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "fleet-worker-fire.yml").write_text(
+            "on:\n  schedule:\n    - cron: '0 */6 * * *'\njobs: {}\n")
         for name, env in (("with", {"ROUTINE_FIRES_LEDGER": str(ledger)}), ("without", {})):
             spend = self.tmp / f"{name}.json"
             with mock.patch.dict(os.environ, env):
@@ -801,7 +807,7 @@ class DashboardBuildTests(unittest.TestCase):
                 build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
                             "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"),
                             "--now", now.isoformat(), "--spend", str(spend),
-                            "--workflows-root", str(self.tmp)])
+                            "--workflows-root", str(self.tmp / "roots")])
             doc = json.loads(spend.read_text())
             if env:
                 self.assertEqual(set(doc["loop_jobs"]), {"as_of", "points_per_week", "usd_per_week"})
