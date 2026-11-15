@@ -1,6 +1,6 @@
 /* Small shared pieces: sortable tables, tiles, source lines, internal links. */
 import { STRINGS } from '../core/strings.js';
-import { fmtDateTime, parseTime } from '../core/format.js';
+import { fmtDateTime, fmtUtcDay, parseTime } from '../core/format.js';
 import { h, findAll } from '../core/h.js';
 
 /* A link to another route of this page. */
@@ -23,17 +23,45 @@ export function blockMs(doc, which) {
   const ms = parseTime(at);
   return isFinite(ms) ? ms : parseTime(d.generated_at);
 }
-export const BLOCKS = ['doc', 'activity', 'queue', 'spend', 'usage', 'coverage'];
 export function srcLineFor(doc, which, source) { return srcLine(source || STRINGS.srcDoc, blockMs(doc, which)); }
 
-/* The page's one line: the document's time when every block was read at
-   once, else the oldest and newest read. */
-export function rangeLine(doc) {
-  const times = BLOCKS.map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
-  if (!times.length) return srcLine(STRINGS.srcDoc, NaN);
-  const lo = Math.min.apply(null, times), hi = Math.max.apply(null, times);
-  if (fmtDateTime(lo) === fmtDateTime(hi)) return srcLine(STRINGS.srcDoc, blockMs(doc, 'doc'));
-  return h('p', { class: 'src' }, STRINGS.srcRange(fmtDateTime(lo), fmtDateTime(hi)));
+/* When each dated source the page can show was read or last moved: the
+   newest eval run, each block's own read time, and the hook count files'.
+   `lessons` is a UTC day. A source the document does not date is left out,
+   never given the document's own time. */
+const TIMES = {
+  runs: (d) => d.newest_run,
+  coverage: (d) => d.coverage && d.coverage.as_of,
+  usage: (d) => d.usage && d.usage.to,
+  hooksLocal: (d) => d.hooks && d.hooks.read_at && d.hooks.read_at.local,
+  hooksCi: (d) => d.hooks && d.hooks.read_at && d.hooks.read_at.ci,
+  hooksCloud: (d) => d.hooks && d.hooks.read_at && d.hooks.read_at.cloud,
+  activity: (d) => d.activity && d.activity.fetched_at,
+  queue: (d) => d.fixture_queue && d.fixture_queue.generated_at,
+  spend: (d) => d.spend && d.spend.generated_at,
+  lessons: (d) => d.lessons && d.lessons.date
+};
+export const TIME_KEYS = Object.keys(TIMES);
+
+/* The page's line naming each source it shows with that source's own time
+   ("Data times: newest eval run Nov 11, 9:26 PM ET · skills census ..."),
+   so no single range claims to cover data it does not. `extra` adds
+   [{label, ms}] rows a page dates itself (one subject's newest run). */
+export function timesLine(doc, keys, extra) {
+  const d = doc || {};
+  const parts = [];
+  for (const k of keys) {
+    const at = TIMES[k] ? TIMES[k](d) : null;
+    const ms = parseTime(at);
+    if (!isFinite(ms)) continue;
+    const day = k === 'lessons';
+    parts.push(STRINGS.timeLabels[k] + ' ' + (day ? fmtUtcDay(ms, parseTime(d.generated_at)) : fmtDateTime(ms)));
+  }
+  for (const e of extra || []) {
+    if (e && isFinite(e.ms)) parts.push(e.label + ' ' + fmtDateTime(e.ms));
+  }
+  if (!parts.length) return h('p', { class: 'src times-line' }, STRINGS.timesUndated(fmtDateTime(blockMs(d, 'doc'))));
+  return h('p', { class: 'src times-line' }, STRINGS.timesLine(parts.join(' \u00b7 ')));
 }
 export function srcTip(source, ms) { return STRINGS.srcTip(source, isFinite(ms) ? fmtDateTime(ms) : ''); }
 

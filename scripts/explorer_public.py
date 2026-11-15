@@ -424,7 +424,24 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
     # cloud record exists.
     if cloud_source is not None:
         out["cloud_from"] = _stamp(cloud_source["from"])[:10]
+    # When each count file was written, so the page dates the hook counts by
+    # their own files rather than by the document (2026-11-15: the page's one
+    # read range left them out).
+    read_at = {surface: _hook_file_time(tree, name)
+               for surface, name in (("local", "weekly-local.json"), ("ci", "weekly-ci.json"))}
+    if cloud_source is not None:
+        read_at["cloud"] = _stamp(cloud_source.get("to"))
+    out["read_at"] = read_at
     return out
+
+
+def _hook_file_time(tree: Path, name: str) -> str | None:
+    """A weekly usage file's `generated_at`, or None when it is unreadable
+    or not of this schema."""
+    doc = _read_json(tree / "usage" / name)
+    if not isinstance(doc, dict) or doc.get("schema") != skill_usage.SCHEMA:
+        return None
+    return _stamp(doc.get("generated_at"))
 
 
 def verdict(rows: list | None, start: str, policy: dict) -> dict:

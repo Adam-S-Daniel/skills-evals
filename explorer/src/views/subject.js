@@ -9,7 +9,13 @@ import { skillItems, sectionItems, purposeOf } from '../core/items.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { fixtureTerm, defn, termify, SENTENCE_TERMS } from '../core/terms.js';
 import { hashFor } from '../core/route.js';
-import { table, rangeLine, navLink, panel, badge, fold } from './bits.js';
+import { table, timesLine, navLink, panel, badge, fold } from './bits.js';
+
+/* When a subject's newest run started, or NaN with none. */
+function newestOf(runs) {
+  const times = (Array.isArray(runs) ? runs : []).map((r) => parseTime(r && r.at)).filter((m) => isFinite(m));
+  return times.length ? Math.max.apply(null, times) : NaN;
+}
 import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine } from './cards.js';
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
 import { trendChart } from './trend.js';
@@ -144,7 +150,7 @@ export function subjectPage(doc, kind, name, ctx) {
     return h('div', null, back, h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(name)),
         known.private === true ? badge(STRINGS.privateBadge, 'private') : null),
-      rangeLine(doc),
+      timesLine(doc, ['coverage', 'usage']),
       h('p', { class: 'gl' }, clean(purposeOf(known.description) || STRINGS.purposeMissing)),
       known.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(known.registry))) : null,
       h('p', null, STRINGS.subjectUntested)));
@@ -159,7 +165,7 @@ export function subjectPage(doc, kind, name, ctx) {
     h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(guidance ? raw.heading || it.id : it.name)), chip(it.chip),
         raw.private === true ? badge(STRINGS.privateBadge, 'private') : null),
-      rangeLine(doc),
+      timesLine(doc, guidance ? [] : ['usage'], [{ label: STRINGS.subjectNewestRun, ms: newestOf(raw.runs) }]),
       h('p', { class: 'gl' }, gloss),
       !guidance && raw.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(raw.registry))) : null,
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,

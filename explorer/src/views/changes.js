@@ -7,7 +7,7 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtCount } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, navLink, rangeLine, srcLineFor } from './bits.js';
+import { table, panel, navLink, timesLine, srcLineFor } from './bits.js';
 import { LOOP_KINDS, isLoopPull, funnelView, fixtureRequestsView } from './loop.js';
 import { lessonsView } from './lessons.js';
 import { trendingView } from './trending.js';
@@ -123,7 +123,7 @@ export function changesView(doc, ctx) {
   const extra = ext && ext.changePulls ? ext.changePulls() : [];
   const filter = ctx && ctx.route && ctx.route.id === 'removed' ? 'removed' : null;
   return h('div', null,
-    rangeLine(doc),
+    timesLine(doc, filter ? ['activity'] : ['activity', 'runs', 'queue', 'lessons']),
     panel(STRINGS.changesHeading, changesList(doc, filter, extra)),
     filter ? null : [trendingView(doc, 'all'), panel(STRINGS.funnelHeading, funnelView(doc)), panel(STRINGS.fqHeading, fixtureRequestsView(doc, parseTime(doc.generated_at))), lessonsView(doc, 'all')]);
 }

@@ -91,7 +91,7 @@ function buildTerms(you) {
   advantage: { label: 'Advantage', text: 'The average score with the subject minus the average score without it, on a scale from 0 to 1. Plus means it helped.' },
   trending: { label: 'Trending toward removal', text: 'Recent runs score below the runs before them, or the subject stopped beating the arm without it. This is expected and the system acts on it: if the trend holds, the loop removes the subject automatically.' },
   dataBuilt: { label: 'Results data built', text: 'When the script that turns saved runs into this page\'s data last ran, in US Eastern time. It is not when the page itself was published.' },
-  newestRun: { label: 'newest run', text: 'When the most recent run recorded in the data started, in US Eastern time.' },
+  newestRun: { label: 'newest eval run', text: 'When the most recent eval run (of any skill or guidance section) recorded in the data started, in US Eastern time. Evals stop when the weekly eval budget is used, so this can be days old.' },
   blockedHooks: { label: 'Stopped', text: 'A git hook check refused a commit or push (on a local computer), or failed a pull request check in CI.' }
   };
 }
