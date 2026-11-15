@@ -12,6 +12,7 @@ Hermetic and deterministic: canned runs, no network, no clock.
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 import unittest
@@ -31,8 +32,9 @@ import test_issue_70_retirement  # noqa: E402
 from test_issue_70_retirement import FLAT, GAIN, LOSS, TEST_POLICY, series  # noqa: E402
 
 #: One-week re-checks, so a canned month of hourly runs holds a keep and
-#: its re-check.
-ON = {**TEST_POLICY, "recheck_window": True, "recheck_window_fire": True, "recheck_weeks": 1}
+#: its re-check; without THE RE-CHECK CARRY (RecheckCarryTests has it).
+ON = {**TEST_POLICY, "recheck_window": True, "recheck_window_fire": True, "recheck_weeks": 1,
+      "recheck_carry": False}
 WEEK = 7 * 24
 
 
@@ -100,7 +102,7 @@ class RecheckWindowTests(unittest.TestCase):
     def test_the_early_stop_rarely_cuts_a_removal_short(self):
         # Seeded: a gain of about 0.09, under the 0.15 margin, passes early
         # at most about 1 - retire_confidence of the time.
-        policy = gates.load_gate_policy()["skills"]
+        policy = {**gates.load_gate_policy()["skills"], "recheck_carry": False}
         rng = random.Random(7)
         t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
         early, sims = 0, 300
@@ -156,6 +158,151 @@ class RecheckWindowTests(unittest.TestCase):
         self.assertEqual(gates._recheck_projection([], policy, None), cap)
 
 
+T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def stream(draw, weeks, every_hours=4, key=None, start=T0):
+    """Pairs every `every_hours` from `start` for `weeks` weeks, each with
+    difference `draw(i)` (the with run's mean minus the without run's)."""
+    out = []
+    for i in range(weeks * 7 * 24 // every_hours):
+        d = draw(i)
+        ts = (start + timedelta(hours=every_hours * i)).strftime("%Y%m%dT%H%M%SZ")
+        w = {"timestamp": ts, "numbers": {"run_mean": max(d, 0.0)},
+             "cli_versions": [str(i % 2)], "pair_key": key}
+        o = {"timestamp": ts, "numbers": {"run_mean": max(-d, 0.0)},
+             "cli_versions": [str(i % 2)], "pair_key": key}
+        out.append((w, o))
+    return out
+
+
+def weekly(policy, carry):
+    return {**policy, "recheck_window": True, "recheck_weeks": 1, "recheck_carry": carry}
+
+
+KEEP = [T0.strftime("%Y%m%dT%H%M%SZ")]
+
+
+class RecheckCarryTests(unittest.TestCase):
+    """THE RE-CHECK CARRY (harness/gates.py; Adam, 2026-11-15)."""
+
+    def setUp(self):
+        self.policy = gates.load_gate_policy()["skills"]
+
+    def test_a_slipped_gain_is_removed_sooner_with_the_carry(self):
+        # Seeded: a gain of 0.06, under the 0.15 margin. Fresh re-checks
+        # each start from scratch; the carried test keeps the evidence.
+        rng = random.Random(11)
+        sooner = later = 0
+        for _ in range(20):
+            pairs = stream(lambda i: rng.choice([0.3, 0.0, -0.1, 0.1, 0.0]), 30)
+            fresh = gates._recheck(pairs, KEEP, weekly(self.policy, False), None)
+            carried = gates._recheck(pairs, KEEP, weekly(self.policy, True), None)
+            when = [gates._stamp(g["removed_at"]) if g["removed_at"] else None
+                    for g in (carried, fresh)]
+            if when[0] is None:
+                later += when[1] is not None
+            elif when[1] is None or when[0] < when[1]:
+                sooner += 1
+            elif when[0] > when[1]:
+                later += 1
+        self.assertGreater(sooner, 3 * later)
+
+    def test_a_strong_cell_passes_its_later_rechecks_in_a_few_pairs(self):
+        pairs = stream(lambda i: [0.8, 0.4, 0.6][i % 3], 6)
+        carried = gates._recheck(pairs, KEEP, weekly(self.policy, True), None)
+        fresh = gates._recheck(pairs, KEEP, weekly(self.policy, False), None)
+        self.assertGreater(carried["carry"]["keep"], 0)
+        self.assertNotIn("carry", fresh)
+
+        def lengths(got):
+            # Pairs each passed re-check took: from its due time to its pass.
+            out, since = [], T0
+            for passed in got["passed"]:
+                due = since + timedelta(weeks=1)
+                out.append(sum(1 for w, _ in pairs if due <= gates._stamp(w["timestamp"])
+                               <= gates._stamp(passed)))
+                since = gates._stamp(passed)
+            return out
+        self.assertEqual(lengths(carried)[0], lengths(fresh)[0])
+        self.assertLess(lengths(carried)[-1], lengths(fresh)[-1])
+        self.assertGreaterEqual(min(lengths(carried)), gates.CARRY_MIN_OWN_PAIRS)
+
+    def test_a_carried_early_stop_needs_its_own_pairs_at_the_margin(self):
+        # Strong for two weeks, then a gain of 0.10: the carried keep
+        # evidence alone cannot pass a re-check whose own pairs average
+        # under the margin.
+        draw = lambda i: [0.8, 0.4, 0.6][i % 3] if i < 84 else [0.4, -0.2, 0.1][i % 3]
+        pairs = stream(draw, 5)
+        got = gates._recheck(pairs, KEEP, weekly(self.policy, True), None)
+        late = [p for p in got["passed"] if gates._stamp(p) >= T0 + timedelta(weeks=2)]
+        for passed in late:
+            due = max(gates._stamp(q) for q in got["passed"]
+                      if gates._stamp(q) < gates._stamp(passed)) + timedelta(weeks=1)
+            own = [w for w, _ in pairs
+                   if due <= gates._stamp(w["timestamp"]) <= gates._stamp(passed)]
+            self.assertGreater(len(own), gates.CARRY_MIN_OWN_PAIRS)
+
+    def test_a_recheck_that_cannot_remove_ends_before_the_cap(self):
+        # THE FUTILE STOP: a gain at the margin neither removes nor clears
+        # it; once the pairs left could not carry the remove test across,
+        # the re-check passes without them.
+        pairs = stream(lambda i: [0.45, -0.15, 0.15][i % 3], 2)
+        carried = gates._recheck(pairs, KEEP, weekly(self.policy, True), None)
+        fresh = gates._recheck(pairs, KEEP, weekly(self.policy, False), None)
+        due = T0 + timedelta(weeks=1)
+        took = [sum(1 for w, _ in pairs if due <= gates._stamp(w["timestamp"])
+                    <= gates._stamp(g["passed"][0])) for g in (carried, fresh)]
+        self.assertEqual(took[1], self.policy["max_runs_per_cell"])
+        self.assertLess(took[0], took[1])
+
+    def test_a_long_healthy_history_does_not_block_a_later_removal(self):
+        # THE FLOOR: a bet prior near the margin bets on removal in each
+        # strong re-check and loses a little; a year of that must not leave
+        # a gain that falls to 0 unremovable.
+        prior = {"mean": 0.136, "variance": 0.0118, "n": 3.0}
+        rng = random.Random(5)
+        healthy = 52 * 42
+        pairs = stream(lambda i: rng.choice([0.6, 0.3, 0.0, 0.4]) if i < healthy
+                       else rng.choice([0.3, -0.3, 0.0, 0.0]), 60)
+        got = gates._recheck(pairs, KEEP, weekly(self.policy, True), prior)
+        self.assertIsNotNone(got["removed_at"])
+        self.assertGreaterEqual(got["carry"]["remove"],
+                                -gates.CARRY_REMOVE_FLOOR * -math.log(
+                                    1 - self.policy["retire_confidence"]))
+
+    def test_pairs_beside_an_older_rest_carry_nothing(self):
+        old = stream(lambda i: 0.8, 2, key="old")
+        new = stream(lambda i: 0.8, 2, key="new", start=T0 + timedelta(weeks=2))
+        got = gates._recheck(old + new, KEEP, weekly(self.policy, True), None,
+                             current="new", min_pairs=1)
+        only_new = gates._recheck(new, KEEP, weekly(self.policy, True), None,
+                                  current="new", min_pairs=1)
+        self.assertEqual(got["carry"], only_new["carry"])
+
+    def test_the_lifetime_false_removal_rate_stays_under_the_level(self):
+        # Seeded: a gain exactly at the margin (0.15) re-checked 26 times.
+        # Fresh re-checks spend alpha at each; the carry bounds the chance of
+        # ever removing it at 1 - retire_confidence.
+        policy = weekly(self.policy, True)
+        rng = random.Random(99)
+        removed, sims = 0, 200
+        for _ in range(sims):
+            pairs = stream(lambda i: rng.choice([1.0, 0.0, 0.0, 0.0, -0.4, 0.0, 0.45]), 26)
+            removed += gates._recheck(pairs, KEEP, policy, None)["removed_at"] is not None
+        self.assertLessEqual(removed / sims, 1 - policy["retire_confidence"])
+
+    def test_the_projection_reads_the_keep_carry(self):
+        policy = {**self.policy, "recheck_carry": True}
+        ds = [0.6, 0.4, 0.5] * 4
+        cold = gates._recheck_projection(ds, policy, None, 0.0)
+        warm = gates._recheck_projection(ds, policy, None, 10.0)
+        self.assertLess(warm, cold)
+        self.assertGreaterEqual(warm, gates.CARRY_MIN_OWN_PAIRS)
+        self.assertEqual(gates._recheck_projection(ds, {**policy, "recheck_carry": False},
+                                                   None, 10.0), cold)
+
+
 class PolicyAndPlumbingTests(unittest.TestCase):
 
     def test_the_setting_is_checked_and_on_in_both_blocks(self):
@@ -169,6 +316,18 @@ class PolicyAndPlumbingTests(unittest.TestCase):
         for bad in ("1", "'true'", "null"):
             with self.subTest(bad=bad), self.assertRaises(gates.GatePolicyError):
                 gates.parse_gate_policy(f"skills:\n{base}  recheck_window: {bad}\n")
+
+    def test_the_carry_is_checked_and_on_in_both_blocks(self):
+        committed = gates.load_gate_policy()
+        self.assertIs(committed["skills"]["recheck_carry"], True)
+        self.assertIs(committed["guidance"]["recheck_carry"], True)
+        base = "".join(f"  {k}: {v}\n" for k, v in TEST_POLICY.items()
+                       if k not in ("recheck_window", "recheck_carry"))
+        self.assertIs(gates.parse_gate_policy(f"skills:\n{base}")["skills"]["recheck_carry"],
+                      False)
+        for bad in ("1", "'true'", "null"):
+            with self.subTest(bad=bad), self.assertRaises(gates.GatePolicyError):
+                gates.parse_gate_policy(f"skills:\n{base}  recheck_carry: {bad}\n")
 
     def test_high_stakes_subjects_recheck_sooner(self):
         policy = gates.load_gate_policy()["skills"]

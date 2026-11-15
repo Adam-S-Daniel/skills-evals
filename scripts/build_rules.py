@@ -367,6 +367,15 @@ def render_md(doc: dict) -> str:
         f"{same('recheck_window_fire', lambda r: '`' + v(r) + '`')}); false holds every "
         "re-check run, the gates still computing each cell's re-check.",
         "",
+        "**The re-check carry** (while `recheck_carry` is "
+        f"{same('recheck_carry', lambda r: '`' + v(r) + '`')}): a kept cell's re-checks "
+        "are one test over its lifetime. Each passed re-check's evidence for removal and "
+        "for the early stop carries into the next, so the chance of ever removing a cell "
+        "whose gain stays at the margin, over all its re-checks, is at most the "
+        "no-benefit level, and a gain that slips under the margin is removed within a "
+        "few re-checks. A carried early stop counts only once the re-check's own pairs "
+        "reach `CARRY_MIN_OWN_PAIRS` (harness/gates.py) and average at least the margin.",
+        "",
         "## Git hooks",
         "",
         "Each git hook check gets a verdict over the last "
