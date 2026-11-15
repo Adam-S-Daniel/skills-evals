@@ -30,9 +30,9 @@
    "new_fixtures_per_week_open": 2.0,
    "skill_text_edits_per_week": 2,
    "guidance_rest_changes_per_week": 1,
-   "non_eval_points_per_week": 122.80778482396677,
+   "non_eval_points_per_week": 60.42190201729107,
    "eval_points_per_hour": 0.8825779120167886,
-   "interactive_points_per_week": 93.50177282396677,
+   "interactive_points_per_week": 31.11589001729107,
    "start": "2026-11-16T19:00:00Z"
   },
   "batch_rates": {
@@ -46,20 +46,21 @@
    "Fleet maintenance (fleet worker, audits, security, CI health)": 10.446449806633733,
    "Watching vendors and articles": 2.010597748764997,
    "Personal assistant tasks": 4.113417953422724,
-   "Interactive threads and local sessions": 93.50177282396677
+   "Interactive threads and local sessions": 31.11589001729107
   },
   "measured_non_eval": {
-   "points_per_week": 122.80778482396677,
-   "method": "eval-free",
-   "meter_rise_points": 52.0,
-   "eval_points": 0.0,
-   "from": "2026-11-12T18:31:27+00:00",
+   "points_per_week": 60.42190201729107,
+   "meter_rise_points": 94.0,
+   "eval_points": 42.0,
+   "eval_points_calibrated": 49.47930094779318,
+   "eval_rise_while_running": 42.0,
+   "from": "2026-11-09T17:04:35+00:00",
    "to": "2026-11-15T17:39:35+00:00",
-   "readings": 689
+   "readings": 1159
   },
   "owner_squeeze": {
-   "week_total_points": 147.80778482396676,
-   "days_at_limit_before_reset": 2.725026709401709
+   "week_total_points": 85.42190201729107,
+   "days_at_limit_before_reset": 0.0
   },
   "automatic_spend_as_of": "2026-11-15T18:00:00+00:00",
   "automatic_unmeasured_jobs": 6,

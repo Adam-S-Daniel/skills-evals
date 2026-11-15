@@ -286,24 +286,29 @@ class MeterNonEval(unittest.TestCase):
     def at(self, hours_before):
         return self.END - self._td(hours=hours_before)
 
-    def test_eval_free_span_after_the_last_eval_run(self):
-        # Meter 10 -> 40 (a reset drop to 5 is skipped, then 5 -> 25); an eval
-        # run 4 days back leaves 3+ eval-free days, so its points never count.
-        readings = [(self.at(150), 0.0), (self.at(96), 10.0), (self.at(72), 30.0),
-                    (self.at(48), 40.0), (self.at(47), 5.0), (self.at(0), 25.0)]
-        m = fc.meter_non_eval_points(readings, [(self.at(97), 9.0)], self.END, 7)
-        self.assertEqual(m["method"], "eval-free")
-        self.assertEqual((m["meter_rise_points"], m["eval_points"]), (50.0, 0.0))
-        self.assertAlmostEqual(m["points_per_week"], 50.0 * 7 / 4)
+    def test_whole_week_less_evals_capped_at_the_rise_while_they_ran(self):
+        # Week from the Nov 9 reset to END (Nov 15 noon, 5.79 days). Meter
+        # 1 -> 39 while evals ran (calibrated at 50, so only 38 come off),
+        # then 39 -> 94; a drop is skipped.
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        h = lambda x: reset + self._td(hours=x)  # noqa: E731
+        readings = [(h(0), 1.0), (h(57), 39.0), (h(58), 30.0), (h(59), 39.0), (self.END, 94.0)]
+        runs = [(h(1), 20.0), (h(55), 30.0), (reset - self._td(hours=2), 99.0)]
+        m = fc.meter_non_eval_points(readings, runs, self.END)
+        self.assertEqual((m["meter_rise_points"], m["eval_points_calibrated"], m["eval_points"]),
+                         (102.0, 50.0, 38.0))
+        days = (self.END - reset).total_seconds() / 86400
+        self.assertAlmostEqual(m["points_per_week"], 64.0 * 7 / days)
 
-    def test_recent_eval_run_is_subtracted(self):
-        readings = [(self.at(168), 0.0), (self.at(0), 70.0)]
-        m = fc.meter_non_eval_points(readings, [(self.at(10), 14.0)], self.END, 7)
-        self.assertEqual(m["method"], "less eval points")
-        self.assertAlmostEqual(m["points_per_week"], 56.0)
+    def test_a_young_week_measures_the_week_before(self):
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        readings = [(reset - self._td(days=7), 0.0), (reset - self._td(hours=1), 70.0),
+                    (reset + self._td(hours=5), 2.0)]
+        m = fc.meter_non_eval_points(readings, [], reset + self._td(days=1))
+        self.assertAlmostEqual(m["points_per_week"], 70.0 * 7 / (7 - 1 / 24))
 
     def test_too_few_readings(self):
-        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END, 7))
+        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END))
 
     def test_measured_total_less_automatic_is_interactive(self):
         automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15}]}

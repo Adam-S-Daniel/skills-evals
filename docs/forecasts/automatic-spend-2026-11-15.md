@@ -25,8 +25,8 @@ subscription meter; 188 use GitHub Actions minutes alone, counted as $0.
 | Centralizing targets and memories | 4.5 | 0.6 | cloud memory curation 1 × $4.54; BOXY memory curation unmeasured |
 | New targets from transcripts | 0 | 0 | the BOXY session miner runs no model; drafting a skill from a lesson runs inside the eval cap; public-gap drafting spends API dollars, unmeasured |
 | **All automatic jobs** | **208** | **29.3** | |
-| Interactive threads and local sessions | | 93.5 | the measured 122.8 points a week less the automatic 29.3 |
-| **All non-eval use (measured)** | | **122.8** | |
+| Interactive threads and local sessions | | 31.1 | the measured 60.4 points a week less the automatic 29.3 |
+| **All non-eval use (measured)** | | **60.4** | |
 
 Points use the forecast's mid rate, $7.09 a point (assumptions file).
 
@@ -34,35 +34,36 @@ Points use the forecast's mid rate, $7.09 a point (assumptions file).
 
 Non-eval use is now measured, not assumed:
 `forecast_catch_up.py --meter-history` reads the account's weekly meter
-readings, now version-controlled privately at adam-agentskills-private
-`persistent/usage-events:spend/meter-history.csv`. No eval has run since
-Nov 11, 9:22 PM ET, so the script takes the eval-free stretch, Nov 12 at
-1:31 PM to Nov 15 at 12:39 PM ET. The meter rose 52 points over those 2.96
-days, which is **122.8 points a week**, up from the 105 assumed this morning.
-The 7-day span that includes Nov 9 to 11 evals gives 54.4 points a week once
-their calibrated points are taken off. That method leans on the eval cost
-calibration, so the script uses the eval-free span whenever one of at least
-2 days exists.
+readings, which are version-controlled privately at adam-agentskills-private
+`persistent/usage-events:spend/meter-history.csv`. It measures over the whole
+allowance week, from the Mon Nov 9 noon ET reset to Nov 15 at 12:39 PM ET. The
+meter rose 94 points. Eval runs' calibrated points come off that rise, capped
+at what the meter rose while evals ran: 42 points, against 49.5 calibrated.
+That leaves **60.4 points a week** of non-eval use. This morning's forecast
+assumed 105.
 
-**Evals run first in the week, so they still get their cap** (Adam, Nov 15,
-12:44 PM ET). The guard's fixed cap is a floor (`allowance_guard.py` `room`),
-so from the Monday reset evals fire until the cap is spent. The 80% stop binds
-only on the other use that builds up meanwhile. The forecast now models this
-with `eval_points_per_hour`, measured from `routine-results`: the median over
-the two weeks that reached the cap is 0.88 points an hour, so the cap is gone
-about 28 hours after the reset. About 21 points of other use build up by then,
-which comes to 46, under the 80% stop.
+Use comes in bursts, so a part of the week can mislead. The eval-free stretch
+from Nov 12 to Nov 15 alone gives 122.8 points a week. A first version of
+this report used that figure. It was wrong: with 86% of the week gone and no
+manual reset, the meter reads 94%, not the ~120% that rate would mean (Adam's
+dashboard, 12:46 PM ET).
+
+**Evals run first in the week** (Adam, 12:44 PM ET). The guard's fixed cap is
+a floor (`allowance_guard.py` `room`), so from the reset evals fire until the
+cap is spent. The 80% stop binds only on the other use that accrues
+meanwhile. The forecast now models this with `eval_points_per_hour`, measured
+from `routine-results`: the median over the two weeks that reached the cap is
+0.88 points an hour, about 28 hours to spend the cap.
 
 | | |
 |---|---|
 | Eval room | the full 25-point cap |
 | Catch-up | **Jan 7, 2027** (Dec 30 to Jun 8), or **Dec 15** with the API credit |
 | Keep-up | $119 a week, with 2 new fixtures a week |
-| Your own work | at 122.8 + 25 = 148 points a week, it hits the weekly limit about **2.7 days before the reset** (`owner_squeeze`) |
+| Your own work | 25 + 60.4 = 85 points a week, under the 100 limit (`owner_squeeze`) |
 
 Run: [`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
-`--set new_fixtures_per_week_open=2`. Before this change, the forecast took the
-account stop off the whole week and showed evals no room at all.
+`--set new_fixtures_per_week_open=2`.
 
 ## How the rates and costs are taken
 
@@ -85,8 +86,11 @@ account stop off the whole week and showed evals no room at all.
   jobs. Any automatic job priced too low shows up as interactive use.
 - **The meter history has gaps:** none from Nov 11, 3:24 AM to Nov 12,
   1:31 PM ET, or from 7:39 AM to 12:39 PM ET on Nov 15 (the collector's login
-  expired). A rise across a gap still counts, but a weekly reset inside one
-  would hide that span's use.
+  expired). A rise across a gap still counts. The first gap spans the end of
+  the eval runs, so "rise while evals ran" includes about 15 hours of other
+  use, which makes 60.4 a slight undercount.
+- **This week's evals ran past the cap** (42 points) before the guard's rate
+  fix (#958). Next week's should stop at 25.
 - **The ledger sees only each task's last run,** so fires between dashboard
   refreshes are lost; rates come from crons, so this affects cost samples only.
 - **The centralization audit** listed on the dashboard

@@ -309,40 +309,51 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
     return total
 
 
-def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
-                          days: float, min_clean_days: float = 2.0) -> dict | None:
-    """Measured non-eval meter points a week from the account's `seven_day`
-    meter (adam-agentskills-private
-    persistent/usage-events:spend/meter-history.csv), over the `days` before
-    `end`.
+#: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
+RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
 
-    When the newest eval run in that span started at least `min_clean_days`
-    (plus an hour for the run to finish) before the newest reading, only the
-    readings after it count, so no eval spend has to be attributed
-    (`method` "eval-free"). Otherwise the eval runs' own points
-    (routine-results/*/cost_estimate.json) are subtracted from the rise
-    (`method` "less eval points"), which leans on their calibration. The rise
-    sums increases between consecutive readings, so the weekly reset's drop
-    is skipped. None when fewer than two readings fall in the span."""
-    start = end - timedelta(days=days)
+
+def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
+                          min_days: float = 2.0) -> dict | None:
+    """Measured non-eval meter points a week over the account's current
+    allowance week (from the newest Monday reset before `end`; the week
+    before it when fewer than `min_days` have passed), from the `seven_day`
+    meter readings (adam-agentskills-private
+    persistent/usage-events:spend/meter-history.csv).
+
+    A whole week, not a recent stretch: use comes in bursts, and a quiet
+    early week and a busy weekend average out only over the week (Adam,
+    2026-11-15: 94% with 86% of the week gone and no manual reset). Eval
+    points (routine-results/*/cost_estimate.json) come off the rise, but
+    never more than the meter rose while evals ran (first run to an hour
+    after the last), since their calibration can overstate them. The rise
+    sums increases between consecutive readings. None when fewer than two
+    readings fall in the span."""
+    start = RESET_ANCHOR + timedelta(days=7) * math.floor(
+        (end - RESET_ANCHOR) / timedelta(days=7))
+    if (end - start) < timedelta(days=min_days):
+        start -= timedelta(days=7)
+        end = start + timedelta(days=7)
     span = sorted((t, p) for t, p in readings if start <= t <= end)
     if len(span) < 2:
         return None
-    inside = [t for t, _ in eval_runs if span[0][0] <= t <= span[-1][0]]
-    method = "less eval points"
-    if inside:
-        clean_from = max(inside) + timedelta(hours=1)
-        if (span[-1][0] - clean_from).total_seconds() >= min_clean_days * 86400:
-            span = [(t, p) for t, p in span if t >= clean_from]
-            method = "eval-free"
-    if len(span) < 2:
-        return None
-    rise = sum(max(0.0, b[1] - a[1]) for a, b in zip(span, span[1:]))
-    evals = 0.0 if method == "eval-free" else \
-        sum(p for t, p in eval_runs if span[0][0] <= t <= span[-1][0])
+
+    def rise(lo, hi):
+        # From the last reading at or before lo to the first at or after hi.
+        first = max((i for i, x in enumerate(span) if x[0] <= lo), default=0)
+        last = min((i for i, x in enumerate(span) if x[0] >= hi), default=len(span) - 1)
+        pts = span[first:last + 1]
+        return sum(max(0.0, b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+
+    total = rise(span[0][0], span[-1][0])
+    runs = sorted((t, p) for t, p in eval_runs if span[0][0] <= t <= span[-1][0])
+    calibrated = sum(p for _, p in runs)
+    while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1)) if runs else 0.0
+    evals = min(calibrated, while_running)
     covered = (span[-1][0] - span[0][0]).total_seconds() / 86400
-    return {"points_per_week": max(0.0, rise - evals) * 7 / covered, "method": method,
-            "meter_rise_points": rise, "eval_points": evals,
+    return {"points_per_week": max(0.0, total - evals) * 7 / covered,
+            "meter_rise_points": total, "eval_points": evals,
+            "eval_points_calibrated": calibrated, "eval_rise_while_running": while_running,
             "from": span[0][0].isoformat(), "to": span[-1][0].isoformat(),
             "readings": len(span)}
 
@@ -537,10 +548,6 @@ def eval_run_points(results_tree: Path) -> list:
     return out
 
 
-#: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
-RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
-
-
 def eval_pace(runs: list, cap_points: float, now: datetime) -> dict | None:
     """Meter points an hour evals spent from each weekly reset until they
     had spent `cap_points`, over the weeks before `now` that reached it; the
@@ -582,9 +589,7 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--meter-history", type=Path, default=None,
                    help="meter readings CSV (ts_utc, meter_name, percent; adam-agentskills-private "
                         "persistent/usage-events:spend/meter-history.csv): measures the non-eval "
-                        "total, less eval runs' points from --results-tree")
-    p.add_argument("--meter-days", type=float, default=7.0,
-                   help="days before --as-of the meter measurement spans")
+                        "total over the allowance week, less eval runs' points from --results-tree")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
@@ -632,11 +637,9 @@ def main(argv: list | None = None) -> int:
         readings = [(_iso(r["ts_utc"]), float(r["percent"]))
                     for r in csv.DictReader(args.meter_history.open(encoding="utf-8"))
                     if r.get("meter_name") == "seven_day"]
-        measured = meter_non_eval_points(readings, eval_run_points(args.results_tree), now,
-                                         args.meter_days)
+        measured = meter_non_eval_points(readings, eval_run_points(args.results_tree), now)
         if measured is None:
-            p.error(f"--meter-history: fewer than two seven_day readings in the "
-                    f"{args.meter_days:g} days before --as-of")
+            p.error("--meter-history: fewer than two seven_day readings in the allowance week")
     if "eval_points_per_hour" not in assumptions:
         measured_pace = eval_pace(eval_run_points(args.results_tree),
                                   budget["weekly_cap"] * 100, now)
