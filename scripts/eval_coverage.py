@@ -50,7 +50,11 @@ PROBLEMS, reported beside the rows and failing `--check`:
   stale_skip         a non-coverage row names a skill its registry no longer
                      has (a rename must not hide behind a skip)
   skip_but_covered   a non-coverage row for a skill that also has a fixture
-  orphan_fixture     a fixture names a skill its registry does not have
+  orphan_fixture     a fixture names a skill its registry does not have,
+                     unless every such fixture is one the eval scope pass
+                     paused as `removed` in evals/scope-auto.yml (a removal
+                     it recorded on purpose; the fixture resumes if the
+                     skill comes back)
 
 EXIT CODES. 0: census printed (and, under `--check`, no gap and no problem;
 without `--check` a gap is reported and the exit is still 0).
@@ -213,8 +217,29 @@ def _load_yaml(path: Path, what: str):
         raise CensusRefusal(f"{what} {path} is not valid YAML{where}") from exc
 
 
-def count_fixtures(evals_dir: Path, resolved: dict[str, dict]) -> dict:
-    """{(registry name, skill): fixture count} from `skill:` / `registry:`."""
+def removed_pause_paths(evals_dir: Path) -> set[str]:
+    """Fixture paths (`evals/<dir>`) that evals/scope-auto.yml pauses as
+    `removed`: the eval scope pass keeps such a fixture on purpose."""
+    path = evals_dir / "scope-auto.yml"
+    if not path.is_file():
+        return set()
+    doc = _load_yaml(path, "scope-auto.yml")
+    rows = doc.get("rows") if isinstance(doc, dict) else None
+    if rows is None:
+        return set()
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise CensusRefusal("scope-auto.yml must hold a `rows` list of mappings")
+    return {r["path"] for r in rows
+            if r.get("rule") == "removed" and isinstance(r.get("path"), str)}
+
+
+def count_fixtures(evals_dir: Path, resolved: dict[str, dict],
+                   dormant: dict | None = None) -> dict:
+    """{(registry name, skill): fixture count} from `skill:` / `registry:`.
+
+    When `dormant` is given, it receives the same counts restricted to
+    fixtures that evals/scope-auto.yml pauses as `removed`."""
+    paused = removed_pause_paths(evals_dir) if dormant is not None else set()
     if not evals_dir.is_dir():
         raise CensusRefusal(f"evals directory {evals_dir} is not a directory")
     # Exactly the set eval.yml's dispatch check discovers:
@@ -261,6 +286,8 @@ def count_fixtures(evals_dir: Path, resolved: dict[str, dict]) -> dict:
             raise CensusRefusal(f"fixture {label}: 'draft:' must be a boolean")
         if not draft:
             counts[(name, skill)] = counts.get((name, skill), 0) + 1
+            if f"evals/{path.parent.relative_to(evals_dir).as_posix()}" in paused:
+                dormant[(name, skill)] = dormant.get((name, skill), 0) + 1
     return counts
 
 
@@ -306,7 +333,8 @@ def load_skips(path: Path, resolved: dict[str, dict], *, private: bool,
 
 # --- the census -----------------------------------------------------------
 
-def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict) -> dict:
+def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict,
+                 dormant: dict | None = None) -> dict:
     registries = []
     problems = []
     seen_skills = set()
@@ -338,7 +366,8 @@ def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict) -> dict
             problems.append({"kind": "skip_but_covered", "registry": name,
                              "skill": skill})
     for (name, skill), _n in sorted(fixtures.items()):
-        if (name, skill) not in seen_skills:
+        if ((name, skill) not in seen_skills
+                and (dormant or {}).get((name, skill)) != _n):
             problems.append({"kind": "orphan_fixture", "registry": name,
                              "skill": skill})
     problems.sort(key=lambda p: (p["registry"], p["kind"], p["skill"]))
@@ -485,12 +514,13 @@ def build_publication(args: argparse.Namespace) -> tuple[int, dict]:
     if unresolved:
         return 2, _unresolved_report(args.timestamp, names, unresolved)
     try:
-        fixtures = count_fixtures(args.evals_dir, resolved)
+        dormant: dict = {}
+        fixtures = count_fixtures(args.evals_dir, resolved, dormant)
         skips: dict = {}
         load_skips(args.non_coverage, resolved, private=False, into=skips)
         if args.private_non_coverage:
             load_skips(args.private_non_coverage, resolved, private=True, into=skips)
-        census = redact(build_census(resolved, fixtures, skips), False)
+        census = redact(build_census(resolved, fixtures, skips, dormant), False)
         readiness = fixture_readiness(args.evals_dir)
     except CensusRefusal:
         return 2, _unresolved_report(args.timestamp, names, set(names))
@@ -522,12 +552,13 @@ def write_publication(directory: Path, report: dict) -> None:
 
 def run(args: argparse.Namespace) -> tuple[int, str]:
     resolved = resolve(args.registry)
-    fixtures = count_fixtures(args.evals_dir, resolved)
+    dormant: dict = {}
+    fixtures = count_fixtures(args.evals_dir, resolved, dormant)
     skips: dict = {}
     load_skips(args.non_coverage, resolved, private=False, into=skips)
     if args.private_non_coverage:
         load_skips(args.private_non_coverage, resolved, private=True, into=skips)
-    census = redact(build_census(resolved, fixtures, skips),
+    census = redact(build_census(resolved, fixtures, skips, dormant),
                     args.include_private_names)
     text = render_json(census) if args.json else render_markdown(census)
     failed = census["totals"]["gap"] or census["problems"]

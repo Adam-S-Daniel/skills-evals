@@ -423,6 +423,31 @@ class Problems(unittest.TestCase):
         self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "renamed-away")})
         self.assertEqual(w.run("--check").returncode, 1)
 
+    def pause_removed(self, w, *paths: str):
+        rows = "".join(f"  - path: {p}\n    rule: removed\n" for p in paths)
+        (w.evals / "scope-auto.yml").write_text("rows:\n" + rows, encoding="utf-8")
+
+    def test_a_fixture_the_scope_pass_paused_as_removed_is_not_an_orphan(self):
+        # Regression (#689): the scope pass keeps a removed skill's fixture
+        # on purpose, so the daily census must not refuse over it.
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        self.pause_removed(w, "evals/old")
+        self.assertEqual(w.json()["problems"], [])
+        self.assertEqual(w.run("--check").returncode, 0)
+
+    def test_only_a_removed_pause_excuses_an_orphan(self):
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        w.add_fixture("other", "retired", "cms-platform")  # not paused
+        self.pause_removed(w, "evals/old")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+        (w.evals / "scope-auto.yml").write_text(
+            "rows:\n  - path: evals/old\n    rule: zero-use\n", encoding="utf-8")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+
 
 
 class PrivateNames(unittest.TestCase):
