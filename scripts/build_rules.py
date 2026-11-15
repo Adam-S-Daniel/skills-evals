@@ -242,6 +242,13 @@ def render_md(doc: dict) -> str:
         "with a test that crossed but has not decided, it stays *insufficient* and is "
         "listed as a `cell-at-cap` work item.",
         "",
+        "**Cap extension.** A cell whose first "
+        f"{same('max_runs_per_cell')} pairs decided nothing, but whose nearer test is "
+        "projected from those pairs to decide within "
+        f"{same('max_runs_extension')} times that many, may run to that larger cap. "
+        "The tests are valid at any number of pairs, so the cap is a budget; the "
+        "projection reads only pairs already made.",
+        "",
         "**Ceiling (parked).** A cell whose without arm is confidently above "
         f"1 − margin (above {_num(round(1 - margin, 10))} today) cannot show the margin: it "
         "is parked as `ceiling`, stops being fired and does not vote on removal. A high "

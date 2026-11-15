@@ -134,7 +134,7 @@ class GateReasonTests(unittest.TestCase):
         self.check(pairs(3) + lone, {"unpaired": 2})
 
     def test_over_cap(self):
-        policy = {**TEST_POLICY, "max_runs_per_cell": 3}
+        policy = {**TEST_POLICY, "max_runs_per_cell": 3, "max_runs_extension": 1.0}
         verdict = self.check(pairs(5), {"over_cap": 4}, policy=policy)
         self.assertEqual(verdict["cells"][0]["pairs_used"], 3)
 
