@@ -36,7 +36,7 @@ START = datetime(2026, 11, 9, 17, 0, 0, tzinfo=timezone.utc)
 NOW = START + timedelta(hours=1)
 POLICY = {"start": START, "period": timedelta(days=14), "multiplier": 3.0,
           "rates": {"skill": 0.75, "guidance": 0.5}}
-GATE_POLICY = gates.load_gate_policy()["skills"]
+GATE_POLICY = {**gates.load_gate_policy()["skills"], "recheck_window_fire": True}
 
 
 def stamp(moment):

@@ -163,7 +163,7 @@ class PolicyTests(unittest.TestCase):
             "max_runs_high_cell": 20, "floor_fraction": 0.10, "floor_min_runs": 3,
             "high_stop_min_without": 0.90, "recheck_weeks": 8, "recheck_weeks_high": 4,
             "max_removal_pauses": 3, "retirement_mode": "auto", "recheck_window": True,
-            "recheck_carry": True,
+            "recheck_window_fire": False, "recheck_carry": True,
             "max_runs_extension": 1.5})
 
     def _text(self, **changes):
