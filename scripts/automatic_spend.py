@@ -18,7 +18,8 @@ never from a hand count:
     runs `claude -p`.
 
 Rate (fires a week), first that applies: the task's own cron; for a task
-fired by a workflow (`fired_by` in evals/automatic-spend.yml), that
+fired by a workflow (`fired_by` in evals/automatic-spend.yml, matched by
+task name), that
 workflow's cron thinned to its cadence; zero for a task with no fire on
 record; else the fires in the ledger over `--window-days`.
 Cost per fire: the median of the fire ledger's costs for that task
@@ -237,7 +238,7 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
               boxy: list, now: datetime, window_days: int) -> dict:
     cats = config["categories"]
     fired_by = config.get("fired_by") or {}
-    eval_cap = set(config.get("eval_cap_triggers") or [])
+    eval_cap = config.get("eval_cap_triggers") or []
     eval_api = set(config.get("eval_api_workflows") or [])
     since = now - timedelta(days=window_days)
     by_trigger: dict = {}
@@ -254,8 +255,8 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         cron = t.get("cron_expression") or ""
         if cron:
             rate, rate_source = cron_fires_per_week(cron), "cron"
-        elif tid in fired_by:
-            spec = fired_by[tid]
+        elif (spec := next((v for k, v in fired_by.items()
+                            if re.search(k, t["name"], re.I)), None)):
             w = wf_by_path.get(spec["workflow"])
             if w is None:
                 rate, rate_source = None, f"firing workflow {spec['workflow']} not scanned"
@@ -271,7 +272,7 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
             rate = len(recent) * 7 / window_days
             rate_source = f"ledger fires in {window_days} days"
         per_fire = statistics.median(costs) if costs else None
-        lane = "eval_cap" if tid in eval_cap else "meter"
+        lane = "eval_cap" if any(re.search(m, t["name"], re.I) for m in eval_cap) else "meter"
         jobs.append({"kind": "scheduled task", "id": tid, "name": t["name"],
                      "category": categorize(t["name"], cats), "lane": lane,
                      "fires_per_week": rate, "rate_source": rate_source,

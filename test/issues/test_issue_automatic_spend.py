@@ -22,8 +22,8 @@ CONFIG = {
         {"id": "fleet", "label": "Fleet", "match": ["fleet"]},
         {"id": "evals", "label": "Evals", "match": ["eval runner", "eval\\.yml$"]},
     ],
-    "fired_by": {"trig_fw": {"workflow": "ag/fire.yml", "cadence_hours": 6}},
-    "eval_cap_triggers": ["trig_eval"],
+    "fired_by": {"^fleet worker$": {"workflow": "ag/fire.yml", "cadence_hours": 6}},
+    "eval_cap_triggers": ["eval runner"],
     "eval_api_workflows": ["se/eval.yml"],
 }
 

@@ -31,24 +31,26 @@ categories:
     match: ["changelog", "article", "watch for", "vendor"]
   - id: personal
     label: Personal assistant tasks
-    match: ["morning brief", "heartbeat", "usaa", "media-discovery", "cross-post"]
+    match: ["morning brief", "heartbeat", "media-discovery", "cross-post"]
   - id: evals
     label: Eval runs (already inside the eval cap)
     match: ["eval runner", "routine-eval", "eval\\.yml$", "credit-lane", "credit lane"]
 
-# Scheduled tasks with no cron of their own, fired by a GitHub workflow. The
+# Scheduled tasks with no cron of their own, fired by a GitHub workflow,
+# keyed by a regex on the task's name (ids stay out of this public file). The
 # rate is that workflow's cron, thinned to `cadence_hours` when the workflow
 # skips cron lines off that cadence (fleet-worker-fire.yml reads the repo
 # variable FLEET_WORKER_EVERY_HOURS; keep this in step with it).
 fired_by:
-  trig_015GknYddgCBUBv7By3n7HHN:
+  "^fleet worker$":
     workflow: _agent-guidance/fleet-worker-fire.yml
     cadence_hours: 6
 
-# Scheduled tasks whose spend is already counted inside the eval cap by
-# scripts/allowance_guard.py (their fires go through routine-eval-fire.yml).
+# Scheduled tasks (name regexes) whose spend is already counted inside the
+# eval cap by scripts/allowance_guard.py (their fires go through
+# routine-eval-fire.yml).
 eval_cap_triggers:
-  - trig_014cqgegCtJUqXYjAKmkr4J5
+  - "eval runner"
 
 # Workflows whose Anthropic spend is eval spend through the monthly API
 # credit (the forecast's "plus API credit" scenario prices it), not a cost

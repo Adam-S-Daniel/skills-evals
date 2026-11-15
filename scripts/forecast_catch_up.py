@@ -93,8 +93,9 @@ ASSUMPTION_KEYS = {
                                             "current rest, so each guidance keep must be re-proved"),
     "non_eval_points_per_week": (None, "meter points a week used by everything but evals "
                                        "(threads, routines, local sessions); with budget.yml's "
-                                       "account stop it can cap the eval points; default with "
-                                       "--automatic-spend: its jobs plus interactive_points_per_week"),
+                                       "account stop it can cap the eval points; default when both "
+                                       "--automatic-spend and interactive_points_per_week are given: "
+                                       "their sum"),
     "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
                                           "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
