@@ -102,7 +102,7 @@ def eval_rows(er, report_base):
 #: Hours between dashboard refreshes (7:29 AM and 7:29 PM ET), the one place the
 #: interval is written: a snapshot dataset's `staleAfterHours` in page/datasets.json
 #: must exceed it, which test_issue_dashboard_build checks.
-REFRESH_INTERVAL_HOURS = 12
+REFRESH_INTERVAL_HOURS = 24
 
 
 def allowance(er, now):

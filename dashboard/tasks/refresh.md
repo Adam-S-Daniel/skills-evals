@@ -1,6 +1,7 @@
 # Scheduled task: dashboard refresh
 
-Schedule: every 12 hours (7:29 AM and 7:29 PM ET), as a project task that
+Schedule: every 24 hours (7:29 AM ET; twice a day until Adam cut it on
+2026-11-15 to fit the loop's spend budget), as a project task that
 starts a fresh thread each run (so it can read project files and use the
 project's thread tools). Do not bind it to one long-running thread: from
 2026-11-12 to 11-14 two such tasks stopped firing, the scheduler pushing each
