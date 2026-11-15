@@ -122,12 +122,15 @@ export function capUse(allowance, budget) {
 
 /* Every routine is counted once: healthy, not run yet, or needing a look, so
    the three add up to `active`, the rows the table lists (build.py leaves
-   retired routines out of the dataset). */
+   retired routines out of the dataset). On time applies only to `due`, the
+   routines with a run on record or overdue: one that has never run and is not
+   yet late (an on-demand routine nothing has fired) is neither on time nor
+   late, so it is left out of that count and named on its own. */
 export function routineHealth(routines) {
   if (!routines) return null;
   const ok = routines.filter((r) => r.health === 'OK').length;
   const fresh = routines.filter((r) => r.health === 'Not run yet').length;
-  return { active: routines.length, ok, fresh, attention: routines.length - ok - fresh };
+  return { active: routines.length, ok, fresh, attention: routines.length - ok - fresh, due: routines.length - fresh };
 }
 
 function meter(value, max, mark, over) {
@@ -290,7 +293,7 @@ const link = (hash, text) => h('a', { href: hash, class: 'nav-link' }, text);
    fresh; with no routine data it says so rather than claim health. */
 export function healthStrip(doc, rh, stale) {
   const when = (t) => (typeof t === 'string' && isFinite(parseTime(t)) ? at(t) : STRINGS.noValue);
-  const routines = rh ? (rh.attention ? P.hsRoutinesBad(rh.attention, rh.active) : P.hsRoutinesOk(rh.ok, rh.active)) : null;
+  const routines = rh ? (rh.attention ? P.hsRoutinesBad(rh.attention, rh.due, rh.fresh) : P.hsRoutinesOk(rh.ok, rh.due, rh.fresh)) : null;
   const state = !rh ? 'unknown' : rh.attention || stale !== null ? 'attention' : 'healthy';
   return [P.hsState[state], ' ', link(hashFor('activity'), P.hsLastTest(when(doc.newest_run))), '; ', routines ? [link(hashFor('activity'), routines), '; '] : null,
     link(hashFor('summary'), P.hsDataRead(when(doc.generated_at))), '. ', link(hashFor('changes'), P.hsChanged), ' · ', link(hashFor('spend'), P.hsCost), '.'];
@@ -328,7 +331,7 @@ function needsView(dash, ctx, nowMs) {
       { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att)
       : h('p', null, P.attentionNone)]),
     cap ? panel(P.allowanceHeading, allowanceView(cap, snap, 'eval_allowance')) : null,
-    rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.active, rh.attention, rh.fresh)),
+    rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.due, rh.attention, rh.fresh)),
       problems.length ? routineTable(problems.slice().sort((x, y) => (x.name < y.name ? -1 : 1))) : null,
       healthy.length ? h('details', { class: 'history' }, foldSummary(P.showHealthy(healthy.length)), routineTable(healthy)) : null]) : null,
     hb && Number(hb.open) > 0 ? h('section', { class: 'block banner', 'data-state': hb.status || 'loading' }, h('h2', null, P.hbHeading),
@@ -381,7 +384,7 @@ export function makeExt(dash, opts) {
       const w = rowsOf(dash, 'waiting');
       if (w) out.push(tile({ label: P.tileWaiting, value: fmtCount(w.length), note: P.tileWaitingNote, href: hashFor('needs'), tip: STRINGS.srcTip(src('waiting'), '') }));
       const rh = routineHealth(some(dash, 'routines'));
-      if (rh) out.push(tile({ label: P.tileRoutines, value: rh.ok + ' of ' + rh.active, note: P.routinesLine(rh.ok, rh.active, rh.attention, rh.fresh), href: hashFor('needs') }));
+      if (rh) out.push(tile({ label: P.tileRoutines, value: rh.ok + ' of ' + rh.due, note: P.routinesLine(rh.ok, rh.due, rh.attention, rh.fresh), href: hashFor('needs') }));
       const cap = capUse(rowsOf(dash, 'eval_allowance'), rowsOf(dash, 'budget'));
       if (cap) out.push(tile({ label: P.tileAllowance, value: cap.spent.toFixed(1) + ' of ' + cap.cap.toFixed(0), note: P.tileAllowanceNote, href: hashFor('needs'),
         tip: STRINGS.srcTip(src('eval_allowance'), isFinite(parseTime(cap.readingAt)) ? fmtDateTime(parseTime(cap.readingAt)) : '') }));
