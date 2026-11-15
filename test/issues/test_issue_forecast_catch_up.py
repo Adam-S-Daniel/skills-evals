@@ -277,5 +277,47 @@ class Arrivals(unittest.TestCase):
                          set(target_arrivals.KINDS))
 
 
+class MeterNonEval(unittest.TestCase):
+    """The non-eval total measured from the account meter's history."""
+
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    END = _dt(2026, 11, 15, 12, tzinfo=_tz.utc)
+
+    def at(self, hours_before):
+        return self.END - self._td(hours=hours_before)
+
+    def test_eval_free_span_after_the_last_eval_run(self):
+        # Meter 10 -> 40 (a reset drop to 5 is skipped, then 5 -> 25); an eval
+        # run 4 days back leaves 3+ eval-free days, so its points never count.
+        readings = [(self.at(150), 0.0), (self.at(96), 10.0), (self.at(72), 30.0),
+                    (self.at(48), 40.0), (self.at(47), 5.0), (self.at(0), 25.0)]
+        m = fc.meter_non_eval_points(readings, [(self.at(97), 9.0)], self.END, 7)
+        self.assertEqual(m["method"], "eval-free")
+        self.assertEqual((m["meter_rise_points"], m["eval_points"]), (50.0, 0.0))
+        self.assertAlmostEqual(m["points_per_week"], 50.0 * 7 / 4)
+
+    def test_recent_eval_run_is_subtracted(self):
+        readings = [(self.at(168), 0.0), (self.at(0), 70.0)]
+        m = fc.meter_non_eval_points(readings, [(self.at(10), 14.0)], self.END, 7)
+        self.assertEqual(m["method"], "less eval points")
+        self.assertAlmostEqual(m["points_per_week"], 56.0)
+
+    def test_too_few_readings(self):
+        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END, 7))
+
+    def test_measured_total_less_automatic_is_interactive(self):
+        automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15}]}
+        gates = Forecast.GATES
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(gates, Forecast.CELLS, Forecast.BUDGET, Forecast.BATCH, None,
+                              {"fire_overhead_usd": 0.0}, frozenset({"skipped-one"}), None,
+                              automatic, {"points_per_week": 75.0})
+        self.assertAlmostEqual(
+            doc["inputs"]["non_eval_points_breakdown"]["Interactive threads and local sessions"],
+            55.0)
+        self.assertAlmostEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 75.0)
+
+
 if __name__ == "__main__":
     unittest.main()

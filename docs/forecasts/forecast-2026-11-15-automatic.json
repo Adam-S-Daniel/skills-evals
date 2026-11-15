@@ -30,8 +30,8 @@
    "new_fixtures_per_week_open": 2.0,
    "skill_text_edits_per_week": 2,
    "guidance_rest_changes_per_week": 1,
-   "non_eval_points_per_week": 105.006012,
-   "interactive_points_per_week": 75.7,
+   "non_eval_points_per_week": 122.80778482396677,
+   "interactive_points_per_week": 93.50177282396677,
    "start": "2026-11-16T19:00:00Z"
   },
   "batch_rates": {
@@ -45,7 +45,16 @@
    "Fleet maintenance (fleet worker, audits, security, CI health)": 10.446449806633733,
    "Watching vendors and articles": 2.010597748764997,
    "Personal assistant tasks": 4.113417953422724,
-   "Interactive threads and local sessions": 75.7
+   "Interactive threads and local sessions": 93.50177282396677
+  },
+  "measured_non_eval": {
+   "points_per_week": 122.80778482396677,
+   "method": "eval-free",
+   "meter_rise_points": 52.0,
+   "eval_points": 0.0,
+   "from": "2026-11-12T18:31:27+00:00",
+   "to": "2026-11-15T17:39:35+00:00",
+   "readings": 689
   },
   "automatic_spend_as_of": "2026-11-15T18:00:00+00:00",
   "automatic_unmeasured_jobs": 6,
@@ -65,8 +74,8 @@
    "skill_text_edits_per_week": "assumptions",
    "guidance_rest_changes_per_week": "assumptions",
    "start": "assumptions",
-   "interactive_points_per_week": "assumptions",
-   "non_eval_points_per_week": "--automatic-spend categories + interactive_points_per_week"
+   "non_eval_points_per_week": "--automatic-spend categories + the rest of --meter-history's measured total",
+   "interactive_points_per_week": "--meter-history measured total less --automatic-spend categories"
   },
   "arrivals_status": "used for evaluated_section_share, first_use_share, new_hooks_per_week, new_sections_per_week, new_skills_per_week",
   "arrivals_as_of": "2026-11-15T16:23:13Z"

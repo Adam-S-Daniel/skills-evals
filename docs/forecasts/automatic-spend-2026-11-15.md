@@ -25,19 +25,30 @@ subscription meter; 188 use GitHub Actions minutes alone, counted as $0.
 | Centralizing targets and memories | 4.5 | 0.6 | cloud memory curation 1 × $4.54; BOXY memory curation unmeasured |
 | New targets from transcripts | 0 | 0 | the BOXY session miner runs no model; drafting a skill from a lesson runs inside the eval cap; public-gap drafting spends API dollars, unmeasured |
 | **All automatic jobs** | **208** | **29.3** | |
-| Interactive threads and local sessions | | 75.7 | the measured 105 points a week less the automatic 29.3 |
+| Interactive threads and local sessions | | 93.5 | the measured 122.8 points a week less the automatic 29.3 |
+| **All non-eval use (measured)** | | **122.8** | |
 
 Points use the forecast's mid rate, $7.09 a point (assumptions file).
 
 ## What it changes in the forecast
 
-Nothing in the totals yet: non-eval use stays the measured ~105 points a week,
-now split into 29.3 automatic and 75.7 interactive
+Non-eval use is now measured, not assumed:
+`forecast_catch_up.py --meter-history` reads the account's weekly meter
+readings, now version-controlled privately at adam-agentskills-private
+`persistent/usage-events:spend/meter-history.csv`. No eval has run since
+Nov 11, 9:22 PM ET, so the script takes the eval-free stretch, Nov 12 at
+1:31 PM to Nov 15 at 12:39 PM ET. The meter rose 52 points over those 2.96
+days, which is **122.8 points a week**, up from the 105 assumed this morning.
+The 7-day span that includes Nov 9 to 11 evals gives 54.4 points a week once
+their calibrated points are taken off. That method leans on the eval cost
+calibration, so the script uses the eval-free span whenever one of at least
+2 days exists.
+
+At 122.8 points a week, the 80% account stop leaves evals no meter room
 ([`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
-`--set new_fixtures_per_week_open=2 --set interactive_points_per_week=75.7`).
-With the 80% account stop, evals get no meter room above about 51 points a
-week of interactive use. At 25.7 interactive points (55 total) catch-up lands
-Jan 7, 2027, or Dec 15 with the API credit.
+`--set new_fixtures_per_week_open=2`). Automatic jobs alone take 29.3 of the
+80. Evals get any room only when interactive use falls under about 51 points
+a week, and the full 25-point cap only under about 26.
 
 ## How the rates and costs are taken
 
@@ -56,10 +67,12 @@ Jan 7, 2027, or Dec 15 with the API credit.
 
 ## Gaps
 
-- **Interactive use is a remainder,** not a measurement: 105 minus the
-  automatic total. BOXY's meter history (the seven_day readings) is still a
-  local CSV; once it is version-controlled next to the fire ledger, the script
-  can take the total from it instead of an assumption.
+- **Interactive use is a remainder:** the measured total less the automatic
+  jobs. Any automatic job priced too low shows up as interactive use.
+- **The meter history has gaps:** none from Nov 11, 3:24 AM to Nov 12,
+  1:31 PM ET, or from 7:39 AM to 12:39 PM ET on Nov 15 (the collector's login
+  expired). A rise across a gap still counts, but a weekly reset inside one
+  would hide that span's use.
 - **The ledger sees only each task's last run,** so fires between dashboard
   refreshes are lost; rates come from crons, so this affects cost samples only.
 - **The centralization audit** listed on the dashboard
