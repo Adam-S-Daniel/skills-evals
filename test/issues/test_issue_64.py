@@ -423,6 +423,77 @@ class Problems(unittest.TestCase):
         self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "renamed-away")})
         self.assertEqual(w.run("--check").returncode, 1)
 
+    def pause_removed(self, w, *paths: str):
+        rows = "".join(f"  - path: {p}\n    rule: removed\n" for p in paths)
+        (w.evals / "scope-auto.yml").write_text("rows:\n" + rows, encoding="utf-8")
+
+    def test_a_fixture_the_scope_pass_paused_as_removed_is_not_an_orphan(self):
+        # Regression (#689): the scope pass keeps a removed skill's fixture
+        # on purpose, so the daily census must not refuse over it.
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        self.pause_removed(w, "evals/old")
+        self.assertEqual(w.json()["problems"], [])
+        self.assertEqual(w.run("--check").returncode, 0)
+
+    def test_only_a_removed_pause_excuses_an_orphan(self):
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        w.add_fixture("other", "retired", "cms-platform")  # not paused
+        self.pause_removed(w, "evals/old")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+        (w.evals / "scope-auto.yml").write_text(
+            "rows:\n  - path: evals/old\n    rule: zero-use\n", encoding="utf-8")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+
+    def test_an_excused_fixture_stays_visible_and_does_not_fail(self):
+        # A rename looks like a deletion to the scope pass, so the census
+        # must keep listing what it excused.
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        self.pause_removed(w, "evals/old")
+        doc = w.json()
+        self.assertEqual(doc["paused_removed"],
+                         [{"registry": "cms-platform", "skill": "retired", "fixtures": 1}])
+        md = w.run().stdout
+        self.assertIn("## Paused as removed", md)
+        self.assertIn("- cms-platform `retired`: 1 fixture(s)", md)
+
+    def test_a_private_registry_excused_fixture_withholds_its_name(self):
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old-private", "zz-private-vanished", PRIVATE)
+        self.pause_removed(w, "evals/old-private")
+        proc = w.run("--json")
+        self.assertNotIn("zz-private-vanished", proc.stdout)
+        self.assertEqual(json.loads(proc.stdout)["paused_removed"],
+                         [{"registry": PRIVATE, "fixtures": 1}])
+
+    def test_the_excuse_needs_the_recorded_digest_to_still_match(self):
+        import eval_scope
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_fixture("old", "retired", "cms-platform")
+        digest = eval_scope.fixture_digest(w.evals / "old")
+        rows = f"rows:\n  - path: evals/old\n    rule: removed\n    fixture_digest: {digest}\n"
+        (w.evals / "scope-auto.yml").write_text(rows, encoding="utf-8")
+        self.assertEqual(w.json()["problems"], [])
+        with (w.evals / "old" / "fixture.yaml").open("a", encoding="utf-8") as fh:
+            fh.write("# edited after the pause\n")
+        self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "retired")})
+
+    def test_a_malformed_scope_auto_file_is_refused(self):
+        for bad in ("rows: [unclosed\n", "rows:\n  a: b\n", "rows:\n  - just-a-string\n"):
+            with self.subTest(bad=bad):
+                w = World(self)
+                (w.evals / "scope-auto.yml").write_text(bad, encoding="utf-8")
+                proc = w.run("--json")
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stdout, "")
+
 
 
 class PrivateNames(unittest.TestCase):

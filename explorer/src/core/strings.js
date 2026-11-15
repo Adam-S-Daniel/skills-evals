@@ -86,7 +86,7 @@ function buildStrings(you) {
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
   skillsNote: 'One row per tested skill, best-faring first. Open a name for everything measured about it.',
-  unusedLine: (n, t, from, to) => n + ' of ' + t + ' tested skills were not used in ' + W.whose + ' real work from ' + from + ' to ' + to + ' (cloud sessions are not counted yet).',
+  unusedLine: (n, t, from, to, cloudFrom) => n + ' of ' + t + ' tested skills were not used in ' + W.whose + ' real work from ' + from + ' to ' + to + (cloudFrom ? ' (cloud sessions counted from ' + cloudFrom + ').' : ' (cloud sessions are not counted yet).'),
   colGain: 'Gain, points', colNext: 'Next test', colDecision: 'Official decision',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One row per section, best-faring first. Open a name for everything measured about it.',
@@ -147,7 +147,7 @@ function buildStrings(you) {
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in ' + W.whose + ' real work from ' + from + ' to ' + to + '.',
   copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
   copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',
-  usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of ' + W.whose + ' Claude Code sessions on ' + W.own + ' computer. Sessions in the cloud are not counted yet.',
+  usageNote: (sessions, cloudFrom) => 'Real-work counts come from ' + sessions + ' of ' + W.whose + ' Claude Code sessions on ' + W.own + ' computer' + (cloudFrom ? ', plus every skill use ' + W.whose + ' cloud sessions have recorded since ' + cloudFrom + '.' : '. Sessions in the cloud are not counted yet.'),
   size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
 
   barWith: 'With the skill',
