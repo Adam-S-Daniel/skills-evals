@@ -43,6 +43,10 @@
 #                          rest; `current` reads the current rest only.
 #   rest_guard_min_pairs   pairs beside the current rest a removal-direction
 #                          decision needs.
+#   keep_stands_until_recheck  true: a pooled keep made beside an older
+#                          rest stands until its re-check or an edit to its
+#                          own section (Adam, 2026-11-15); false: it waits for
+#                          the current rest and lapses at its cap.
 skills:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -75,3 +79,4 @@ guidance:
   retirement_mode: auto
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6
+  keep_stands_until_recheck: true

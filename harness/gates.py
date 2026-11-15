@@ -324,6 +324,27 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     `keep_tests` p as 1, and every class a lapsed cell ends in says it
     lapsed. scripts/plan_week.py fires it as an undecided cell until the
     current rest's own keep crosses or its window is full.
+  * THE STANDING KEEP (Adam, 2026-11-15; `keep_stands_until_recheck`, on
+    in evals/gate-policy.yml): the pooled keep's pair floor is read beside
+    the rest the deciding pair was made beside (the rest then on main), not
+    today's: it counts from the first pair, at or after the pooled crossing,
+    whose own rest has `rest_guard_min_pairs` usable pairs by then. A keep
+    made there is final (`keep_final` true): it neither waits for the
+    current rest nor lapses at its cap, so an edit to another section does
+    not reopen it. `rest_guard.keep_since` is the with run's timestamp at its
+    newest confirmation (the latest crossing of the pooled keep test or of
+    any one rest's own keep test), and `rest_guard.pair_stamps` each usable
+    pair's timestamp and rest. scripts/plan_week.py (`standing_recheck_at`)
+    makes it due `recheck_weeks` after that, fires it every sweep until one
+    rest holds `rest_guard_min_pairs` pairs made since it fell due (the
+    removal guard's floor, so a removal could decide) and then counts the
+    re-check as passed from that pair, or until its own keep crosses again,
+    a removal overrides the keep, or its window is full. An edit to the section itself
+    starts a new cell (the with arm's digest is in the key). The keep test's
+    level is unchanged; what changes is what it is about: the rest the keep
+    was made beside, not today's, with the re-check bounding how stale it
+    gets. (Known limit, as for a provisional keep: a harm decision alone does
+    not override it; the remove test's null is the easier one to reject.)
 
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
@@ -535,8 +556,14 @@ DEFAULT_REST_POLICY = "pooled-with-current-guard"
 #: The `rest_guard_min_pairs` of a guidance block that names none: the
 #: least pairs beside the current rest a removal-direction decision needs.
 DEFAULT_REST_GUARD_MIN_PAIRS = 6
+#: The `keep_stands_until_recheck` of a guidance block that names none: off,
+#: the rule of 2026-11-07 (a pooled keep is provisional until the current
+#: rest confirms it). On (Adam, 2026-11-15), a pooled keep made while the
+#: rest it was made beside held the pair floor stands through later changes
+#: of the rest (module docstring, THE STANDING KEEP).
+DEFAULT_KEEP_STANDS_UNTIL_RECHECK = False
 #: The keys only the guidance block takes, each optional with its default.
-GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs")
+GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs", "keep_stands_until_recheck")
 
 
 def parse_gate_policy(text: str) -> dict:
@@ -572,7 +599,9 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     guidance block takes GUIDANCE_ONLY_KEYS (a skill has no rest of the
     guidance): `rest_policy`, one of REST_POLICIES (default
     DEFAULT_REST_POLICY), and `rest_guard_min_pairs`, an integer from 1 to
-    `max_runs_per_cell` (default DEFAULT_REST_GUARD_MIN_PAIRS). An unknown
+    `max_runs_per_cell` (default DEFAULT_REST_GUARD_MIN_PAIRS), and
+    `keep_stands_until_recheck`, true or false (default
+    DEFAULT_KEEP_STANDS_UNTIL_RECHECK). An unknown
     `rest_policy` fails: unlike `retirement_mode`, no value of it is safe to
     fall back to silently."""
     if not isinstance(block, dict):
@@ -603,7 +632,12 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
         if not _count(1)(guard) or guard > out["max_runs_per_cell"]:
             raise GatePolicyError(f"gate policy {name}.rest_guard_min_pairs must be an "
                                   "integer of at least 1, at most max_runs_per_cell")
-        out.update(rest_policy=rest_policy, rest_guard_min_pairs=guard)
+        stands = block.get("keep_stands_until_recheck", DEFAULT_KEEP_STANDS_UNTIL_RECHECK)
+        if not isinstance(stands, bool):
+            raise GatePolicyError(f"gate policy {name}.keep_stands_until_recheck must be "
+                                  "true or false")
+        out.update(rest_policy=rest_policy, rest_guard_min_pairs=guard,
+                   keep_stands_until_recheck=stands)
     return out
 
 
@@ -1026,20 +1060,21 @@ def differences(pairs: list, field: str = "run_mean", scale: float = 1.0) -> lis
 
 
 def _rest_window(pairs: list, keys: list, current, cap: int) -> tuple:
-    """(window, is_current) of a pooled in-situ cell (IN-SITU GUIDANCE CELLS):
-    the first `cap` pairs of EACH rest, in the cells' order, and whether each
-    is beside the `current` rest. Whether a pair enters depends only on the
+    """(window, is_current, window_keys) of a pooled in-situ cell (IN-SITU
+    GUIDANCE CELLS): the first `cap` pairs of EACH rest, in the cells' order,
+    whether each is beside the `current` rest, and each one's rest. Whether a pair enters depends only on the
     pairs before it, so the window is a predictable selection and every
     betting test over it keeps its level; each rest's window is frozen at its
     cap, as a whole cell's is under `current`."""
     seen: dict = {}
-    window, is_current = [], []
+    window, is_current, window_keys = [], [], []
     for pair, key in zip(pairs, keys):
         if seen.get(key, 0) < cap:
             seen[key] = seen.get(key, 0) + 1
             window.append(pair)
             is_current.append(key == current)
-    return window, is_current
+            window_keys.append(key)
+    return window, is_current, window_keys
 
 
 def _classify(pairs: list, policy: dict, family: int = 1,
@@ -1051,7 +1086,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
 
     `rest` (an in-situ guidance cell under `pooled-with-current-guard`):
     {"keys": each pair's rest (`pair_key`), "current": the rest on main,
-    "min_pairs": `rest_guard_min_pairs`}. The keep, remove and harm tests
+    "min_pairs": `rest_guard_min_pairs`, "keep_stands":
+    `keep_stands_until_recheck`, absent for off}. The keep, remove and harm tests
     then bet over every rest's pairs (`_rest_window`), each pair at equal
     weight, while everything that parks a cell, sets it aside, caps it or
     lets a removal decide reads the current rest (module docstring, IN-SITU
@@ -1061,9 +1097,11 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     if rest is None:
         window = pairs[:cap]
         is_current = [True] * len(window)
+        window_keys = [None] * len(window)
         held_current = len(pairs)
     else:
-        window, is_current = _rest_window(pairs, rest["keys"], rest["current"], cap)
+        window, is_current, window_keys = _rest_window(pairs, rest["keys"], rest["current"],
+                                                       cap)
         held_current = sum(is_current)
     current_window = [p for p, c in zip(window, is_current) if c]
     arms = {"with": _arm_summary([w for w, _ in window]),
@@ -1106,11 +1144,12 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         return done("insufficient", "both arms' pass rate at or below "
                     f"{policy['floor_fraction']}; {policy['floor_min_runs']} pairs decide whether "
                     "the fixture is broken")
-    usable, usable_current = [], []
-    for (w, o), c in zip(window, is_current):
+    usable, usable_current, usable_keys = [], [], []
+    for (w, o), c, k in zip(window, is_current, window_keys):
         if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None:
             usable.append((w, o))
             usable_current.append(c)
+            usable_keys.append(k)
     if rest is not None and all(usable_current):
         # ONE REST (the pooled adversarial round 4's M2): with no older
         # USABLE pair in the window (the round 5 review's m2: an older pair
@@ -1322,7 +1361,27 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         # learned prior's, like a `current` cell) lets a cell that helps today
         # keep at its cap. Each runs at half the keep alpha; the earlier wins.
         pooled_keep = objective["keep_at"]
-        floor_at = places[rest["min_pairs"] - 1] if len(places) >= rest["min_pairs"] else None
+        stands = bool(rest.get("keep_stands"))
+        if stands:
+            # THE STANDING KEEP (Adam, 2026-11-15): the floor is read beside
+            # the rest the deciding pair was made beside, the rest then on
+            # main: the keep counts from the first pair n, at or after the
+            # pooled crossing, whose own rest has `min_pairs` usable pairs
+            # among 1..n (with no crossing, the first such pair at all, for
+            # the route's p). Whether pair n qualifies depends only on pairs
+            # 1..n, so the keep test keeps its level; a crossing made of one
+            # pair each beside many rests never keeps (the review's m2).
+            seen_by_rest: dict = {}
+            floor_at = None
+            for i, key in enumerate(usable_keys):
+                seen_by_rest[key] = seen_by_rest.get(key, 0) + 1
+                if seen_by_rest[key] >= rest["min_pairs"] \
+                        and (pooled_keep is None or i + 1 >= pooled_keep):
+                    floor_at = i + 1
+                    break
+        else:
+            floor_at = places[rest["min_pairs"] - 1] if len(places) >= rest["min_pairs"] \
+                else None
         pooled_keep = max(pooled_keep, floor_at) \
             if pooled_keep is not None and floor_at is not None else None
         current_keep_wealth = keep_wealth(current_ds, bet_prior)
@@ -1398,12 +1457,44 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                                              or current_keep <= remove_decided)
         standing = [current_keep] if final else []
         removed = remove_decided is not None
+        if stands and pooled_keep is not None and not removed:
+            # THE STANDING KEEP: neither provisional nor lapsing at the cap.
+            # A removal on the current rest's evidence still overrides it,
+            # which a re-check's pairs can bring.
+            final = True
+        if stands:
+            out["rest_guard"]["keep_stands"] = True
+            if final:
+                # The keep's NEWEST CONFIRMATION, the latest final crossing
+                # of the pooled keep test or of any one rest's own keep test
+                # (each over that rest's pairs, at the route's alpha, as the
+                # current-rest test runs), before any removal decided. Every
+                # rest's counts, not just today's, so a change of the rest
+                # never moves it back (the review's round 2 blocker).
+                # Reporting only: the keep is decided above. With
+                # `pair_stamps`, each usable pair's with run timestamp and
+                # its rest's ordinal, scripts/plan_week.py times the re-check
+                # (`standing_recheck_at`).
+                confirmed = [k for k in (pooled_keep, current_keep) if k is not None]
+                for key in dict.fromkeys(usable_keys):
+                    own = [i + 1 for i, k in enumerate(usable_keys) if k == key]
+                    hit = first_crossing(keep_wealth(differences(
+                        [usable[i - 1] for i in own]), bet_prior), route_alpha)
+                    if hit is not None:
+                        confirmed.append(own[hit - 1])
+                confirmed = [k for k in confirmed if k <= len(usable)
+                             and (remove_decided is None or k <= remove_decided)]
+                if confirmed:
+                    out["rest_guard"]["keep_since"] = usable[max(confirmed) - 1][0]["timestamp"]
+                ordinal = {k: i for i, k in enumerate(dict.fromkeys(usable_keys))}
+                out["rest_guard"]["pair_stamps"] = [
+                    [w["timestamp"], ordinal[k]] for (w, _), k in zip(usable, usable_keys)]
         # Round 3's M1: a provisional keep does not stand at the current
         # rest's cap either. No more pairs can test it there, so the cell
         # ends on the current rest's own rules, as a `current` cell would:
         # an older rest alone never keeps.
-        lapsed = pooled_keep is not None and not removed and capped
-        if pooled_keep is not None and not removed and not capped:
+        lapsed = pooled_keep is not None and not removed and capped and not stands
+        if pooled_keep is not None and not removed and not lapsed:
             standing.append(pooled_keep)
         elif pooled_keep is not None:
             # Round 4's m(a): a pooled keep that a removal overrode or that
@@ -1475,8 +1566,9 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             return awaiting(remove_at, "no benefit")
         over = "" if rest is None or pooled_keep is None else (
             f", beside today's rest whatever older rests showed; the pooled keep test's "
-            f"crossing at pair {pooled_keep} does not stand against it (a pooled keep is "
-            "not final)")
+            f"crossing at pair {pooled_keep} does not stand against it ("
+            + ("a removal on the current rest overrides a standing keep" if stands
+               else "a pooled keep is not final") + ")")
         return done(
             "no-benefit", f"the remove test decided at pair {remove_decided} (crossed at "
             f"{remove_at}): confident at {policy['retire_confidence']:.0%} that the gain "
@@ -1659,7 +1751,7 @@ def _cell_split(with_runs: list, without_runs: list, policy: dict, cls: str,
     if rest_info is None:
         window = pairs[:cap]
     else:
-        window, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap)
+        window, _, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap)
     in_window = {id(r) for pair in window for r in pair}
     usable = [(w, o) for w, o in window
               if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
@@ -1825,6 +1917,8 @@ def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
         final_at = guard.get("current_keep_at")
         if guard.get("keep_final") is False:
             at = None
+        elif guard.get("keep_stands"):
+            pass  # THE STANDING KEEP is final where it crossed.
         elif isinstance(final_at, int) and not isinstance(final_at, bool) and final_at > at:
             at = final_at
     out = [(r, "discarded", why) for r, why in discards]
@@ -2156,7 +2250,10 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             carried = any(r["judge_carried"] for r in runs)
             guard = {"current": pool["key"]["rest_digest"],
                      "min_pairs": policy.get("rest_guard_min_pairs",
-                                             DEFAULT_REST_GUARD_MIN_PAIRS)} if pooled else None
+                                             DEFAULT_REST_GUARD_MIN_PAIRS),
+                     "keep_stands": policy.get("keep_stands_until_recheck",
+                                               DEFAULT_KEEP_STANDS_UNTIL_RECHECK)} \
+                if pooled else None
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata, rest=guard)
             cell_rows, decided_day = cell_utility(arms["with"], arms["without"], policy,
