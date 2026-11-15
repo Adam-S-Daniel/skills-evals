@@ -1,0 +1,168 @@
+"""A hosted session starts with no command sandbox and says nothing (#1024).
+
+Claude Code 2.1.325 starts Claude Code on the web, cloud scheduled tasks and
+Cowork cloud sessions despite `sandbox.failIfUnavailable`, so a routine's arm
+no longer fails on the CLI's stderr lines. The harness proves the read fence
+instead: before the first agent arm it has the CLI `cat` a sentinel under a
+`denyRead` path. These tests drive that canary with `test/fake-claude`'s
+probe answers (no network, no model, no clock).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "harness"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import run_eval  # noqa: E402
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+FAKE_CLAUDE = ROOT / "test" / "fake-claude"
+
+# The fake CLI reads its mode from its own environment, which the harness's
+# allowlist does not forward, so a wrapper sets it and hands over.
+WRAPPER = f"""#!{sys.executable}
+import os, sys
+os.environ["FAKE_CLAUDE_PROBE"] = {{how!r}}
+os.environ["FAKE_CLAUDE_ARGV_LOG"] = {{log!r}}
+os.execv({sys.executable!r}, [{sys.executable!r}, {str(FAKE_CLAUDE)!r}, *sys.argv[1:]])
+"""
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
+class SandboxProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="sandbox-probe-test-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.log = self.root / "argv.jsonl"
+        seed = self.root / "seed"
+        seed.mkdir()
+        (seed / "calc.py").write_text("x = 1\n", encoding="utf-8")
+        self.ws = run_eval.materialize_workspace(seed, {})
+        self.addCleanup(shutil.rmtree, self.ws, ignore_errors=True)
+        for patch in (
+                mock.patch.object(run_eval, "_SANDBOX_PROBE_REQUIRED", True),
+                mock.patch.object(run_eval, "_SANDBOX_PROBE_VERDICT", None)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def use_cli(self, how: str) -> None:
+        stand_in = self.root / "claude"
+        stand_in.write_text(WRAPPER.format(how=how, log=str(self.log)),
+                            encoding="utf-8")
+        stand_in.chmod(0o755)
+        patcher = mock.patch.dict(os.environ, {
+            "HOME": str(self.home), "XDG_STATE_HOME": str(self.root / "state"),
+            "CLAUDE_BIN": str(stand_in)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def arm(self) -> dict:
+        return {"name": "without_skill", "timeout": 60}
+
+    def calls(self) -> list[list[str]]:
+        if not self.log.exists():
+            return []
+        return [json.loads(line)["argv"] for line in self.log.read_text().splitlines()]
+
+    def probes(self) -> list[list[str]]:
+        return [argv for argv in self.calls() if "--max-turns" in argv]
+
+    def test_a_leaked_sentinel_fails_every_arm_sandbox_unavailable(self):
+        self.use_cli("leak")
+        for _ in range(2):
+            out = run_eval.run_agent(self.ws, "do it", self.arm())
+            self.assertEqual(out["error"], "sandbox_unavailable", out)
+            self.assertIn("sandbox not enforcing", out["detail"])
+        # Once per run: the second arm reuses the verdict, and no arm started.
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_a_denied_sentinel_lets_the_arms_proceed(self):
+        self.use_cli("deny")
+        for _ in range(2):
+            out = run_eval.run_agent(self.ws, "do it", self.arm())
+            self.assertNotIn("error", out, out)
+        calls = self.calls()
+        self.assertEqual(len(calls), 3)  # one probe, two arms
+        self.assertEqual(len(self.probes()), 1)
+
+    def test_the_probe_runs_under_the_arms_own_settings_with_a_cheap_model(self):
+        self.use_cli("deny")
+        run_eval.run_agent(self.ws, "do it", self.arm())
+        (argv,) = self.probes()
+        settings = json.loads(argv[argv.index("--settings") + 1])
+        self.assertIs(settings["sandbox"]["failIfUnavailable"], True)
+        self.assertIn(str(self.home.resolve()),
+                      settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertEqual(argv[argv.index("--model") + 1], "haiku")
+        # The sentinel lived under the denied HOME and is gone again.
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_a_probe_that_errors_fails_closed(self):
+        self.use_cli("error")
+        out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertEqual(out["error"], "sandbox_unavailable", out)
+        self.assertIn("inconclusive", out["detail"])
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_a_probe_whose_command_never_ran_fails_closed(self):
+        self.use_cli("skip")
+        out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertEqual(out["error"], "sandbox_unavailable", out)
+        self.assertIn("inconclusive", out["detail"])
+
+    def test_a_probe_timeout_fails_closed(self):
+        self.use_cli("deny")
+        with mock.patch.object(run_eval, "_run_in_own_session",
+                               side_effect=run_eval.subprocess.TimeoutExpired("c", 1)):
+            out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertEqual(out["error"], "sandbox_unavailable", out)
+        self.assertIn("timed out", out["detail"])
+
+    def test_a_direct_run_agent_call_launches_no_probe(self):
+        self.use_cli("leak")
+        with mock.patch.object(run_eval, "_SANDBOX_PROBE_REQUIRED", False):
+            out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertNotIn("error", out, out)
+        self.assertEqual(self.probes(), [])
+
+    def test_main_requires_the_probe_only_in_a_hosted_session(self):
+        import argparse
+        for hosted, expected in (("true", True), (None, False)):
+            env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"}
+            if hosted:
+                env["CLAUDE_CODE_REMOTE"] = hosted
+            with mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(sys, "argv", ["run_eval.py"]), \
+                    mock.patch.object(argparse.ArgumentParser, "parse_args",
+                                      side_effect=SystemExit(2)):
+                with self.assertRaises(SystemExit):
+                    run_eval.main()
+                self.assertIs(run_eval._SANDBOX_PROBE_REQUIRED, expected)
+
+    def test_the_cli_sandbox_stderr_detection_still_applies(self):
+        self.assertIsNotNone(run_eval._sandbox_unavailable_detail(
+            "Error: sandbox required but unavailable: no bwrap\n"))
+
+
+if __name__ == "__main__":
+    unittest.main()

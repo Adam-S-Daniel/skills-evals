@@ -8,7 +8,18 @@ does nothing, so `python3 -m pytest test/issues/<file>.py` is unchanged.
 
 from __future__ import annotations
 
+import pytest
+
 from shard import assign, nodeid_key, parse_shard
+
+
+@pytest.fixture(autouse=True)
+def _not_a_hosted_session(monkeypatch):
+    """A test run inside a hosted container (`CLAUDE_CODE_REMOTE=true`) must
+    not make `run_eval.main()` launch its sandbox canary (#1024), which would
+    spend a scripted fake CLI's calls. test_issue_1024_sandbox_probe.py turns
+    the canary on explicitly."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
 
 
 def pytest_addoption(parser):

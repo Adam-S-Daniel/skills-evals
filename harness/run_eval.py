@@ -2244,6 +2244,115 @@ def _sandbox_unavailable_detail(stderr: str) -> str | None:
     return None
 
 
+# Claude Code 2.1.325 starts hosted sessions (a routine, where eval arms run,
+# ADR 0010) despite `sandbox.failIfUnavailable`: the hosted container has no
+# command sandbox, and the CLI neither refuses nor warns, so the stderr lines
+# above never appear. The CLI shows no model-free signal either (its `--help`
+# has no sandbox status, and the stream-json init event lists tools, not the
+# sandbox), so the harness proves the fence positively, once per process
+# before the first agent arm: a one-turn probe with the arm's own isolation
+# flags runs `cat` on a sentinel under a `denyRead` path. A sentinel that comes
+# back, or a probe that cannot tell, fails every arm `sandbox_unavailable`.
+SANDBOX_PROBE_MODEL = "haiku"
+# Set by `main()` in a hosted session: a direct `run_agent` call (a test's)
+# launches no probe.
+_SANDBOX_PROBE_REQUIRED = False
+# None until the probe has run, then ("" if the fence held, else the detail).
+_SANDBOX_PROBE_VERDICT: str | None = None
+
+
+def _tool_result_texts(node) -> list[str]:
+    """The text of every `tool_result` block anywhere in a CLI JSON result."""
+    texts: list[str] = []
+    if isinstance(node, list):
+        for item in node:
+            texts += _tool_result_texts(item)
+    elif isinstance(node, dict):
+        if node.get("type") == "tool_result":
+            content = node.get("content")
+            if isinstance(content, str):
+                texts.append(content)
+            elif isinstance(content, list):
+                texts += [part["text"] for part in content
+                          if isinstance(part, dict) and isinstance(part.get("text"), str)]
+        else:
+            for value in node.values():
+                texts += _tool_result_texts(value)
+    return texts
+
+
+def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
+    """Run the sandbox canary; return "" if the read fence held, else why not.
+
+    The sentinel lies under HOME, which `arm_sandbox_settings` denies to
+    reads. The model is told to `cat` it and then echo a computed marker, so
+    "the command ran and the fence blocked it" (marker, no sentinel) differs
+    from "the command never ran" (neither), which cannot prove anything and
+    fails closed too.
+    """
+    token = "sentinel-" + os.urandom(12).hex()
+    left, right = os.urandom(1)[0] + 1, os.urandom(1)[0] + 1
+    marker = f"probe-ran-{left + right}"
+    holder = Path(tempfile.mkdtemp(prefix="skills-evals-sandbox-probe-",
+                                   dir=Path.home()))
+    cwd = Path(tempfile.mkdtemp(prefix="skills-evals-sandbox-probe-cwd-"))
+    try:
+        sentinel = holder / "sentinel.txt"
+        sentinel.write_text(token + "\n", encoding="utf-8")
+        flags = arm_isolation_flags(checkouts, outputs=outputs,
+                                    path_env=os.environ.get("PATH", ""))
+        env = guidance.cli_child_env(agent_env(cwd, None))
+        for name in ARM_DROPPED_ENV:
+            env.pop(name, None)
+        command = f"cat {sentinel} 2>&1; echo probe-ran-$(({left}+{right}))"
+        prompt = ("Call the Bash tool exactly once with this command and then "
+                  f"reply with only its output, nothing else:\n{command}")
+        cmd = [run_canary.cli_bin(), "-p", prompt, "--output-format", "json",
+               "--verbose", "--permission-mode", "auto",
+               "--setting-sources", "project", *flags, "--strict-mcp-config",
+               "--no-session-persistence", "--model", SANDBOX_PROBE_MODEL,
+               "--max-turns", "3"]
+        try:
+            result = _run_in_own_session(cmd, cwd=cwd, capture_output=True,
+                                         text=True, timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return f"sandbox probe timed out after {timeout}s; the fence is unproven"
+        except OSError as exc:
+            return (f"sandbox probe could not start ({type(exc).__name__}); "
+                    "the fence is unproven")
+        down = _sandbox_unavailable_detail(result.stderr)
+        if down is not None:
+            return down
+        try:
+            texts = _tool_result_texts(json.loads(result.stdout))
+        except ValueError:
+            texts = []
+        if any(token in text for text in texts):
+            return ("sandbox not enforcing: a Bash command read a file under "
+                    "filesystem.denyRead (hosted Claude Code sessions start "
+                    "without a command sandbox, CLI 2.1.325)")
+        if any(marker in text for text in texts):
+            return ""
+        return (f"sandbox probe inconclusive (CLI exit {result.returncode}, its "
+                "Bash command did not run); the fence is unproven")
+    finally:
+        shutil.rmtree(holder, ignore_errors=True)
+        shutil.rmtree(cwd, ignore_errors=True)
+
+
+def sandbox_probe_failure(checkouts=(), outputs=()) -> str | None:
+    """The detail every arm fails with, or None when the fence was proven.
+
+    Memoized: the probe runs once per process, before the first agent arm.
+    """
+    global _SANDBOX_PROBE_VERDICT
+    if not _SANDBOX_PROBE_REQUIRED:
+        return None
+    if _SANDBOX_PROBE_VERDICT is None:
+        _SANDBOX_PROBE_VERDICT = probe_arm_sandbox(checkouts, outputs)
+    return _SANDBOX_PROBE_VERDICT or None
+
+
 # The managed sandbox and permission settings an arm's run accepts, each with
 # the values it may take; ANY other key under `sandbox` or `permissions`, or
 # an accepted key with another value, refuses the run, so a key a later CLI
@@ -3259,6 +3368,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     refusal = managed_sandbox_refusal()
     if refusal is not None:
         return {"error": "managed_sandbox_policy", "detail": refusal}
+    unproven = sandbox_probe_failure(checkouts, outputs)
+    if unproven is not None:
+        return {"error": "sandbox_unavailable", "detail": unproven}
     # `setting_sources` and `env_override` are the guidance subject's two
     # seams (#97): guidance is delivered into USER memory by the fleet hook,
     # so a guidance arm is invoked with `user,project` and with the scrubbed
@@ -8379,6 +8491,12 @@ def _exiting_on_signals(run):
 @_exiting_on_signals
 @_ending_the_run
 def main() -> int:
+    global _SANDBOX_PROBE_REQUIRED
+    # In a hosted session (`CLAUDE_CODE_REMOTE=true`, which a routine is) the
+    # CLI no longer refuses a missing sandbox, so every agent arm of the run
+    # waits on the canary (`probe_arm_sandbox`). Elsewhere the CLI's own
+    # refusal, matched by `_SANDBOX_DOWN_LINE`, still decides.
+    _SANDBOX_PROBE_REQUIRED = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
     # Deliberately NOT an argparse `choices=` list any more: a guidance
