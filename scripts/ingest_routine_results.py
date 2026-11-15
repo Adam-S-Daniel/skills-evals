@@ -1271,6 +1271,10 @@ def check_summary(doc, where: str, parts: dict) -> None:
             raise Rejected(f"{where}: {field} must be a short list of model ids")
     if "sandbox_probe" in doc and doc["sandbox_probe"] not in SANDBOX_PROBE_STATUSES:
         raise Rejected(f"{where}: sandbox_probe is not a known status")
+    if doc.get("sandbox_probe") == "skipped":
+        # Only the test-only skip variable records it, and routines refuse
+        # that variable: a routine result with it ran arms with no canary.
+        raise Rejected(f"{where}: sandbox_probe skipped: arms ran without the sandbox canary")
     selection = doc.get("judge_selection")
     if selection is not None:
         _object(selection, f"{where}: judge_selection", JUDGE_SELECTION_KEYS,
