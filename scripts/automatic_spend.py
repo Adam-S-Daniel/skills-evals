@@ -23,8 +23,20 @@ task name), that
 workflow's cron thinned to its cadence; zero for a task with no fire on
 record; else the fires in the ledger over `--window-days`.
 Cost per fire: the median of the fire ledger's costs for that task
-(`--fires`, repeatable JSONL, the routine fire ledger's schema). A job with
-no measured cost is listed under `unmeasured`, never guessed.
+(`--fires`, repeatable JSONL, the routine fire ledger's schema), over only
+the fires served by the task's current model (Adam, 2026-11-15: tasks moved
+to their right models days ago, so older fires on another model misprice
+them). The current model is the one that served the newest fire since the
+task was last edited (`updated_at`); with no fire since, the task's set
+`model`; with none set, the newest fire's. A set model that a later fire did
+not use is flagged `model_mismatch` (a project-made task runs its project's
+model whatever its page says). A job with no measured cost is listed under
+`unmeasured`, never guessed.
+
+Loop membership: every job is marked `in_loop` true (part of the continuous
+improvement system) or false, from its category's `in_loop` (`other_in_loop` for a job no category
+matches) unless a regex in `outside_loop` or `inside_loop` names it. A job
+left `null` is listed under `loop_unassigned`. Totals split meter spend by it.
 
 Lanes: `meter` (the subscription's weekly meter, which the forecast's
 non-eval points come from), `eval_cap` (already inside the eval cap),
@@ -226,12 +238,67 @@ def scan_boxy_tasks(checkout: Path) -> list:
 
 # --- breakdown ------------------------------------------------------------
 
+def _utc(value):
+    """An aware UTC datetime from an ISO string (naive read as UTC), else None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        t = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def current_model_costs(rows: list, trigger: dict | None = None):
+    """(model, costs on it, fires on other models, mismatch) for one task.
+
+    See the module docstring for which model is current. A ledger with no
+    model recorded and no set model keeps every cost."""
+    trigger = trigger or {}
+    set_model = trigger.get("model") or (trigger.get("derived_state") or {}).get("model") or None
+    edited = _utc(trigger.get("updated_at"))
+    # Only fires with a model and a readable time can say which model is current.
+    dated = sorted((r for r in rows if r.get("last_served_model") and _utc(r.get("fired_at"))),
+                   key=lambda r: _utc(r["fired_at"]))
+    since = [r for r in dated if edited is None or _utc(r["fired_at"]) >= edited]
+    if since:
+        model = since[-1]["last_served_model"]
+    elif set_model:
+        model = set_model
+    else:
+        model = dated[-1]["last_served_model"] if dated else None
+    mismatch = bool(set_model and since and model != set_model)
+    keep = [r for r in rows if model is None or r.get("last_served_model") == model]
+    costs = [c for c in (_cost(r) for r in keep) if c is not None]
+    return model, costs, len(rows) - len(keep), mismatch
+
+
+def loop_membership(name: str, category: str, config: dict, extra: str = ""):
+    """True, False or None (unassigned): is this job part of the loop?"""
+    def hit(key):
+        return any(re.search(m, name, re.I) or (extra and re.search(m, extra, re.I))
+                   for m in config.get(key) or [])
+    if hit("outside_loop"):
+        return False
+    if hit("inside_loop"):
+        return True
+    for c in config["categories"]:
+        if c["id"] == category:
+            return c.get("in_loop")
+    return config.get("other_in_loop")
+
+
 def categorize(name: str, categories: list, extra: str = "") -> str:
     for c in categories:
         if any(re.search(m, name, re.I) or (extra and re.search(m, extra, re.I))
                for m in c["match"]):
             return c["id"]
     return "other"
+
+
+def _meter(jobs: list, in_loop) -> float:
+    return sum(j["usd_per_week"] or 0.0 for j in jobs
+               if j["lane"] == "meter" and j["in_loop"] is in_loop)
 
 
 def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
@@ -251,7 +318,7 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         if t.get("enabled") is False:
             continue
         rows = by_trigger.get(tid, [])
-        costs = [c for c in (_cost(r) for r in rows) if c is not None]
+        model, costs, dropped, mismatch = current_model_costs(rows, t)
         cron = t.get("cron_expression") or ""
         if cron:
             rate, rate_source = cron_fires_per_week(cron), "cron"
@@ -273,10 +340,13 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
             rate_source = f"ledger fires in {window_days} days"
         per_fire = statistics.median(costs) if costs else None
         lane = "eval_cap" if any(re.search(m, t["name"], re.I) for m in eval_cap) else "meter"
+        cat = categorize(t["name"], cats)
         jobs.append({"kind": "scheduled task", "id": tid, "name": t["name"],
-                     "category": categorize(t["name"], cats), "lane": lane,
+                     "category": cat, "in_loop": loop_membership(t["name"], cat, config),
+                     "lane": lane, "model": model,
                      "fires_per_week": rate, "rate_source": rate_source,
                      "usd_per_fire": per_fire, "cost_fires": len(costs),
+                     "cost_fires_other_model": dropped, "model_mismatch": mismatch,
                      "usd_per_week": 0.0 if rate == 0 else
                      None if rate is None or per_fire is None else rate * per_fire})
 
@@ -292,16 +362,18 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
             lane, usd = "api", None
         else:
             lane, usd = "actions_only", 0.0
-        jobs.append({"kind": "workflow", "id": path, "name": w["name"],
-                     "category": categorize(w["name"], cats, path), "lane": lane,
+        cat = categorize(w["name"], cats, path)
+        jobs.append({"kind": "workflow", "id": path, "name": w["name"], "category": cat,
+                     "in_loop": loop_membership(w["name"], cat, config, path), "lane": lane,
                      "events": w["events"], "fires_per_week": rate,
                      "rate_source": "cron" if w["crons"] else "events only",
                      "usd_per_fire": None, "usd_per_week": usd})
 
     for b in boxy:
         lane = "meter" if b["runs_claude"] else "actions_only"
-        jobs.append({"kind": "BOXY task", "id": b["name"], "name": b["name"],
-                     "category": categorize(b["name"], cats), "lane": lane,
+        cat = categorize(b["name"], cats)
+        jobs.append({"kind": "BOXY task", "id": b["name"], "name": b["name"], "category": cat,
+                     "in_loop": loop_membership(b["name"], cat, config), "lane": lane,
                      "fires_per_week": b["fires_per_week"], "rate_source": "register-tasks.ps1",
                      "usd_per_fire": None, "local_only": lane == "actions_only",
                      "usd_per_week": 0.0 if lane == "actions_only" else None})
@@ -320,6 +392,8 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         out_cats.append({"id": cid, "label": labels[cid], "jobs": len(members),
                          "usd_per_week_by_lane": lanes,
                          "meter_usd_per_week": lanes.get("meter", 0.0),
+                         "loop_meter_usd_per_week": _meter(members, True),
+                         "outside_loop_meter_usd_per_week": _meter(members, False),
                          "unmeasured": sorted(j["name"] for j in members
                                               if j["usd_per_week"] is None
                                               and j["lane"] in ("meter", "api"))})
@@ -331,6 +405,9 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
                   "already inside the eval cap; api is Anthropic API dollars, no meter.",
                   "A job under `unmeasured` has no recorded cost and adds nothing."],
         "meter_usd_per_week": meter,
+        "loop_meter_usd_per_week": _meter(jobs, True),
+        "outside_loop_meter_usd_per_week": _meter(jobs, False),
+        "loop_unassigned": sorted(j["name"] for j in jobs if j["in_loop"] is None),
         "categories": out_cats,
         "jobs": jobs,
         "unmeasured": sorted(j["name"] for j in jobs
@@ -364,7 +441,11 @@ def main(argv: list | None = None) -> int:
     for c in doc["categories"]:
         print(f"{c['label']}: ${c['meter_usd_per_week']:.0f}/wk meter, {c['jobs']} jobs"
               + (f", unmeasured: {', '.join(c['unmeasured'])}" if c["unmeasured"] else ""))
-    print(f"total meter ${doc['meter_usd_per_week']:.0f}/wk")
+    print(f"total meter ${doc['meter_usd_per_week']:.0f}/wk: "
+          f"${doc['loop_meter_usd_per_week']:.0f} in the loop, "
+          f"${doc['outside_loop_meter_usd_per_week']:.0f} outside it")
+    if doc["loop_unassigned"]:
+        print(f"not marked in or out of the loop: {len(doc['loop_unassigned'])} jobs")
     return 0
 
 

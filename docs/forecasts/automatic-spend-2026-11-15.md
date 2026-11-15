@@ -95,3 +95,52 @@ Run: [`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
   refreshes are lost; rates come from crons, so this affects cost samples only.
 - **The centralization audit** listed on the dashboard
   no longer exists (`get_trigger` 404); its row should come off.
+
+## Loop membership and current-model costs (1:30 PM ET)
+
+Adam asked (1:06 PM ET) for a consistent mark on every job saying whether it
+is part of the continuous improvement system, with security alert triage, the
+fleet health audit and the "work locally" feature watch outside it. He also
+asked that costs come only from fires on each task's current model.
+
+- **The mark:** each category in
+  [`evals/automatic-spend.yml`](../../evals/automatic-spend.yml) has
+  `in_loop`. `outside_loop` and `inside_loop` override it for single jobs,
+  and `other_in_loop` covers the jobs no category matches. Every job in the
+  output carries `in_loop`, and the totals split meter spend by it.
+- **Current model:** the model that served the task's newest fire since its
+  last edit; with no fire since, its set model. A set model the fires
+  ignore is flagged `model_mismatch`.
+
+| Job | Model | Fires costed | Points/wk |
+|---|---|---|---|
+| Dashboard refresh | Opus | 1 | 8.8 |
+| Fleet worker | Sonnet | 6 | 7.6 |
+| Daily eval scope review | Opus | 3 | 2.9 |
+| Agent changelog watcher | Sonnet | 3 (1 Fable fire dropped) | 1.8 |
+| Git hook block review | Opus (page says Sonnet) | 1 | 0.3 |
+| Prompt-audit sweep | Sonnet | 1 | 0.1 |
+| Memory curation | Sonnet, no fire yet (1 Opus fire dropped) | 0 | unmeasured |
+| **In the loop** | | | **21.5** |
+| Outside: security triage 2.2, work-locally watch 0.2, health audit (unmeasured, Opus fire dropped), personal 4.1 | | | **6.6** |
+
+Run: `automatic_spend.py` with a second `--triggers` dump that adds each
+task's `model` and `updated_at` (list_triggers, 1:15 PM ET).
+
+## The loop's jobs inside the 25% (1:20 PM ET)
+
+Adam (1:10 PM ET): every automated part of the continuous improvement system
+fits in the 25%. `forecast_catch_up.py` now takes the in-loop jobs' points
+off the eval cap (`loop_jobs_in_cap`, on by default;
+`--set loop_jobs_in_cap=0` turns it off).
+
+| In-loop jobs (points/wk) | Eval room | Catch-up, cap only | With API credit |
+|---|---|---|---|
+| 21.5 (today) | 3.5 | never | never |
+| 13.3 | 11.7 | never | Sep 2027 |
+| 8 | 17 | 2034 | Jan 19, 2027 |
+| 4 | 21 | Feb 26, 2027 | Dec 26, 2026 |
+
+Keep-up alone costs $119 a week (2 new fixtures a week), about 17 points.
+Run: [`forecast-2026-11-15-loop-in-cap.json`](forecast-2026-11-15-loop-in-cap.json);
+the other rows set `loop_meter_usd_per_week` by hand to show trims.
