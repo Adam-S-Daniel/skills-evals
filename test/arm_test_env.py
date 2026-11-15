@@ -31,7 +31,10 @@ def arm_test_environment() -> dict[str, str]:
         atexit.register(shutil.rmtree, directory, ignore_errors=True)
         _mountinfo = directory / "mountinfo"
         _mountinfo.write_bytes(b"")
-    return {"PATH": TEST_PATH, MOUNTINFO_ENV: str(_mountinfo)}
+    # TEST-ONLY: no canary CLI call in `run_eval.main()` (#1024), which would
+    # spend a scripted fake CLI's calls.
+    return {"PATH": TEST_PATH, MOUNTINFO_ENV: str(_mountinfo),
+            "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE": "1"}
 
 
 def install_arm_test_environment(setup: Callable[[], None]) -> Callable[[], None]:

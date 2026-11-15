@@ -33,6 +33,7 @@ FAKE_CLAUDE = ROOT / "test" / "fake-claude"
 WRAPPER = f"""#!{sys.executable}
 import os, sys
 os.environ["FAKE_CLAUDE_PROBE"] = {{how!r}}
+os.environ["FAKE_CLAUDE_PROBE_STATE"] = {{state!r}}
 os.environ["FAKE_CLAUDE_ARGV_LOG"] = {{log!r}}
 os.execv({sys.executable!r}, [{sys.executable!r}, {str(FAKE_CLAUDE)!r}, *sys.argv[1:]])
 """
@@ -67,7 +68,8 @@ class SandboxProbeTests(unittest.TestCase):
 
     def use_cli(self, how: str) -> None:
         stand_in = self.root / "claude"
-        stand_in.write_text(WRAPPER.format(how=how, log=str(self.log)),
+        stand_in.write_text(WRAPPER.format(how=how, log=str(self.log),
+                                       state=str(self.root / "probe-state")),
                             encoding="utf-8")
         stand_in.chmod(0o755)
         patcher = mock.patch.dict(os.environ, {
@@ -93,7 +95,8 @@ class SandboxProbeTests(unittest.TestCase):
             out = run_eval.run_agent(self.ws, "do it", self.arm())
             self.assertEqual(out["error"], "sandbox_unavailable", out)
             self.assertIn("sandbox not enforcing", out["detail"])
-        # Once per run: the second arm reuses the verdict, and no arm started.
+        # Once per run and never retried: the second arm reuses the verdict,
+        # and no arm started.
         self.assertEqual(len(self.calls()), 1)
 
     def test_a_denied_sentinel_lets_the_arms_proceed(self):
@@ -122,7 +125,8 @@ class SandboxProbeTests(unittest.TestCase):
         out = run_eval.run_agent(self.ws, "do it", self.arm())
         self.assertEqual(out["error"], "sandbox_unavailable", out)
         self.assertIn("inconclusive", out["detail"])
-        self.assertEqual(len(self.calls()), 1)
+        self.assertNotIn("not enforcing", out["detail"])
+        self.assertEqual(len(self.calls()), 2)  # tried, retried once, no arm
 
     def test_a_probe_whose_command_never_ran_fails_closed(self):
         self.use_cli("skip")
@@ -145,12 +149,45 @@ class SandboxProbeTests(unittest.TestCase):
         self.assertNotIn("error", out, out)
         self.assertEqual(self.probes(), [])
 
-    def test_main_requires_the_probe_only_in_a_hosted_session(self):
+    def test_an_echo_that_never_attempted_the_read_fails_closed(self):
+        # The marker alone proves nothing: a model can echo it without cat.
+        for how in ("echo", "nodenial", "typo", "forged"):
+            with self.subTest(how=how):
+                run_eval._SANDBOX_PROBE_VERDICT = None
+                self.use_cli(how)
+                out = run_eval.run_agent(self.ws, "do it", self.arm())
+                self.assertEqual(out["error"], "sandbox_unavailable", out)
+                self.assertIn("inconclusive", out["detail"])
+
+    def test_an_inconclusive_probe_is_retried_once(self):
+        self.use_cli("once_skip")
+        out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertNotIn("error", out, out)
+        self.assertEqual(len(self.probes()), 2)
+
+    def test_a_leak_is_never_retried(self):
+        self.use_cli("once_leak")  # a retry would be answered "deny"
+        out = run_eval.run_agent(self.ws, "do it", self.arm())
+        self.assertEqual(out["error"], "sandbox_unavailable", out)
+        self.assertTrue(out["detail"].startswith("sandbox not enforcing"))
+        self.assertEqual(len(self.probes()), 1)
+
+    def test_a_guidance_arm_goes_through_the_probe(self):
+        self.use_cli("leak")
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home)}
+        out = run_eval.run_agent(self.ws, "do it", {
+            "name": "with_guidance", "timeout": 60,
+            "setting_sources": "user,project", "env_override": env})
+        self.assertEqual(out["error"], "sandbox_unavailable", out)
+        self.assertEqual(len(self.probes()), 1)
+
+    def test_main_requires_the_probe_with_no_hosted_variable(self):
         import argparse
-        for hosted, expected in (("true", True), (None, False)):
-            env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"}
-            if hosted:
-                env["CLAUDE_CODE_REMOTE"] = hosted
+        for skip, expected in ((None, True), ("1", False)):
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("CLAUDE_CODE_REMOTE", run_eval.SANDBOX_PROBE_SKIP_ENV)}
+            if skip:
+                env[run_eval.SANDBOX_PROBE_SKIP_ENV] = skip
             with mock.patch.dict(os.environ, env, clear=True), \
                     mock.patch.object(sys, "argv", ["run_eval.py"]), \
                     mock.patch.object(argparse.ArgumentParser, "parse_args",

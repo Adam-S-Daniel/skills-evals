@@ -57,6 +57,9 @@ STATE = {state!r}
 FAIL_AGENT_CALL = {fail!r}
 PLANT = {plant!r}
 argv = sys.argv[1:]
+if any("probe-ran-$((" in a for a in argv):
+    # The harness's sandbox canary (#1024): answered, never counted as a role.
+    os.execv(sys.executable, [sys.executable, {fake!r}, *argv])
 if "--version" in argv:
     role = "version"
 elif "stream-json" in argv:

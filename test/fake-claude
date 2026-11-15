@@ -362,23 +362,44 @@ def main() -> int:
     # probe-ran-$((a+b))`, is answered in EVERY mode, as a held fence by
     # default (so tests of `main()` run), else per $FAKE_CLAUDE_PROBE: "leak" (the fence is down: the sentinel comes back),
     # "deny" (the fence held: cat fails, the echo runs), "skip" (the Bash
-    # command never ran), "error" (the CLI fails).
-    probe = re.search(r"cat (\S+) 2>&1; echo probe-ran-\$\(\((\d+)\+(\d+)\)\)",
+    # command never ran), "error" (the CLI fails), "echo" (a Bash call that only echoes the
+    # marker), "forged" (a good-looking result of another command), "nodenial" (the exact call, its output the marker alone), "typo" (another path), "once_<how>" (first launch only).
+    probe = re.search(r"\n(cat (\S+) 2>&1; echo probe-ran-\$\(\((\d+)\+(\d+)\)\))\s*$",
                       _flag_value("-p"))
     if probe:
         how = os.environ.get("FAKE_CLAUDE_PROBE", "deny")
+        state = os.environ.get("FAKE_CLAUDE_PROBE_STATE")
+        if how.startswith("once_"):
+            # The first launch behaves as `how` says, later ones as a held fence.
+            if state and Path(state).exists():
+                how = "deny"
+            else:
+                if state:
+                    Path(state).write_text("1", encoding="utf-8")
+                how = how[len("once_"):]
         if how == "error":
             print("fake-claude: simulated probe failure", file=sys.stderr)
             return 1
+        command, path = probe.group(1), probe.group(2)
+        marker = f"probe-ran-{int(probe.group(3)) + int(probe.group(4))}"
         out = ""
         if how == "leak":
-            out += _read_if_file(Path(probe.group(1)))
-        if how == "deny":
-            out += f"cat: {probe.group(1)}: Operation not permitted\n"
-        if how in ("leak", "deny"):
-            out += f"probe-ran-{int(probe.group(2)) + int(probe.group(3))}\n"
+            out += _read_if_file(Path(path))
+        if how in ("deny", "forged"):
+            out += f"cat: {path}: Operation not permitted\n"
+        if how == "typo":
+            # The denial names ANOTHER path, from a command that is not the probe's.
+            command = command.replace("sentinel.txt", "sentinel.txt.bak")
+            out += f"cat: {path}.bak: No such file or directory\n"
+        # "echo": only the marker, the read never attempted (no denial line).
+        if how in ("leak", "deny", "forged", "echo", "typo", "nodenial"):
+            out += marker + "\n"
         events = [{"type": "system", "subtype": "init"}]
         if how != "skip":
+            events.append({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "t1", "name": "Bash",
+                 "input": {"command": (f"echo {marker}" if how == "echo"
+                           else "echo forged" if how == "forged" else command)}}]}})
             events.append({"type": "user", "message": {"content": [
                 {"type": "tool_result", "tool_use_id": "t1", "content": out}]}})
         events.append({"type": "result", "is_error": False, "result": out,

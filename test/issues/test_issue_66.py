@@ -174,6 +174,7 @@ def _child_env(tmp: Path, **extra: str) -> dict:
     mountinfo = tmp / "mountinfo"
     mountinfo.write_text("", encoding="utf-8")
     env = {"PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo),
+           run_eval.SANDBOX_PROBE_SKIP_ENV: "1",
            "HOME": str(home),
            "TMPDIR": str(scratch), "LANG": "C.UTF-8",
            "PYTHONDONTWRITEBYTECODE": "1",

@@ -2259,42 +2259,106 @@ def _sandbox_unavailable_detail(stderr: str) -> str | None:
 # before the first agent arm: a one-turn probe with the arm's own isolation
 # flags runs `cat` on a sentinel under a `denyRead` path. A sentinel that comes
 # back, or a probe that cannot tell, fails every arm `sandbox_unavailable`.
+# The probe checks the HOST's sandbox once per process; each arm still passes
+# its own `--settings`, which the probe does not re-check.
 SANDBOX_PROBE_MODEL = "haiku"
-# Set by `main()` in a hosted session: a direct `run_agent` call (a test's)
-# launches no probe.
+# TEST-ONLY: `main()` skips the probe when this variable is "1" (test/conftest.py
+# sets it, so a test's scripted fake CLI keeps its call count). No production
+# path sets it, and the arm's allowlisted environment never carries it.
+SANDBOX_PROBE_SKIP_ENV = "SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"
+# Set by `main()`: a direct `run_agent` call (a test's) launches no probe.
 _SANDBOX_PROBE_REQUIRED = False
 # None until the probe has run, then ("" if the fence held, else the detail).
 _SANDBOX_PROBE_VERDICT: str | None = None
+_SANDBOX_NOT_ENFORCING = "sandbox not enforcing: "
+_SANDBOX_PROBE_ATTEMPTS = 2
 
 
-def _tool_result_texts(node) -> list[str]:
-    """The text of every `tool_result` block anywhere in a CLI JSON result."""
-    texts: list[str] = []
+def _walk_blocks(node):
+    """Every dict nested anywhere in a CLI JSON result."""
     if isinstance(node, list):
         for item in node:
-            texts += _tool_result_texts(item)
+            yield from _walk_blocks(item)
     elif isinstance(node, dict):
-        if node.get("type") == "tool_result":
-            content = node.get("content")
-            if isinstance(content, str):
-                texts.append(content)
-            elif isinstance(content, list):
-                texts += [part["text"] for part in content
-                          if isinstance(part, dict) and isinstance(part.get("text"), str)]
-        else:
-            for value in node.values():
-                texts += _tool_result_texts(value)
-    return texts
+        yield node
+        for value in node.values():
+            yield from _walk_blocks(value)
+
+
+def _block_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(part["text"] for part in content
+                         if isinstance(part, dict) and isinstance(part.get("text"), str))
+    return ""
+
+
+def _probe_outcomes(decoded, command: str) -> tuple[list[str], list[str]]:
+    """(every tool_result text, the texts answering a Bash `tool_use` whose
+    input is exactly `command`)."""
+    ids = {block.get("id") for block in _walk_blocks(decoded)
+           if block.get("type") == "tool_use" and block.get("name") == "Bash"
+           and isinstance(block.get("input"), dict)
+           and block["input"].get("command") == command
+           and isinstance(block.get("id"), str)}
+    every, matched = [], []
+    for block in _walk_blocks(decoded):
+        if block.get("type") == "tool_result":
+            text = _block_text(block.get("content"))
+            every.append(text)
+            if block.get("tool_use_id") in ids:
+                matched.append(text)
+    return every, matched
+
+
+def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
+                cwd: Path, env: dict, timeout: int) -> tuple[str, str]:
+    """One canary launch: ("held", ""), ("leak", why) or ("unproven", why)."""
+    prompt = ("Call the Bash tool exactly once with this command and then "
+              f"reply with only its output, nothing else:\n{command}")
+    cmd = [run_canary.cli_bin(), "-p", prompt, "--output-format", "json",
+           "--verbose", "--permission-mode", "auto",
+           "--setting-sources", "project", *flags, "--strict-mcp-config",
+           "--no-session-persistence", "--model", SANDBOX_PROBE_MODEL,
+           "--max-turns", "3"]
+    try:
+        result = _run_in_own_session(cmd, cwd=cwd, capture_output=True,
+                                     text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return "unproven", f"sandbox probe timed out after {timeout}s; the fence is unproven"
+    except OSError as exc:
+        return "unproven", (f"sandbox probe could not start ({type(exc).__name__}); "
+                            "the fence is unproven")
+    down = _sandbox_unavailable_detail(result.stderr)
+    if down is not None:
+        return "held", down  # the CLI refused: handled by the caller
+    try:
+        every, matched = _probe_outcomes(json.loads(result.stdout), command)
+    except ValueError:
+        every, matched = [], []
+    if any(token in text for text in every):
+        return "leak", (_SANDBOX_NOT_ENFORCING + "a Bash command read a file under "
+                        "filesystem.denyRead (hosted Claude Code sessions start "
+                        "without a command sandbox, CLI 2.1.325)")
+    if any(marker in text and f"cat: {sentinel}:" in text for text in matched):
+        return "held", ""
+    return "unproven", (f"sandbox probe inconclusive (CLI exit {result.returncode}; "
+                        "no exact probe Bash call showed the denied read); the "
+                        "fence is unproven")
 
 
 def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
     """Run the sandbox canary; return "" if the read fence held, else why not.
 
     The sentinel lies under HOME, which `arm_sandbox_settings` denies to
-    reads. The model is told to `cat` it and then echo a computed marker, so
-    "the command ran and the fence blocked it" (marker, no sentinel) differs
-    from "the command never ran" (neither), which cannot prove anything and
-    fails closed too.
+    reads. The model must call Bash with exactly the probe command: `cat` of
+    the sentinel, then an `echo` of a computed marker. The fence held only if
+    THAT call's result shows the marker and the read's denial message and not
+    the sentinel; a sentinel is a leak, anything else (the command never ran,
+    an echo alone, another path) is unproven and fails closed. An unproven
+    probe is retried once, a leak never is, and a leak's detail starts
+    `sandbox not enforcing` so the owner can tell it from a flake.
     """
     token = "sentinel-" + os.urandom(12).hex()
     left, right = os.urandom(1)[0] + 1, os.urandom(1)[0] + 1
@@ -2311,36 +2375,15 @@ def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
         for name in ARM_DROPPED_ENV:
             env.pop(name, None)
         command = f"cat {sentinel} 2>&1; echo probe-ran-$(({left}+{right}))"
-        prompt = ("Call the Bash tool exactly once with this command and then "
-                  f"reply with only its output, nothing else:\n{command}")
-        cmd = [run_canary.cli_bin(), "-p", prompt, "--output-format", "json",
-               "--verbose", "--permission-mode", "auto",
-               "--setting-sources", "project", *flags, "--strict-mcp-config",
-               "--no-session-persistence", "--model", SANDBOX_PROBE_MODEL,
-               "--max-turns", "3"]
-        try:
-            result = _run_in_own_session(cmd, cwd=cwd, capture_output=True,
-                                         text=True, timeout=timeout, env=env)
-        except subprocess.TimeoutExpired:
-            return f"sandbox probe timed out after {timeout}s; the fence is unproven"
-        except OSError as exc:
-            return (f"sandbox probe could not start ({type(exc).__name__}); "
-                    "the fence is unproven")
-        down = _sandbox_unavailable_detail(result.stderr)
-        if down is not None:
-            return down
-        try:
-            texts = _tool_result_texts(json.loads(result.stdout))
-        except ValueError:
-            texts = []
-        if any(token in text for text in texts):
-            return ("sandbox not enforcing: a Bash command read a file under "
-                    "filesystem.denyRead (hosted Claude Code sessions start "
-                    "without a command sandbox, CLI 2.1.325)")
-        if any(marker in text for text in texts):
-            return ""
-        return (f"sandbox probe inconclusive (CLI exit {result.returncode}, its "
-                "Bash command did not run); the fence is unproven")
+        detail = ""
+        for _ in range(_SANDBOX_PROBE_ATTEMPTS):
+            verdict, detail = _probe_once(command, token, marker, sentinel,
+                                          flags, cwd, env, timeout)
+            if verdict == "held" and detail:
+                return detail  # the CLI's own refusal line
+            if verdict != "unproven":
+                return "" if verdict == "held" else detail
+        return detail
     finally:
         shutil.rmtree(holder, ignore_errors=True)
         shutil.rmtree(cwd, ignore_errors=True)
@@ -8498,11 +8541,11 @@ def _exiting_on_signals(run):
 @_ending_the_run
 def main() -> int:
     global _SANDBOX_PROBE_REQUIRED
-    # In a hosted session (`CLAUDE_CODE_REMOTE=true`, which a routine is) the
-    # CLI no longer refuses a missing sandbox, so every agent arm of the run
-    # waits on the canary (`probe_arm_sandbox`). Elsewhere the CLI's own
-    # refusal, matched by `_SANDBOX_DOWN_LINE`, still decides.
-    _SANDBOX_PROBE_REQUIRED = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+    # Every run proves the sandbox before its first agent arm (see
+    # `probe_arm_sandbox`), whatever the environment says about hosting:
+    # improve and guidance runs strip CLAUDE_* from their children. Only a
+    # test sets the skip variable.
+    _SANDBOX_PROBE_REQUIRED = os.environ.get(SANDBOX_PROBE_SKIP_ENV) != "1"
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
     # Deliberately NOT an argparse `choices=` list any more: a guidance
