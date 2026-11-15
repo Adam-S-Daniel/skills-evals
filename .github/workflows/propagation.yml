@@ -55,6 +55,8 @@ on:
       - "skills.lock"
       - "harness/**"
       - "scripts/eval_coverage.py"
+      - "scripts/eval_scope.py"
+      - "scripts/stakes.py"
       - "scripts/install_claude_code.sh"
       - "test/test_propagation.py"
       - "evals/propagation/**"
