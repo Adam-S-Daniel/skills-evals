@@ -1,0 +1,189 @@
+name: Count target arrivals
+
+# Counts the git hooks, skills and guidance sections added and removed each
+# ISO week from their source repositories' git history
+# (scripts/target_arrivals.py, sources in evals/target-sources.yml and
+# harness/registries.yml), and publishes arrivals/targets.json on
+# persistent/eval-results for scripts/forecast_catch_up.py `--arrivals`.
+# Adam, 2026-11-15: the arrival rate must come from data, never a hand count.
+#
+# * Triggers: daily and by hand. No pull_request or push trigger, so no path
+#   filter applies; not a required check.
+# * Two jobs so the write token never meets the code that reads the
+#   histories: `build` (contents: read) clones each source repository with
+#   full history and no blobs (`--filter=blob:none --no-checkout`), runs the
+#   script and uploads one file; `publish` (the only `contents: write`)
+#   checks out nothing from main, puts that file on the results branch and
+#   pushes.
+# * The private registry is cloned only with the read-only registry App token
+#   (contents: read on adam-agentskills-private), in a step that holds it
+#   alone, and only its trees are read; the document carries its counts with
+#   no names. Without the App, or on any failed clone, the source reads
+#   unreadable and its kind's rates are null (unknown), never an undercount.
+#   Every clone step prints only a fixed line with the repository name.
+# * Writes go only to `persistent/eval-results`, never to main. Nothing from
+#   the event is interpolated into a `run:` block.
+
+on:
+  schedule:
+    - cron: "23 10 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: target-arrivals
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      # Tree-sitter parses the fleet hook runner, as explorer-data.yml does.
+      - name: Install the pinned parsers
+        run: python3 -m pip install pyyaml==6.0.3 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
+
+      - name: Check out the usage census (data only)
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+          sparse-checkout: usage
+
+      - name: Mint the read-only token for the private registry
+        id: private-token
+        if: vars.REGISTRY_READ_APP_CLIENT_ID != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+
+      - name: Clone the source repositories (full history, no blobs)
+        env:
+          PRIVATE_READ_TOKEN: ${{ steps.private-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/checkouts"
+          python3 scripts/target_arrivals.py repos --config evals/target-sources.yml \
+            > "$RUNNER_TEMP/repos.tsv" || { echo "::error::the source list is unreadable"; exit 1; }
+          while IFS=$'\t' read -r repo visibility; do
+            dest="$RUNNER_TEMP/checkouts/${repo/\//__}"
+            args=(clone --quiet --filter=blob:none --no-checkout "https://github.com/${repo}.git" "$dest")
+            if [ "$visibility" = "private" ]; then
+              if [ -z "$PRIVATE_READ_TOKEN" ]; then
+                echo "::warning::no token for ${repo}; its counts are unknown"
+                continue
+              fi
+              auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PRIVATE_READ_TOKEN" | base64 -w0)"
+              args=(-c "http.https://github.com/.extraheader=$auth" "${args[@]}")
+            fi
+            if GIT_TERMINAL_PROMPT=0 git "${args[@]}" >/dev/null 2>&1; then
+              echo "cloned ${repo}"
+            else
+              echo "::warning::could not clone ${repo}; its counts are unknown"
+              rm -rf "$dest"
+            fi
+          done < "$RUNNER_TEMP/repos.tsv"
+
+      - name: Count additions and removals per week
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          usage=()
+          if [ -f eval-results/usage/weekly-local.json ]; then
+            usage=(--usage eval-results/usage/weekly-local.json)
+          fi
+          python3 scripts/target_arrivals.py build --config evals/target-sources.yml \
+            --checkouts "$RUNNER_TEMP/checkouts" --as-of "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "${usage[@]}" --out "$RUNNER_TEMP/out/targets.json"
+
+      - name: Upload the document
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: target-arrivals
+          path: ${{ runner.temp }}/out/targets.json
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Download the document
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: target-arrivals
+          path: ${{ runner.temp }}/arrivals/
+
+      - name: Commit to persistent/eval-results and push
+        working-directory: eval-results
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          new="$RUNNER_TEMP/arrivals/targets.json"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          refspec="+refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results"
+          strip='del(.generated_at)'
+          for attempt in 1 2 3 4 5 6; do
+            # Other publishers push this branch every minute or two.
+            if [ "$attempt" -gt 1 ]; then
+              sleep $(( (1 << attempt) + RANDOM % 5 ))
+            fi
+            git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags origin "$refspec"
+            git reset -q --hard refs/remotes/origin/persistent/eval-results
+            if [ -f arrivals/targets.json ] \
+                && [ "$(jq -S "$strip" arrivals/targets.json)" = "$(jq -S "$strip" "$new")" ]; then
+              echo "arrivals/targets.json is current; nothing to commit"
+              exit 0
+            fi
+            mkdir -p arrivals
+            cp "$new" arrivals/targets.json
+            git add -- arrivals/targets.json
+            git \
+              -c user.name="skills-evals arrivals bot" \
+              -c user.email="skills-evals@users.noreply.github.com" \
+              commit -q -m "arrivals: refresh arrivals/targets.json [skip ci]"
+            commit="$(git rev-parse HEAD)"
+            if git -c "http.https://github.com/.extraheader=$auth" \
+                 push origin HEAD:refs/heads/persistent/eval-results; then
+              git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags origin "$refspec"
+              if git merge-base --is-ancestor "$commit" refs/remotes/origin/persistent/eval-results; then
+                echo "published arrivals/targets.json as ${commit}"
+                exit 0
+              fi
+              echo "::error::the push reported success but ${commit} is not on persistent/eval-results"
+              exit 1
+            fi
+            echo "push attempt ${attempt} was rejected; rebuilding on the new tip"
+          done
+          echo "::error::could not push to persistent/eval-results after 6 attempts"
+          exit 1
