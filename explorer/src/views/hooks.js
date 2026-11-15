@@ -15,7 +15,7 @@ const weeksOf = (w) => (Number.isInteger(w.weeks) && w.weeks > 0 ? w.weeks : nul
 /* The Runs cell: the counted (local and cloud) runs. CI never records how
    often a check ran, for any check, so the column header says so once
    rather than only on the rows that happen to have a red CI run. */
-function runsCell(it) {
+export function runsCell(it) {
   if (it.runs !== null) return fmtCount(it.runs);
   if (it.runsCounted) return fmtCount(it.runsCounted);
   return h('span', { class: 'muted' }, STRINGS.runsNotCounted);

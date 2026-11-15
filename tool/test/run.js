@@ -1080,6 +1080,8 @@ test('the git hook table never shows a run count below its block count, and says
   ok(t.includes('not counted'), 'unknown runs are said to be not counted');
   ok(!/pr-tldr\s*Fleet template\s*0\b/.test(t), 'pr-tldr is not shown with 0 runs');
   ok(t.includes('no check\'s CI runs are counted'), 'the note says CI runs are never counted, for any check');
+  const imp = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'spend', id: null }, {})));
+  ok(/mixed-ci\s*25\b/.test(imp), 'the impact page shows the same counted runs as the hooks table: ' + imp);
 });
 test('the git hook verdicts say never blocked and never ran, not never fires', () => {
   const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));

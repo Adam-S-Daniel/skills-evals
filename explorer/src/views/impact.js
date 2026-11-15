@@ -5,7 +5,7 @@ import { clean, parseTime, fmtUtcDay, fmtDay, fmtDayKey, fmtWeekStart, fmtDateTi
 import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
-import { cloudNote } from './hooks.js';
+import { cloudNote, runsCell } from './hooks.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, navLink, timesLine, srcLineFor, fold } from './bits.js';
 import { VERDICT_CHIPS } from '../core/stats.js';
@@ -54,7 +54,7 @@ function checkUseView(doc) {
   if (!items.length) return null;
   return table([
     { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor('hooks', it.name), clean(it.name)) },
-    { label: STRINGS.colRuns, num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: (it) => (it.runs !== null ? fmtCount(it.runs) : STRINGS.runsNotCounted) },
+    { label: STRINGS.colRunsWindow(null), num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: runsCell },
     { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => fmtCount(it.blocked || 0) }
   ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
 }
