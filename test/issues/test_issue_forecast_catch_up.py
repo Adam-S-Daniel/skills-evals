@@ -141,6 +141,19 @@ class Forecast(unittest.TestCase):
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
         self.assertEqual(doc["inputs"]["automatic_unmeasured_jobs"], 1)
 
+    def test_loop_jobs_spend_from_the_eval_cap(self):
+        # Adam, 2026-11-15: the loop's automatic jobs fit in the same 25 points.
+        automatic = {"loop_meter_usd_per_week": 15 / 0.15,
+                     "categories": [{"label": "Dashboard", "meter_usd_per_week": 15 / 0.15}]}
+        for given, cap in [({}, 10.0), ({"loop_jobs_in_cap": 0.0}, 25.0)]:
+            with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                    mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+                doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                                  {"fire_overhead_usd": 0.0, **given},
+                                  frozenset({"skipped-one"}), None, automatic)
+            self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], cap)
+            self.assertAlmostEqual(doc["inputs"]["loop_jobs_points_per_week"], 15.0)
+
     def test_given_non_eval_points_win_over_the_breakdown(self):
         automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 3.0}]}
         with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \

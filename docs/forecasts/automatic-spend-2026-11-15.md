@@ -126,3 +126,21 @@ asked that costs come only from fires on each task's current model.
 
 Run: `automatic_spend.py` with a second `--triggers` dump that adds each
 task's `model` and `updated_at` (list_triggers, 1:15 PM ET).
+
+## The loop's jobs inside the 25% (1:20 PM ET)
+
+Adam (1:10 PM ET): every automated part of the continuous improvement system
+fits in the 25%. `forecast_catch_up.py` now takes the in-loop jobs' points
+off the eval cap (`loop_jobs_in_cap`, on by default;
+`--set loop_jobs_in_cap=0` turns it off).
+
+| In-loop jobs (points/wk) | Eval room | Catch-up, cap only | With API credit |
+|---|---|---|---|
+| 21.5 (today) | 3.5 | never | never |
+| 13.3 | 11.7 | never | Sep 2027 |
+| 8 | 17 | 2034 | Jan 19, 2027 |
+| 4 | 21 | Feb 26, 2027 | Dec 26, 2026 |
+
+Keep-up alone costs $119 a week (2 new fixtures a week), about 17 points.
+Run: [`forecast-2026-11-15-loop-in-cap.json`](forecast-2026-11-15-loop-in-cap.json);
+the other rows set `loop_meter_usd_per_week` by hand to show trims.

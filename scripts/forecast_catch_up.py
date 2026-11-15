@@ -97,6 +97,9 @@ ASSUMPTION_KEYS = {
                                        "account stop it can cap the eval points; default when both "
                                        "--automatic-spend and interactive_points_per_week are given: "
                                        "their sum"),
+    "loop_jobs_in_cap": (True, "the continuous improvement system's own automatic jobs "
+                               "(--automatic-spend, in_loop) spend from the same weekly cap "
+                               "as evals (Adam, 2026-11-15), so evals get the cap less them"),
     "eval_points_per_hour": (None, "meter points an hour evals spend from the weekly reset until "
                                    "the cap; when set, evals run first in the week and the account "
                                    "stop binds only on other use that accrues meanwhile"),
@@ -399,6 +402,13 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             breakdown["Interactive threads and local sessions"] = a["interactive_points_per_week"]
             if a["non_eval_points_per_week"] is None:
                 a["non_eval_points_per_week"] = sum(breakdown.values())
+    # The loop's own automatic jobs share the cap with evals (Adam,
+    # 2026-11-15: all automated parts of the system fit in the 25%).
+    loop_points = None
+    if automatic is not None and automatic.get("loop_meter_usd_per_week") is not None:
+        loop_points = automatic["loop_meter_usd_per_week"] / ((low_rate + high_rate) / 2)
+        if a["loop_jobs_in_cap"]:
+            cap_points = max(0.0, cap_points - loop_points)
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
@@ -504,6 +514,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,
             "assumptions": a, "batch_rates": rates,
             "non_eval_points_breakdown": breakdown,
+            "loop_jobs_points_per_week": loop_points,
             "measured_non_eval": measured_non_eval,
             "owner_squeeze": squeeze,
             "automatic_spend_as_of": (automatic or {}).get("as_of"),
