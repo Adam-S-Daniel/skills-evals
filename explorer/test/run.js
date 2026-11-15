@@ -263,12 +263,13 @@ await test('the allowance and routine health come from their datasets', () => {
   eq(Math.round(cap.reservation * 1000) / 1000, 1.2);
   eq(capUse(null, []), null);
   const rh = routineHealth([{ health: 'OK' }, { health: 'Stalled' }, { health: 'Not run yet' }]);
-  eq(JSON.stringify(rh), '{"active":3,"ok":1,"fresh":1,"attention":1}');
+  eq(JSON.stringify(rh), '{"active":3,"ok":1,"fresh":1,"attention":1,"due":2}');
   // Every shape of mix: healthy, not run yet and needing a look always add up to the rows the table lists.
   for (const mix of [[], ['OK'], ['Not run yet'], ['OK', 'Late', 'Not run yet', 'Failing', 'Paused', 'Check', 'Not run yet']]) {
     const r = routineHealth(mix.map((health) => ({ health })));
     eq(r.ok + r.fresh + r.attention, r.active, mix.join(','));
     eq(r.active, mix.length);
+    eq(r.due, r.ok + r.attention, 'on time counts only routines with a run due: ' + mix.join(','));
   }
 });
 await test('the private build has six groups, Needs you second, and speaks to "you"', () => {
@@ -589,7 +590,7 @@ await test('the committed private page script runs and answers like the readable
   vm.runInNewContext(scripts[0], sandbox, { filename: 'dashboard-page.js' });
   const shipped = sandbox.module.exports;
   eq(Object.keys(shipped).sort().join(','), Object.keys(exportsOf(privateJs)).sort().join(','), 'the same exports');
-  eq(JSON.stringify(shipped.routineHealth([{ health: 'OK' }, { health: 'Late' }, { health: 'Not run yet' }])), '{"active":3,"ok":1,"fresh":1,"attention":1}');
+  eq(JSON.stringify(shipped.routineHealth([{ health: 'OK' }, { health: 'Late' }, { health: 'Not run yet' }])), '{"active":3,"ok":1,"fresh":1,"attention":1,"due":2}');
   eq(shipped.staleHours(Date.parse('2026-11-12T01:00:00Z'), Date.parse('2026-11-12T20:00:00Z'), 12), 19);
   eq(shipped.staleHours(Date.parse('2026-11-12T01:00:00Z'), Date.parse('2026-11-12T20:00:00Z'), 24), null);
 });
@@ -915,6 +916,17 @@ const needsDash = (extra) => fakeDash(Object.assign({ eval_allowance: SNAP_OK(),
 const needsPage = (dash, d) => renderRoute(d || doc({ newest_run: '2026-11-12T15:00:00Z', generated_at: '2026-11-12T19:00:00Z' }), { name: 'needs', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
 const flat = (node) => textOf(node).replace(/\s+/g, ' ');
 
+await test('a routine that has not run yet is left out of the on-time count, not counted as late', () => {
+  const t = flat(needsPage(needsDash({ routines: okData([routine('R1', 'OK'), routine('R2', 'OK'), routine('R3', 'Not run yet')]) })));
+  ok(t.includes('Loop healthy:'), t);
+  ok(t.includes('2 of 2 routines on time (1 not run yet)'), t);
+  ok(!t.includes('2 of 3'), t);
+  ok(t.includes('2 of 2 routines healthy; 0 late, failing or to check; 1 not run yet, so on time does not apply.'), t);
+  const late = flat(needsPage(needsDash({ routines: okData([routine('R1', 'OK'), routine('R2', 'Late'), routine('R3', 'Not run yet')]) })));
+  ok(late.includes('1 of 2 routines late, failing or to check (1 not run yet)'), late);
+  const none = flat(needsPage(needsDash({ routines: okData([routine('R1', 'Not run yet')]) })));
+  ok(none.includes('no routine due yet (1 not run yet)'), none);
+});
 await test('R3 recommendation 3: with nothing waiting and every routine on time, Needs you says so, in order, and folds the healthy routines', () => {
   const node = needsPage(needsDash());
   const t = flat(node);
@@ -1217,7 +1229,7 @@ await test('recommendation 19: every route of the old six groups still opens a p
 await test('the routine line counts every row of the routine table: healthy, not run yet and needing a look add up', () => {
   const dash = fakeDash({ routines: okData([routine('A', 'OK'), routine('B', 'Not run yet'), routine('C', 'Late')]), eval_allowance: SNAP_OK(), budget: BUDGET });
   const node = needsPage(dash);
-  ok(flat(node).includes('1 of 3 routines healthy; 1 late, failing or to check; 1 not run yet.'), flat(node));
+  ok(flat(node).includes('1 of 2 routines healthy; 1 late, failing or to check; 1 not run yet, so on time does not apply.'), flat(node));
   const sec = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Routine health'))[0];
   eq(findAll(sec, (n) => n.tag === 'tbody').reduce((t, b) => t + findAll(b, (n) => n.tag === 'tr').length, 0), 3, 'the table lists all three');
   ok(!flat(needsPage(needsDash())).includes('not run yet'), 'no clause when none');
