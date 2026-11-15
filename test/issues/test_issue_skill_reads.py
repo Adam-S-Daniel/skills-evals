@@ -107,7 +107,14 @@ class SkillReadsTests(unittest.TestCase):
                         f"cat a > {INSTALLED}",
                         f"curl https://example.com/o/r/main/.claude/skills/{SKILL}/SKILL.md",
                         f"cat ./.claude/skills/{SKILL}/SKILL.md",
-                        f"cat {home}/README.md"):
+                        f"cat {home}/README.md",
+                        # Second review: heredoc body lines, write flags, a grep pattern.
+                        f"cat > /tmp/x <<'EOF'\ncat {INSTALLED}\nEOF",
+                        f"git commit -F - <<'EOF'\nfix\n{INSTALLED}\nEOF",
+                        f"sed -Ei s/a/b/ {INSTALLED}", f"sed --in-place=.bak s/a/b/ {INSTALLED}",
+                        f"perl -pi -e s/a/b/ {INSTALLED}", f"grep '{INSTALLED}' notes.txt",
+                        f"find {home}/{SKILL} -delete", f"cat {home}/{SKILL}/../../../etc/hosts",
+                        f"cat {home}/synced"):
             with self.subTest(command=command):
                 self.assertEqual(self.names(tool("Bash", command=command)), [])
         # Controls: a reading program, a pipeline, a skill script run.
@@ -116,6 +123,14 @@ class SkillReadsTests(unittest.TestCase):
         self.assertEqual(self.names(tool(
             "Bash", command=f"cd /tmp && python3 {home}/{SKILL}/scripts/x.py arg")),
             [(SKILL, False)])
+
+    def test_an_apostrophe_in_a_heredoc_does_not_hide_an_earlier_read(self):
+        command = f"cat {INSTALLED} && cat > f <<EOF\ndon't\nEOF"
+        self.assertEqual(self.names(tool("Bash", command=command)), [(SKILL, False)])
+        for command in (f"env A=1 cat {INSTALLED}", f"find ~/.claude/skills/{SKILL} -name '*.md'",
+                        f"grep -rn foo ~/.claude/skills/{SKILL}"):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(tool("Bash", command=command)), [(SKILL, False)])
 
     def test_an_account_synced_copy_is_keyed_by_its_own_name(self):
         synced = f"/home/example/.claude/skills/synced/{SKILL}/SKILL.md"
