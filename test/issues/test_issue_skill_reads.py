@@ -95,6 +95,37 @@ class SkillReadsTests(unittest.TestCase):
         self.assertEqual(self.names(tool("Glob", pattern="~/.claude/skills/*/SKILL.md")), [])
 
 
+    def test_a_command_that_only_mentions_writes_or_fetches_a_copy_is_not_a_read(self):
+        # Review findings, 2026-11-15: each of these counted before.
+        home = "~/.claude/skills"
+        for command in (f"git commit -m 'fix {home}/{SKILL}/SKILL.md'",
+                        f"echo {INSTALLED}",
+                        f"cat > /tmp/x <<'EOF'\nsee {INSTALLED}\nEOF",
+                        f'mkdir -p "$ws/.claude/skills/{SKILL}" && cp -r a {home}/{SKILL}',
+                        f"rm -rf {home}/{SKILL}",
+                        f"sed -i s/a/b/ {INSTALLED}",
+                        f"cat a > {INSTALLED}",
+                        f"curl https://example.com/o/r/main/.claude/skills/{SKILL}/SKILL.md",
+                        f"cat ./.claude/skills/{SKILL}/SKILL.md",
+                        f"cat {home}/README.md"):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(tool("Bash", command=command)), [])
+        # Controls: a reading program, a pipeline, a skill script run.
+        self.assertEqual(self.names(tool("Bash", command=f"cat {INSTALLED} | head -5")),
+                         [(SKILL, False)])
+        self.assertEqual(self.names(tool(
+            "Bash", command=f"cd /tmp && python3 {home}/{SKILL}/scripts/x.py arg")),
+            [(SKILL, False)])
+
+    def test_an_account_synced_copy_is_keyed_by_its_own_name(self):
+        synced = f"/home/example/.claude/skills/synced/{SKILL}/SKILL.md"
+        self.assertEqual(self.names(read(synced)), [(SKILL, False)])
+
+    def test_a_malformed_tool_name_is_no_read_and_no_crash(self):
+        item = read()
+        item["message"]["content"][0]["name"] = ["Read"]
+        self.assertEqual(self.names(item), [])
+
 class LocalReadTests(unittest.TestCase):
 
     def setUp(self):

@@ -73,11 +73,16 @@ trigger a commit.
   name resolves by the public allowlist alone.
 - **Read uses (`skill-read` rows).** A session that reads `SKILL.md`, or any
   other file inside an installed copy of a skill, used it even with no Skill
-  call (Adam, 2026-11-15). A `Read`, `Grep`, `Glob`, `NotebookRead` or `Bash`
-  call whose path or command points into `.claude/skills/<name>` (user skills,
-  the bootstrap's project copies) or `.claude/plugins/.../skills/<name>` (the
-  plugin cache, a marketplace clone) is a read use of `<name>`, keyed as a
-  Skill call is. A registry checkout (`.../adam-agentskills/plugins/<p>/skills/<name>/`)
+  call (Adam, 2026-11-15). A `Read`, `Grep`, `Glob` or `NotebookRead` of an
+  absolute path into `.claude/skills/<name>` (user skills, the bootstrap's
+  project copies; `skills/synced/<name>` keys `<name>`) or
+  `.claude/plugins/.../skills/<name>` (the plugin cache, a marketplace clone)
+  is a read use of `<name>`, keyed as a Skill call is. In a `Bash` command only
+  the arguments of a program that reads files (`cat`, `head`, `grep`, `ls`,
+  `sed` without `-i` and the like) or runs a script (`python3`, `bash`, `node`
+  and the like), or a skill script run directly, count: a path a command
+  writes, copies, deletes, fetches or merely mentions (a commit message, an
+  `echo`, a heredoc) does not, and neither does a relative path. A registry checkout (`.../adam-agentskills/plugins/<p>/skills/<name>/`)
   is maintenance and never counts. At most one read use per session and skill,
   in the week of the first read, and none when that session (its `sessionId`,
   subagent transcripts included) also called or typed the skill: the call

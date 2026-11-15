@@ -169,6 +169,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -433,41 +434,105 @@ def skill_key(raw, allowlist: frozenset[str],
 
 
 # --- Read uses (Adam, 2026-11-15) -------------------------------------------
-# A tool call that reads an installed copy of a skill is a use of it. Either
-# separator, since Windows transcripts are read too; a name ends where the
-# directory-name characters end, so `~/.claude/skills/<name>` with no trailing
-# slash (a Glob or `ls` of the directory) counts as well.
-_READ_NAME = r"([A-Za-z0-9][A-Za-z0-9._-]{0,127})(?![A-Za-z0-9._-])"
-_USER_SKILL_RE = re.compile(r"[/\\]\.claude[/\\]skills[/\\]" + _READ_NAME)
-#: A plugin copy: the cache (`plugins/cache/<marketplace>/<plugin>/<version>/`)
-#: or a marketplace clone (`plugins/marketplaces/<marketplace>/plugins/<plugin>/`),
-#: then `skills/<name>`. The segments between are captured for the private check.
-_PLUGIN_SKILL_RE = re.compile(
-    r"[/\\]\.claude[/\\]plugins[/\\]((?:[^\s/\\\"'`]+[/\\])*?)skills[/\\]" + _READ_NAME)
-#: The input fields each reading tool names a path in. Bash's command is
-#: scanned whole: a path can sit anywhere in it.
+# A tool call that reads an installed copy of a skill is a use of it: a Read,
+# NotebookRead, Grep or Glob of a path in the copy, or a Bash command whose
+# program only reads files (or runs a script) and whose argument is such a
+# path. Only absolute paths count (`/`, `~/`, `$HOME/`, a drive letter), and
+# never one a command writes, copies, deletes, fetches or merely mentions: a
+# commit message, an echo, `cp -r`, `rm -rf` and a URL are not reads. Kept in
+# step with _agent-guidance's guidance-load-record.sh `read_targets`.
+_READ_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_ABS_PATH_RE = re.compile(r"(?:/|~/|\$HOME/|\$\{HOME\}/|[A-Za-z]:[/\\])")
+#: The input fields each reading tool names a path in.
 READ_FIELDS = {"Read": ("file_path",), "Grep": ("path",), "Glob": ("path", "pattern"),
-               "NotebookRead": ("notebook_path",), "Bash": ("command",)}
+               "NotebookRead": ("notebook_path",)}
+#: Programs whose path arguments a command reads (or runs, for a skill script).
+READ_PROGRAMS = frozenset({"cat", "head", "tail", "less", "more", "bat", "nl", "wc", "grep",
+                           "egrep", "fgrep", "rg", "ls", "tree", "stat", "file", "sed", "awk",
+                           "python", "python3", "bash", "sh", "node", "ruby", "perl"})
+_SHELL_SEPARATORS = frozenset(";&|\n()")
+MAX_READ_INPUT = 64 << 10
+
+
+def skill_copy(path: str) -> tuple[str, list[str]] | None:
+    """(skill directory name, the segments between `plugins/` and `skills/`)
+    for an absolute path inside an installed skill copy, else None. An
+    account-synced copy (`skills/synced/<name>`) is keyed by `<name>`; a
+    registry checkout never matches, having no `.claude/` before `skills/`."""
+    if not _ABS_PATH_RE.match(path):
+        return None
+    parts = re.split(r"[/\\]", path)
+    for i, part in enumerate(parts):
+        if part != ".claude":
+            continue
+        rest = parts[i + 1:]
+        if rest[:1] == ["skills"]:
+            between, tail = [], rest[1:]
+            if tail[:1] == ["synced"] and len(tail) > 1:
+                tail = tail[1:]
+        elif rest[:1] == ["plugins"] and "skills" in rest[1:]:
+            j = rest.index("skills", 1)
+            between, tail = rest[1:j], rest[j + 1:]
+        else:
+            continue
+        if tail and _READ_NAME_RE.fullmatch(tail[0]):
+            return tail[0], between
+        return None
+    return None
+
+
+def _bash_read_paths(command: str) -> list[str]:
+    """The path arguments of each simple command in `command` whose program
+    reads files (READ_PROGRAMS, or a path run directly); [] when it does not
+    tokenize. A `sed -i`, and a redirection target, are writes."""
+    lex = shlex.shlex(command[:MAX_READ_INPUT], posix=True, punctuation_chars=";&|<>()\n")
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
+    try:
+        tokens = list(lex)
+    except ValueError:
+        return []
+    paths, segment = [], []
+    for token in tokens + [";"]:
+        if token and set(token) <= _SHELL_SEPARATORS:
+            words = [w for w in segment if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w)]
+            if words[:1] == ["sudo"]:
+                words = words[1:]
+            if words:
+                program = re.split(r"[/\\]", words[0])[-1]
+                if skill_copy(words[0]) is not None:
+                    paths.append(words[0])
+                elif program in READ_PROGRAMS and not (
+                        program == "sed" and any(w.startswith("-i") or w == "--in-place"
+                                                 for w in words[1:])):
+                    paths += words[1:]
+            segment = []
+        elif token and set(token) <= set("<>"):
+            segment.append(token)
+        elif segment and segment[-1] in (">", ">>", "<>", ">|"):
+            segment.pop()              # a redirection target is written, not read
+        else:
+            segment.append(token)
+    return paths
 
 
 def skill_reads(item: dict, private: frozenset[str] = frozenset()) -> list[tuple[str, bool]]:
     """(skill directory name, whether a private plugin's copy) for each
-    installed skill copy a `tool_use` item's input points into; empty for
-    any other tool or input. A registry checkout never matches: it has no
-    `.claude/` segment before `skills/`."""
-    fields = READ_FIELDS.get(item.get("name"), ())
-    given = item.get("input")
-    if not fields or not isinstance(given, dict):
+    installed skill copy a `tool_use` item reads; empty for any other tool or
+    input."""
+    tool, given = item.get("name"), item.get("input")
+    if not isinstance(tool, str) or not isinstance(given, dict):
         return []
+    if tool == "Bash":
+        command = given.get("command")
+        candidates = _bash_read_paths(command) if isinstance(command, str) else []
+    else:
+        candidates = [given.get(f) for f in READ_FIELDS.get(tool, ())]
     found = []
-    for field in fields:
-        text = given.get(field)
-        if not isinstance(text, str):
-            continue
-        found += [(m.group(1), False) for m in _USER_SKILL_RE.finditer(text)]
-        for m in _PLUGIN_SKILL_RE.finditer(text):
-            segments = re.split(r"[/\\]", m.group(1))
-            found.append((m.group(2), any(seg in private for seg in segments)))
+    for path in candidates:
+        copy = skill_copy(path) if isinstance(path, str) else None
+        if copy is not None:
+            found.append((copy[0], any(seg in private for seg in copy[1])))
     return found
 
 

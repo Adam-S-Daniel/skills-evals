@@ -3460,6 +3460,12 @@
            "null"
           ]
          },
+         "reads": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
          "current_text_runs": {
           "type": [
            "integer",
