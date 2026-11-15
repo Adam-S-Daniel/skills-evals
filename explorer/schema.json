@@ -301,9 +301,59 @@
          "type": "null"
         }
        ]
+      },
+      "cloud": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "from": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "to": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "events_scanned": {
+           "anyOf": [
+            {
+             "type": "integer",
+             "minimum": 0
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "events_scanned",
+          "from",
+          "to"
+         ],
+         "additionalProperties": false
+        },
+        {
+         "type": "null"
+        }
+       ]
       }
      },
      "required": [
+      "cloud",
       "from",
       "sessions_scanned",
       "surface",

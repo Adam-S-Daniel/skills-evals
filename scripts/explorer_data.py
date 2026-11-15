@@ -1906,17 +1906,38 @@ def usage_counts(tree: Path) -> tuple:
     every week of the file summed, so a skill the census never saw is 0 while
     the file exists. ({}, None) without a readable file (unknown, not zero).
     The census already folds every non-public name into `other`; the caller
-    attaches a count only to a listed skill."""
+    attaches a count only to a listed skill.
+
+    A count adds the cloud uses too: the cloud `skill-digest` rows, one per
+    skill use a cloud session uploaded. The census counts a use seen both
+    locally and in the cloud once, as local, so the two never overlap (the
+    same sum `skill_usage` reads for removal). The window's `cloud` names the
+    cloud `skill-records` source ({from, to, events_scanned}), or is None when
+    the census has none (cloud uses not counted)."""
     doc = skill_usage.load(tree / "usage" / "weekly-local.json")
     if doc is None:
         return {}, None
     counts = {}
     for row in doc["rows"]:
-        if row["kind"] == "skill" and isinstance(row.get("invocations"), int):
-            counts[row["name"]] = counts.get(row["name"], 0) + row["invocations"]
+        if not isinstance(row.get("invocations"), int):
+            continue
+        if row["kind"] == "skill":
+            name = row["name"]
+        elif (row["kind"] == skill_usage.DIGEST_KIND
+              and row.get("surface") == skill_usage.SURFACE_CLOUD
+              and isinstance(row.get("name"), str)):
+            name = skill_usage.skill_basename(row["name"])
+        else:
+            continue
+        counts[name] = counts.get(name, 0) + row["invocations"]
     source = next((s for s in doc["sources"] if s.get("scope") == "transcripts"), {})
+    cloud = next((s for s in doc["sources"] if s.get("scope") == skill_usage.DIGEST_SCOPE
+                  and s.get("surface") == skill_usage.SURFACE_CLOUD), None)
     window = {"from": source.get("from"), "to": source.get("to"),
-              "sessions_scanned": source.get("sessions_scanned"), "surface": source.get("surface")}
+              "sessions_scanned": source.get("sessions_scanned"), "surface": source.get("surface"),
+              "cloud": None if cloud is None else {
+                  "from": cloud.get("from"), "to": cloud.get("to"),
+                  "events_scanned": cloud.get("events_scanned")}}
     return counts, window
 
 

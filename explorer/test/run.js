@@ -1743,6 +1743,14 @@ await test('a calendar day shows as its US Eastern day, and a census window edge
   const skills = flat(renderRoute(doc({ generated_at: '2026-11-12T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage: { from: '2026-09-21T00:00:00Z', to: '2026-11-10T17:37:15Z' } }), { name: 'skills', id: null }, {}));
   ok(skills.includes('Sep 21') && skills.includes(STRINGS.utcNote), 'the census window edges are UTC days, and the page says so: ' + skills.slice(0, 400));
 });
+await test('the skills page says cloud sessions are counted, and from when, once the census counts them', () => {
+  const page = (usage) => flat(renderRoute(doc({ generated_at: '2026-11-15T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage }), { name: 'skills', id: null }, {}));
+  const local = { from: '2026-09-21T00:00:00Z', to: '2026-11-14T17:37:16Z', sessions_scanned: 40, surface: 'local' };
+  const without = page(Object.assign({}, local, { cloud: null }));
+  ok(without.includes('not counted yet'), without.slice(0, 600));
+  const withCloud = page(Object.assign({}, local, { cloud: { from: '2026-11-02T00:00:00Z', to: '2026-11-14T17:37:16Z', events_scanned: 5 } }));
+  ok(!withCloud.includes('not counted yet') && withCloud.includes('cloud sessions have recorded since Nov 2') && withCloud.includes('cloud sessions counted from Nov 2'), withCloud.slice(0, 600));
+});
 await test('a bare HH:MM UTC in a routine schedule becomes Eastern time, by the offset of the day', () => {
   eq(etSchedule('Daily at 17:00 UTC', Date.parse('2026-11-12T00:00:00Z')), 'Daily at 12:00 PM ET');
   eq(etSchedule('Daily at 17:00 UTC', Date.parse('2026-07-01T00:00:00Z')), 'Daily at 1:00 PM ET');
