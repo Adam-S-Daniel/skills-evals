@@ -64,8 +64,14 @@ Skill names withheld for this private registry; counts above. `--include-private
 
 ## Problems
 
-- orphan_fixture: cms-platform `consumer-repo-provisioning`
-- orphan_fixture: cms-platform `github-actions-sha-pinning`
+None.
+
+## Paused as removed
+
+Fixtures whose skill is gone from its registry, kept by the eval scope pass. Not a failure; a renamed skill shows here too.
+
+- cms-platform `consumer-repo-provisioning`: 1 fixture(s)
+- cms-platform `github-actions-sha-pinning`: 1 fixture(s)
 
 ## Fixture metadata readiness
 
