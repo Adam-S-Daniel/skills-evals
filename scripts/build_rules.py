@@ -362,7 +362,9 @@ def render_md(doc: dict) -> str:
         "a removal test over those pairs deciding at the no-benefit level, which overrides "
         "the keep; the gain over those pairs clearing the margin at that same level (the "
         f"early stop); or {same('max_runs_per_cell')} such pairs. A passed re-check counts "
-        "as a new confirmation.",
+        "as a new confirmation. While `recheck_window_fire` is "
+        f"{same('recheck_window_fire', lambda r: '`' + v(r) + '`')}, the planner "
+        "fires re-check runs; `false` holds them (the gates still read the window).",
         "",
         "## Git hooks",
         "",

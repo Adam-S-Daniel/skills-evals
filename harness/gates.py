@@ -598,6 +598,10 @@ DEFAULT_KEEP_STANDS_UNTIL_RECHECK = False
 #: 2026-11-15), a keep's re-check is tested on its own pairs (module
 #: docstring, THE RE-CHECK WINDOW).
 DEFAULT_RECHECK_WINDOW = False
+#: `recheck_window_fire` of a block that names none: on. Off (Adam,
+#: 2026-11-15, while the stopping rules are redesigned), the planner fires
+#: no re-check run; the gates still read the re-check window.
+DEFAULT_RECHECK_WINDOW_FIRE = True
 #: The keys only the guidance block takes, each optional with its default.
 GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs", "keep_stands_until_recheck")
 
@@ -642,7 +646,7 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     fall back to silently."""
     if not isinstance(block, dict):
         raise GatePolicyError(f"gate policy {name} must be a mapping")
-    allowed = set(SKILL_KEYS) | {"retirement_mode", "recheck_window"} | (
+    allowed = set(SKILL_KEYS) | {"retirement_mode", "recheck_window", "recheck_window_fire"} | (
         set(GUIDANCE_ONLY_KEYS) if guidance else set())
     unknown = sorted(set(block) - allowed)
     if unknown:
@@ -663,6 +667,10 @@ def _policy_block(block, name: str, guidance: bool = False) -> dict:
     if not isinstance(window, bool):
         raise GatePolicyError(f"gate policy {name}.recheck_window must be true or false")
     out["recheck_window"] = window
+    fire = block.get("recheck_window_fire", DEFAULT_RECHECK_WINDOW_FIRE)
+    if not isinstance(fire, bool):
+        raise GatePolicyError(f"gate policy {name}.recheck_window_fire must be true or false")
+    out["recheck_window_fire"] = fire
     if guidance:
         rest_policy = block.get("rest_policy", DEFAULT_REST_POLICY)
         if not isinstance(rest_policy, str) or rest_policy not in REST_POLICIES:

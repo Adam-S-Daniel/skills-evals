@@ -1942,7 +1942,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # leaves its section out, as a provisional keep is; a skill cell
             # to the recheck band.
             rechecking = True
-            if now < recheck_due_at(cell):
+            block = (ctx.get("guidance_policy") if cell.get("section")
+                     else ctx.get("policy")) or {}
+            if block.get("recheck_window_fire") is False or now < recheck_due_at(cell):
                 band, order = None, None
             elif cell.get("section"):
                 band, order = _guidance_band(cell, focused, near_order)

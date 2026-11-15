@@ -1051,7 +1051,9 @@ class PlannerTests(unittest.TestCase):
         self.assertIsNotNone(due)
 
         def bands_at(now, cells):
-            bands, _ = plan_week.eval_items(self.ctx(cells), now)
+            ctx = {**self.ctx(cells),
+                   "guidance_policy": {**POOLED, "recheck_window_fire": True}}
+            bands, _ = plan_week.eval_items(ctx, now)
             return {b: [(i["fixture"], i["model"]) for i in items]
                     for b, items in bands.items() if items}
 
