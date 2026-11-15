@@ -67,6 +67,27 @@ class CellCapTests(unittest.TestCase):
                                           current="new", pooled=True), CAP)
 
 
+    def test_a_cap_of_one_is_not_extended(self):
+        policy = {**POLICY, "max_runs_per_cell": 1, "max_runs_extension": 2.0}
+        self.assertEqual(gates.cell_cap(pairs([0.3]), policy), 1)
+
+    def test_unscored_pairs_count_toward_the_window(self):
+        near = pairs(repeat([0.5, -0.2, 0.3, 0.0]))
+        unscored = ({"numbers": {"run_mean": None}, "pair_key": None},
+                    {"numbers": {"run_mean": None}})
+        # Two unscored pairs inside the first CAP: the window holds
+        # CAP - 2 scored pairs, and the two after it are not read.
+        window = [unscored, unscored] + near[:CAP - 2]
+        far = pairs([-1.0, -1.0])
+        self.assertEqual(gates.cell_cap(window + far, POLICY),
+                         gates.cell_cap(window, POLICY))
+
+    def test_older_rests_keep_the_policy_cap(self):
+        keys = ["old"] * 6 + ["new"] * 6
+        window, _, got = gates._rest_window(list(range(12)), keys, "new", 5, 3)
+        self.assertEqual(got, ["old"] * 3 + ["new"] * 5)
+
+
 class PolicyTests(unittest.TestCase):
 
     def test_committed_and_checked(self):

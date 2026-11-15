@@ -428,8 +428,10 @@ anytime-valid, so `max_runs_per_cell` is a budget, not a statistical limit.
 A cell whose first `max_runs_per_cell` pairs (pooled: beside the current
 rest) decided neither the keep test (at its family's level) nor the remove
 test, but whose nearer test is projected to cross by `max_runs_extension`
-times the cap, gets that larger cap (`cell_cap`). The projection reads only
-those first pairs: a test's log wealth grows about (mean - h)^2 / (2 var) a
+times the cap, gets that larger cap (`cell_cap`). Only a cell that would
+otherwise end undecided at its cap (`no-clear-effect` or `insufficient`) is
+considered; pooled, only the current rest's window grows, and older rests
+keep the policy's cap. The projection reads only those first pairs: a test's log wealth grows about (mean - h)^2 / (2 var) a
 pair (h is 0 for the keep test, the margin for the remove test), so the
 pairs it needs are (threshold - its wealth now) over that. Every rule that
 reads the cap then reads the cell's (`cap` in its verdict); its re-checks
@@ -666,6 +668,10 @@ DEFAULT_RECHECK_CARRY = False
 #: `max_runs_extension` of a block that names none: 1, no extension (the
 #: rule before 2026-11-15; module docstring, THE CAP EXTENSION).
 DEFAULT_MAX_RUNS_EXTENSION = 1.0
+#: The policy key `classify_cell` sets (never a gate-policy.yml key) for a
+#: pooled cell's older rests once THE CAP EXTENSION lengthens the current
+#: rest's window: they keep the policy's cap.
+OLDER_REST_CAP = "_older_rest_cap"
 #: THE RE-CHECK CARRY's guard on a carried early stop: the re-check's own
 #: pairs, at least this many, must average at least the margin.
 CARRY_MIN_OWN_PAIRS = 3
@@ -1193,17 +1199,19 @@ def differences(pairs: list, field: str = "run_mean", scale: float = 1.0) -> lis
     return out
 
 
-def _rest_window(pairs: list, keys: list, current, cap: int) -> tuple:
+def _rest_window(pairs: list, keys: list, current, cap: int,
+                 older_cap: int | None = None) -> tuple:
     """(window, is_current, window_keys) of a pooled in-situ cell (IN-SITU
     GUIDANCE CELLS): the first `cap` pairs of EACH rest, in the cells' order,
     whether each is beside the `current` rest, and each one's rest. Whether a pair enters depends only on the
     pairs before it, so the window is a predictable selection and every
     betting test over it keeps its level; each rest's window is frozen at its
-    cap, as a whole cell's is under `current`."""
+    cap, as a whole cell's is under `current`. `older_cap` (THE CAP
+    EXTENSION): the cap of every rest but the current one, `cap` when None."""
     seen: dict = {}
     window, is_current, window_keys = [], [], []
     for pair, key in zip(pairs, keys):
-        if seen.get(key, 0) < cap:
+        if seen.get(key, 0) < (cap if key == current or older_cap is None else older_cap):
             seen[key] = seen.get(key, 0) + 1
             window.append(pair)
             is_current.append(key == current)
@@ -1235,7 +1243,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         held_current = len(pairs)
     else:
         window, is_current, window_keys = _rest_window(pairs, rest["keys"], rest["current"],
-                                                       cap)
+                                                       cap, policy.get(OLDER_REST_CAP))
         held_current = sum(is_current)
     current_window = [p for p, c in zip(window, is_current) if c]
     arms = {"with": _arm_summary([w for w, _ in window]),
@@ -1884,7 +1892,8 @@ def _cell_split(with_runs: list, without_runs: list, policy: dict, cls: str,
     if rest_info is None:
         window = pairs[:cap]
     else:
-        window, _, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap)
+        window, _, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap,
+                                    policy.get(OLDER_REST_CAP))
     in_window = {id(r) for pair in window for r in pair}
     usable = [(w, o) for w, o in window
               if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
@@ -2039,7 +2048,9 @@ def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
                  rest: dict | None = None) -> tuple:
     """((run, class, reason) for every run of one classified current cell,
     the day of its decision point or None): RUN UTILITY's classes."""
-    policy = {**policy, "max_runs_per_cell": cell.get("cap", policy["max_runs_per_cell"])}
+    if cell.get("cap", policy["max_runs_per_cell"]) != policy["max_runs_per_cell"]:
+        policy = {**policy, "max_runs_per_cell": cell["cap"],
+                  OLDER_REST_CAP: policy["max_runs_per_cell"]}
     discards, usable = _cell_split(with_runs, without_runs, policy, cell["class"], rest)
     at = None if cell["class"] in UNDECIDED_CLASSES else cell.get("decided_at")
     guard = cell.get("rest_guard")
@@ -2292,15 +2303,16 @@ def cell_cap(pairs: list, policy: dict, family: int = 1, bet_prior: dict | None 
     longer = math.floor(cap * policy.get("max_runs_extension", DEFAULT_MAX_RUNS_EXTENSION))
     if longer <= cap:
         return cap
-    ds = [w["numbers"]["run_mean"] - o["numbers"]["run_mean"] for w, o in pairs
-          if (not pooled or w.get("pair_key") == current)
-          and w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
-    if len(ds) < cap:
+    # The window the cap closed: its first `cap` pairs (pooled: beside the
+    # current rest), scored or not, as `_classify` takes them.
+    window = [(w, o) for w, o in pairs if not pooled or w.get("pair_key") == current][:cap]
+    first = [w["numbers"]["run_mean"] - o["numbers"]["run_mean"] for w, o in window
+             if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
+    if len(window) < cap or len(first) < 2:
         return cap
-    first = ds[:cap]
     margin = policy["objective_margin"]
-    mean = sum(first) / cap
-    var = max(sum((d - mean) ** 2 for d in first) / (cap - 1), MIN_BET_VARIANCE)
+    mean = sum(first) / len(first)
+    var = max(sum((d - mean) ** 2 for d in first) / (len(first) - 1), MIN_BET_VARIANCE)
     need = math.inf
     for wealth, alpha, h, toward in (
             (keep_wealth(first, bet_prior), (1 - policy["benefit_confidence"]) / family,
@@ -2335,10 +2347,19 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
     # THE CAP EXTENSION: every rule below reads the cell's cap; a re-check
     # keeps the policy's (`recheck_policy`).
     recheck_policy = policy
-    cap = cell_cap(pairs, policy, family, bet_prior, (rest_info or {}).get("current"),
-                   rest_info is not None)
-    policy = {**policy, "max_runs_per_cell": cap}
-    full = {**_classify(pairs, policy, family, bet_prior, rest_info), "cap": cap}
+    cap = policy["max_runs_per_cell"]
+    full = _classify(pairs, policy, family, bet_prior, rest_info)
+    if full.get("at_cap") and full["class"] in ("no-clear-effect", "insufficient"):
+        # Only a cell that would end undecided at its cap is extended.
+        longer = cell_cap(pairs, policy, family, bet_prior,
+                          (rest_info or {}).get("current"), rest_info is not None)
+        if longer > cap:
+            # Pooled, older rests keep the policy's cap: only the current
+            # rest's window grows (`_rest_window`).
+            cap, policy = longer, {**policy, "max_runs_per_cell": longer,
+                                   OLDER_REST_CAP: cap}
+            full = _classify(pairs, policy, family, bet_prior, rest_info)
+    full = {**full, "cap": cap}
     guard = full.get("rest_guard")
     if policy.get("recheck_window") and full["class"] == "benefit" \
             and not (isinstance(guard, dict) and guard.get("keep_final") is False):
