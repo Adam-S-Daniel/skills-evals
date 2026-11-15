@@ -37,6 +37,10 @@
 #                          merges with no human review) or `proposal` (an
 #                          issue; a person removes). Missing or invalid is
 #                          `proposal`.
+#   recheck_window         true: a kept cell's re-check is tested on its own
+#                          pairs (it can remove, stops early once the gain
+#                          clears the margin, else runs to max_runs_per_cell);
+#                          false: re-check pairs cannot change a keep.
 # Guidance block only (ADR 0014, "Pooled-rest addendum (2026-11-07)"):
 #   rest_policy            `pooled-with-current-guard` pools pairs made beside
 #                          every rest of the guidance, guarded by the current
@@ -62,6 +66,7 @@ skills:
   recheck_weeks_high: 4
   max_removal_pauses: 3
   retirement_mode: auto
+  recheck_window: true
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -77,6 +82,7 @@ guidance:
   recheck_weeks_high: 4
   max_removal_pauses: 3
   retirement_mode: auto
+  recheck_window: true
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6
   keep_stands_until_recheck: true

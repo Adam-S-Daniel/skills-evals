@@ -156,6 +156,7 @@ import guidance  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import plan_scheduled_evals  # noqa: E402
 import run_eval  # noqa: E402
+import stakes  # noqa: E402
 
 PREFIXES = ("results", "routine-results")
 #: The most bytes read of each file kind: the ingester's own caps.
@@ -805,6 +806,16 @@ def finalize(skills: dict) -> None:
                                       f"retires per evaluation and {chosen} has more runs")
 
 
+def recheck_policy(policy: dict, table: dict, kind: str, name: str) -> dict:
+    """`policy` with `recheck_after_weeks`, the subject's re-check age
+    (harness/gates.py, THE RE-CHECK WINDOW): `recheck_weeks_high` for a
+    high-stakes subject (evals/stakes.yml), else `recheck_weeks`, as
+    scripts/plan_week.py `recheck_age` reads it."""
+    high = stakes.level_of(table, kind, name) == "high"
+    return {**policy, "recheck_after_weeks":
+            policy["recheck_weeks_high" if high else "recheck_weeks"]}
+
+
 def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
             as_of: str, registries: dict | None = None,
             guidance_dir: Path | None = None) -> dict:
@@ -821,11 +832,12 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
     models = sorted(arm_ids)
     index = build_index(tree, evals_dir, as_of)
     history = gates.paired_history(index["runs"])
+    table = stakes.load(evals_dir / "stakes.yml", evals_dir)
     skills = {}
     for skill in index["skills"]:
         try:
             skills[skill] = gates.retirement(
-                index, models, skill, policy,
+                index, models, skill, recheck_policy(policy, table, "skill", skill),
                 expected_content(evals_dir, skill, registries or {}, keep_paused=True),
                 gates.prior_from_history(history, skill, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one skill's failure is its own
@@ -861,7 +873,9 @@ def guidance_section_verdicts(index: dict, models: list, policy: dict, evals_dir
     for section in index["sections"]:
         try:
             sections[section] = gates.guidance_verdict(
-                guidance_index, models, section, policy,
+                guidance_index, models, section,
+                recheck_policy(policy, stakes.load(evals_dir / "stakes.yml", evals_dir),
+                               "guidance", section),
                 expected_guidance(evals_dir, section, guidance_dir),
                 gates.prior_from_history(history, section, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one section's failure is its own

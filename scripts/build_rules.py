@@ -355,6 +355,15 @@ def render_md(doc: dict) -> str:
         "first within each planning band. No re-check is planned while the subject's "
         "removal is `pr-open`, `worker`, `waiting-turn`, `queued`, `removed` or unknown.",
         "",
+        "**The re-check window** (while `recheck_window` is "
+        f"{same('recheck_window', lambda r: '`' + v(r) + '`')}): a kept cell's re-check is "
+        "tested on the pairs made since it fell due (counted from the keep's newest "
+        "confirmation), apart from the pairs that made the keep. It ends at the first of: "
+        "a removal test over those pairs deciding at the no-benefit level, which overrides "
+        "the keep; the gain over those pairs clearing the margin at that same level (the "
+        f"early stop); or {same('max_runs_per_cell')} such pairs. A passed re-check counts "
+        "as a new confirmation.",
+        "",
         "## Git hooks",
         "",
         "Each git hook check gets a verdict over the last "

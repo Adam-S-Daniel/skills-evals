@@ -1885,9 +1885,9 @@ def test_queue(cells: list, model_weights: dict, now,
         if newest is None or cell.get("stakes") == "none" \
                 or (cell["class"] in ("missing", "insufficient") and cell.get("verdict") != "keep"):
             continue
-        # A standing keep's re-check is timed from its confirmations, as the
-        # planner times it (`standing_recheck_at`).
-        standing = plan_week.standing_recheck_at(cell)
+        # A kept cell's re-check window is timed by the gate, as the planner
+        # reads it (`recheck_due_at`).
+        standing = plan_week.recheck_due_at(cell)
         due = plan_week._iso(standing if standing is not None
                              else newest + plan_week.recheck_after(cell))
         if entry["due"] is None or due < entry["due"]:

@@ -132,6 +132,16 @@
         "recheckWeeksHigh"
       ]
     },
+    "gate-policy.yml#guidance.recheck_window": {
+      "value": true,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.recheck_window",
+      "names": [
+        "recheck_window",
+        "RECHECK_WINDOW",
+        "recheckWindow"
+      ]
+    },
     "gate-policy.yml#guidance.rest_guard_min_pairs": {
       "value": 6,
       "source": "evals/gate-policy.yml",
@@ -295,6 +305,16 @@
         "RECHECK_WEEKS_HIGH",
         "recheckWeeksHigh",
         "RECHECK_AFTER_HIGH"
+      ]
+    },
+    "gate-policy.yml#skills.recheck_window": {
+      "value": true,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.recheck_window",
+      "names": [
+        "recheck_window",
+        "RECHECK_WINDOW",
+        "recheckWindow"
       ]
     },
     "gate-policy.yml#skills.retire_confidence": {
