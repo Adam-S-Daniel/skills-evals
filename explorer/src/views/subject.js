@@ -16,7 +16,7 @@ function newestOf(runs) {
   const times = (Array.isArray(runs) ? runs : []).map((r) => parseTime(r && r.at)).filter((m) => isFinite(m));
   return times.length ? Math.max.apply(null, times) : NaN;
 }
-import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine } from './cards.js';
+import { verdictLine, nextLine, stakesLine, usageLine, useByLine, copiesLine, discardedLine } from './cards.js';
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
 import { trendChart } from './trend.js';
 import { confidenceView } from './range.js';
@@ -171,6 +171,7 @@ export function subjectPage(doc, kind, name, ctx) {
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,
       nextLine(raw.next_test, refMs, guidance ? 'section' : 'skill', raw.verdict, raw.removal),
       guidance ? null : usageLine(raw.usage, doc.usage, refMs),
+      guidance ? null : useByLine(raw.use_by, doc.removal_policy, refMs),
       testCost(raw.run_utility, refMs),
       stakesLine(raw.stakes),
       h('h3', null, defn('verdict', STRINGS.verdictHeading)),

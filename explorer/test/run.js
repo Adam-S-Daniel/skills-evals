@@ -19,6 +19,7 @@ import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapsho
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
+import { useByLine, useBySort, useByCell } from '../src/views/cards.js';
 import { renderRoute, usesUtcDays } from '../src/views/page.js';
 import { runName, hasCron } from '../src/views/ops.js';
 import { applyCap, SKIP_OVER, refreshCap, markScroller, skipTarget } from '../src/views/bits.js';
@@ -1758,6 +1759,37 @@ await test('uses are calls plus reads: the table ranks by the sum and the skill 
   const plain = flat(renderRoute(d, { name: 'skills', id: 'calls-only' }, {}));
   ok(plain.includes('Used 3 times') && !plain.includes('by reading its files'), 'no split without a read: ' + plain.slice(0, 600));
   ok(flat(renderRoute(d, { name: 'skills', id: 'older-data' }, {})).includes('Used 1 time'), 'data without reads still counts its calls');
+});
+await test('the use-by line says each state in plain words, from the policy numbers, and links the removal rule', () => {
+  const ref = Date.parse('2026-11-16T12:00:00Z');
+  const pol = { value_per_use_usd: 10, floor_weeks: 8 };
+  const line = (ub, p) => flat(useByLine(ub, p === undefined ? pol : p, ref)).replace('( ', '(').replace(' ) ', ')');
+  eq(line({ state: 'date', use_by: '2027-01-03' }), 'Use by Sun Jan 3, 2027 or it is removed as unused (removal rule)');
+  eq(line({ state: 'date', use_by: '2026-11-10' }), 'Use it this week or it may be removed as unused (removal rule)');
+  eq(line({ state: 'due' }), 'Due for removal as unused: no use in the last 8 weeks (removal rule)');
+  eq(line({ state: 'not-at-pace' }), 'No use-by date: at today\'s session pace its description never costs the $10 a use is worth (removal rule)');
+  eq(line({ state: 'exempt' }), 'Exempt: removed only by its eval verdict (removal rule)');
+  eq(line({ state: 'local-only' }), 'Local-only: never removed for lack of use (removal rule)');
+  eq(line({ state: 'unknown' }), 'Unknown: usage census can\'t say yet (removal rule)');
+  ok(!/\$10|8 weeks/.test(line({ state: 'due' }, null) + line({ state: 'not-at-pace' }, null)), 'a null policy names no number');
+  eq(line({ state: 'not-at-pace' }, null), 'No use-by date: at today\'s session pace its description never costs what a use is worth (removal rule)');
+  eq(useByLine(null, pol, ref), null);
+  const a = findAll(useByLine({ state: 'exempt' }, pol, ref), (n) => n.tag === 'a');
+  eq(a.length, 1);
+  eq(a[0].attrs.href, STRINGS.removalRuleUrl);
+  ok(a[0].attrs.href.endsWith('/docs/rules.md#removal'), a[0].attrs.href);
+});
+await test('the Use by column sorts dated skills by date (due first), then no date, unknown, local-only, exempt, none', () => {
+  const ref = Date.parse('2026-11-16T12:00:00Z');
+  const rows = [null, { state: 'exempt' }, { state: 'local-only' }, { state: 'unknown' }, { state: 'not-at-pace' },
+    { state: 'date', use_by: '2027-01-03' }, { state: 'date', use_by: '2026-12-20' }, { state: 'due' }];
+  const sorted = rows.slice().sort((x, y) => useBySort(x) - useBySort(y)).map((u) => useByCell(u, ref));
+  eq(JSON.stringify(sorted), JSON.stringify(['due', 'Dec 20', 'Jan 3, 2027', 'no date', 'unknown', 'local-only', 'exempt', STRINGS.noValue]));
+  const d = doc({ generated_at: '2026-11-16T16:00:00Z', skills: [
+    { name: 'late', status: 'covered', use_by: { state: 'date', use_by: '2027-01-03' } },
+    { name: 'soon', status: 'covered', use_by: { state: 'date', use_by: '2026-12-20' } }] });
+  const list = flat(renderRoute(d, { name: 'skills', id: null }, {}));
+  ok(list.includes(STRINGS.colUseBy) && list.includes('Dec 20'), list.slice(0, 600));
 });
 await test('the skills page says cloud sessions are counted, and from when, once the census counts them', () => {
   const page = (usage) => flat(renderRoute(doc({ generated_at: '2026-11-15T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage }), { name: 'skills', id: null }, {}));
