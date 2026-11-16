@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-15T16:23:13Z",
-  "generated_at": "2026-11-15T16:23:31Z",
+  "as_of": "2026-11-16T20:34:38Z",
+  "generated_at": "2026-11-16T20:34:53Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -40,7 +40,7 @@
     },
     {
       "at": "2026-07-10T12:29:38Z",
-      "eligible": false,
+      "eligible": true,
       "event": "added",
       "kind": "skill",
       "name": "embeddable-tool-pages",
@@ -685,6 +685,15 @@
       "name": "eval-rules",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "week": "2026-11-09"
+    },
+    {
+      "at": "2026-11-16T07:00:56Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "lesson-memory-485-1",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-16"
     }
   ],
   "kinds": [
@@ -695,25 +704,25 @@
   "rate_weeks": 4,
   "rates": {
     "git-hook": {
-      "added": 12,
-      "added_per_week": 3.3439182302887778,
+      "added": 13,
+      "added_per_week": 3.4607568292769884,
       "complete": true,
       "eligible_share": null,
       "from": "2026-10-21T13:30:05Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-15T16:23:13Z",
-      "weeks": 3.5886
+      "to": "2026-11-16T20:34:38Z",
+      "weeks": 3.7564
     },
     "guidance-section": {
       "added": 5,
       "added_per_week": 1.25,
       "complete": true,
       "eligible_share": 0.4,
-      "from": "2026-10-18T16:23:13Z",
+      "from": "2026-10-19T20:34:38Z",
       "removed": 1,
       "removed_per_week": 0.25,
-      "to": "2026-11-15T16:23:13Z",
+      "to": "2026-11-16T20:34:38Z",
       "weeks": 4.0
     },
     "skill": {
@@ -721,17 +730,17 @@
       "added_per_week": 1.5,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-18T16:23:13Z",
+      "from": "2026-10-19T20:34:38Z",
       "removed": 4,
       "removed_per_week": 1.0,
-      "to": "2026-11-15T16:23:13Z",
+      "to": "2026-11-16T20:34:38Z",
       "weeks": 4.0
     }
   },
   "schema": 1,
   "sources": [
     {
-      "current": 11,
+      "current": 12,
       "kind": "git-hook",
       "parser": "agent-checks",
       "private": false,
@@ -860,7 +869,7 @@
     {
       "added": 1,
       "added_eligibility_unknown": 0,
-      "added_eligible": 0,
+      "added_eligible": 1,
       "kind": "skill",
       "removed": 0,
       "week": "2026-07-06"
@@ -1000,6 +1009,14 @@
       "kind": "skill",
       "removed": 3,
       "week": "2026-11-09"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 1,
+      "added_eligible": 0,
+      "kind": "git-hook",
+      "removed": 0,
+      "week": "2026-11-16"
     }
   ]
 }
