@@ -2,8 +2,10 @@
 import { DATA_REPO } from '../config.js';
 import { useGlossVoice } from './glosses.js';
 import { SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, pts, ordinal, countWord } from './rules.js';
+import { fmtUsd } from './format.js';
 
 const ISSUES_URL = 'https://github.com/' + DATA_REPO + '/issues';
+const REMOVAL_RULE_URL = 'https://github.com/' + DATA_REPO + '/blob/main/docs/rules.md#removal';
 /* What one skill use is (the census's skill and skill-read rows). */
 const STRINGS_USE_DEF = 'A use is a call of the skill, or a session that read its files without calling it.';
 
@@ -147,6 +149,19 @@ function buildStrings(you) {
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in ' + W.whose + ' real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in ' + W.whose + ' real work from ' + from + ' to ' + to + '.',
+  removalRuleUrl: REMOVAL_RULE_URL,
+  useBy: {
+    link: 'removal rule',
+    date: (day) => 'Use by ' + day + ' or it is removed as unused',
+    late: 'Use it this week or it may be removed as unused',
+    due: (weeks) => 'Due for removal as unused: no use in the last ' + (weeks ? weeks + ' weeks' : 'weeks of the removal rule'),
+    notAtPace: (usd) => 'No use-by date: at today\'s session pace its description never costs ' + (usd === null ? 'what' : 'the ' + fmtUsd(usd)) + ' a use is worth',
+    exempt: 'Exempt: removed only by its eval verdict',
+    localOnly: 'Local-only: never removed for lack of use',
+    unknown: 'Unknown: usage census can\'t say yet'
+  },
+  colUseBy: 'Use by',
+  useByCell: { late: 'use this week', due: 'due', notAtPace: 'no date', unknown: 'unknown', localOnly: 'local-only', exempt: 'exempt' },
   usedSplit: (calls, reads) => calls + (calls === 1 ? ' call' : ' calls') + ', ' + reads + ' by reading its files.',
   copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
   copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',

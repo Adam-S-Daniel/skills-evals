@@ -453,7 +453,7 @@ test('the Skills table lists every tested skill once, best status first, then mo
   doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
   P.skillItems(doc).forEach((it, i) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: i % 2 ? 0 : i + 3 }; });
   const page = P.buildPage(doc, 'skills', {});
-  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Uses,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Uses,Use by,Next test,Official decision');
   const rows = tableRows(page);
   const items = P.skillItems(doc);
   eq(rows.length, items.length, 'one row per tested skill');
