@@ -20,7 +20,7 @@ import sys
 import tempfile
 import shutil
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 from pathlib import Path
 
@@ -309,6 +309,73 @@ class ShapeAndMathTests(unittest.TestCase):
         plain = self.t.build()
         self.assertTrue(all(s["use_by"] is None for s in plain["skills"]))
         self.assertEqual(plain["removal_policy"], {"value_per_use_usd": 10, "floor_weeks": 8})
+
+    def test_use_by_reaches_a_date_and_due_end_to_end_and_validates(self):
+        import math
+        import jsonschema
+        import removal_policy
+        import skill_usage
+        reg = self.t.root / "agentskills"
+        text = "---\nname: alpha\ndescription: Does the alpha thing.\n---\nbody\n"
+        md = reg / "plugins" / "bundle-one" / "skills" / "alpha" / "SKILL.md"
+        md.parent.mkdir(parents=True)
+        md.write_text(text, encoding="utf-8")
+        (reg / "scripts").mkdir()
+        (reg / "scripts" / "plugin_layout.json").write_text(
+            json.dumps({"plugins": {"bundle-one": {"skills": ["alpha"]}}}), encoding="utf-8")
+        registries = {"adam-agentskills": {
+            "path": reg, "layout": "plugins/*/skills/*/SKILL.md",
+            "url": "https://github.com/Adam-S-Daniel/adam-agentskills"}}
+        doc = census(["alpha"])
+        doc["registries"][0]["name"] = "adam-agentskills"
+        self.t.write_json("coverage/latest.json", doc)
+        policy = removal_policy.load()
+        d = removal_policy.description_tokens(text)
+        # AS_OF is Saturday 2026-10-31, in the week of Monday 2026-10-26. Cloud
+        # sessions in each of the 8 weeks before it, none yet in its own week:
+        # W36-W43 at `n` a week. The threshold is `full` sessions a week.
+        full = (policy["value_per_use_usd"] * policy["prefix_tokens"]
+                / (d * policy["reread_usd_per_session"]["cloud"] * policy["floor_weeks"]))
+        now = plan_week._stamp_time(explorer_data.compute_gates.parse_as_of(AS_OF))
+        floor = now - timedelta(weeks=20)
+
+        def use_by_for(per_week):
+            rows = [skill_usage.listing_row(f"2026-W{w}", "full", per_week, skill_usage.SURFACE_CLOUD)
+                    for w in range(36, 44)]
+            usage = skill_usage.document(
+                rows, now, floor, sessions_scanned=1,
+                cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": True},
+                skill_keys=["alpha"])
+            skill_usage.add_rows(usage, [], skill_usage.digest_source(
+                floor, now, 0, surface=skill_usage.SURFACE_CLOUD))
+            self.t.write_json("usage/weekly-local.json", usage)
+            built = explorer_data.build(self.t.tree, self.t.roster, self.t.policy, self.t.evals,
+                                        AS_OF, SHA_A, SHA_B, registries=registries, manifest=[])
+            schema = json.loads(explorer_data.SCHEMA_PATH.read_text(encoding="utf-8"))
+            jsonschema.validate(built, schema)
+            explorer_data.finish(built)
+            return next(s for s in built["skills"] if s["name"] == "alpha")["use_by"]
+
+        # Seven actual weeks plus this one at the pace of 1.05 * `full` costs
+        # 9.2 USD so far (not due) and 10.5 USD over the whole week: a date.
+        n = math.ceil(full * 1.05)
+        cost = d * policy["reread_usd_per_session"]["cloud"] / policy["prefix_tokens"]
+        got = use_by_for(n)
+        removable = datetime(2026, 10, 26, tzinfo=timezone.utc)
+        self.assertEqual(got, {
+            "state": "date",
+            "use_by": (removable - timedelta(days=1) - skill_usage.CENSUS_MAX_AGE)
+            .date().isoformat(),
+            "removable_from": "2026-10-26", "last_use_week": None,
+            "projected_usd": 8 * n * cost, "why": "projected at today's session pace"})
+        self.assertLess(7 * n * cost, policy["value_per_use_usd"])
+        # At 1.2 * `full` the seven weeks already cost enough: due now.
+        n = math.ceil(full * 1.2)
+        got = use_by_for(n)
+        self.assertEqual(got["state"], "due")
+        self.assertEqual((got["use_by"], got["removable_from"]), (None, "2026-10-26"))
+        self.assertEqual(got["projected_usd"], 7 * n * cost)
+        self.assertGreaterEqual(got["projected_usd"], policy["value_per_use_usd"])
 
     def test_stakes_rows_reach_the_document(self):
         (self.t.evals / "alpha").mkdir(parents=True, exist_ok=True)

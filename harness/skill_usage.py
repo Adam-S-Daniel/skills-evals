@@ -478,9 +478,25 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     return sum(n for monday, n in uses_by_week(doc, skill).items() if monday in mondays)
 
 
+def week_key(text) -> datetime | None:
+    """Midnight UTC of the Monday `text` names, when `text` is exactly an ISO
+    Monday date (`2026-11-09`), the form `week_monday` writes; None for any
+    other value, so a malformed row is skipped as `weight` skips it."""
+    if not isinstance(text, str):
+        return None
+    try:
+        day = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if day.weekday() != 0 or day.date().isoformat() != text:
+        return None
+    return day.replace(tzinfo=timezone.utc)
+
+
 def uses_by_week(doc, skill: str) -> dict:
     """{week Monday: uses of `skill`} over every week `doc` has rows for, the
-    rows `weight` sums (calls, reads, cloud digests). Freshness is the
+    rows `weight` sums (calls, reads, cloud digests); a row whose week is not
+    an ISO Monday (`week_key`) is skipped. Freshness is the
     caller's question; {} when `doc` has no rows list or `skill` is `other`."""
     if not isinstance(doc, dict) or not isinstance(doc.get("rows"), list):
         return {}
@@ -495,7 +511,7 @@ def uses_by_week(doc, skill: str) -> dict:
                          and entry.get("surface") == SURFACE_CLOUD))
                 and isinstance(entry.get("name"), str)
                 and skill_basename(entry["name"]) == wanted
-                and isinstance(entry.get("week"), str)
+                and week_key(entry.get("week")) is not None
                 and _count(entry.get("invocations"))):
             out[entry["week"]] = out.get(entry["week"], 0) + entry["invocations"]
     return out
@@ -557,8 +573,13 @@ def is_tracked(doc, skill: str) -> bool:
 _SURFACE_SCOPES = {SURFACE_LOCAL: ("transcripts",), SURFACE_CLOUD: (CLOUD_SCOPE,)}
 
 
+#: How old a census `census_current` accepts: an irreversible action reads a
+#: census generated at most this long before it runs.
+CENSUS_MAX_AGE = timedelta(days=1)
+
+
 def census_current(doc, surfaces: tuple, now: datetime,
-                   max_age: timedelta = timedelta(days=1)) -> bool:
+                   max_age: timedelta = CENSUS_MAX_AGE) -> bool:
     """True when `doc`'s `generated_at` and the `to` of every source on each
     of `surfaces` lie within `max_age` before `now` (never after it), and each
     surface has the source its counts come from. `is_fresh` allows 14 days and
@@ -647,15 +668,11 @@ def listing_by_week(doc, surface: str) -> dict | None:
         return out
     for entry in doc["rows"]:
         if (not isinstance(entry, dict) or entry.get("surface") != surface
-                or not isinstance(entry.get("week"), str)
+                or week_key(entry.get("week")) is None
                 or not _count(entry.get("sessions"))
                 or entry.get("kind") != "listing" or entry.get("name") != "full"):
             continue
-        try:
-            monday = datetime.fromisoformat(entry["week"]).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-        if monday >= counted:
+        if week_key(entry["week"]) >= counted:
             out[entry["week"]] = out.get(entry["week"], 0) + entry["sessions"]
     return out
 

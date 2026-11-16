@@ -241,12 +241,18 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
       (c) the projected accrued cost over the window at least
       `value_per_use_usd`. A window week before `now`'s uses its actual
       full-listing exposure (`skill_usage.listing_by_week`, the rows
-      `exposure_by_surface` counts); `now`'s week and later ones use each
-      surface's mean weekly full-listing sessions over its counted complete
-      weeks among the `floor_weeks` weeks before `now`'s. Week W is counted
-      whole, so the date errs early. `removable_from` is W's Monday and
-      `use_by` the day before (ISO dates; a `use_by` before `now` means the
-      skill can be removed this week).
+      `exposure_by_surface` counts). The census's data ends at the earliest
+      `to` among the reached surfaces' sources and `generated_at`; that
+      week, `now`'s week and every later one are projected: each surface at
+      the larger of its pace and what the week has shown so far scaled up to
+      a whole week (by the share of the week before the data ends), where the
+      pace is its mean weekly full-listing sessions over its counted complete
+      weeks, among the `floor_weeks` weeks before `now`'s, that end before
+      the data does. Week W is counted whole, so the date errs early, never
+      late. `removable_from` is W's Monday; `use_by` is the day before, less
+      `skill_usage.CENSUS_MAX_AGE`, the age of census a removal may read, so
+      a use on `use_by` is in the census a removal reads (ISO dates; a
+      `use_by` before `now` means the skill can be removed this week).
     * `not-at-pace`: once W's whole window lies in projected weeks (and past
       both the use and coverage constraints) the accrual no longer changes,
       so a steady-state accrual under `value_per_use_usd` never reaches it:
@@ -254,8 +260,8 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
 
     `last_use_week` is the Monday of the latest census week with a use (None
     when the census shows none). `projected_usd` is the projected accrual at
-    `removable_from`, the actual accrual for `due`, the steady state for
-    `not-at-pace`, else None. Full precision; `why` is short and names no
+    `removable_from`, the actual accrual for `due`, the steady state
+    (`floor_weeks` weeks at the pace) for `not-at-pace`, else None. Full precision; `why` is short and names no
     figure beyond the policy's own.
     """
     out = {"state": "unknown", "use_by": None, "removable_from": None,
@@ -267,18 +273,17 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
     reached = tuple(s for s in SURFACES if s in surfaces)
     if skill in exempt:
         return answer("exempt", "listed in evals/usage-unknown.yml")
-    if skill_usage.SURFACE_CLOUD not in reached and not policy["local_removal"]:
-        return answer("local-only", "reaches only the local surface and local removal is off")
     if not reached:
         return answer("unknown", "reaches no surface")
+    if skill_usage.SURFACE_CLOUD not in reached and not policy["local_removal"]:
+        return answer("local-only", "reaches only the local surface and local removal is off")
     if doc is None or not skill_usage.is_fresh(doc, now):
         return answer("unknown", "no fresh usage census")
     if not skill_usage.is_tracked(doc, skill):
         return answer("unknown", "the census does not track it by name")
     uses = skill_usage.uses_by_week(doc, skill)
     current = _monday(now)
-    used = sorted(m for m, n in uses.items() if n > 0
-                  and datetime.fromisoformat(m).replace(tzinfo=timezone.utc) <= current)
+    used = sorted(m for m, n in uses.items() if n > 0 and skill_usage.week_key(m) <= current)
     out["last_use_week"] = used[-1] if used else None
     listings, counted = {}, {}
     for surface in reached:
@@ -294,22 +299,37 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
         return answer("due", "the removal rule holds now", removable_from=current.date().isoformat(),
                       projected_usd=decision["accrued_usd"])
 
+    # The census's data ends at the earliest `to` of a reached surface's
+    # sources (a carried cloud source can end days before `generated_at`); the
+    # week holding it and every later week are projected, not actuals.
+    ends = [skill_usage.parse_ts(doc.get("generated_at"))]
+    ends += [skill_usage.parse_ts(source.get("to")) for source in doc.get("sources") or []
+             if isinstance(source, dict) and source.get("surface") in reached]
+    if any(end is None for end in ends):
+        return answer("unknown", "the census does not say where its data ends")
+    data_end = min(ends)
+    projected_from = min(current, _monday(data_end))
+
     weeks, value = policy["floor_weeks"], policy["value_per_use_usd"]
     rate = {}
     for surface in reached:
         complete = [current - timedelta(weeks=k) for k in range(1, weeks + 1)]
-        complete = [m for m in complete if m >= counted[surface]]
+        complete = [m for m in complete if counted[surface] <= m < projected_from]
         if not complete:
             return answer("unknown", f"no complete counted {surface} week to set a pace")
         rate[surface] = sum(listings[surface].get(m.date().isoformat(), 0)
                             for m in complete) / len(complete)
 
     def cost(week: datetime) -> float:
-        if week < current:
-            sessions = {s: listings[s].get(week.date().isoformat(), 0) for s in reached}
-        else:
-            sessions = rate
-        return accrued_usd(policy, d, sessions)
+        actual = {s: listings[s].get(week.date().isoformat(), 0) for s in reached}
+        if week >= projected_from:
+            # A week the data ends in costs at least the pace, and at least
+            # what it has shown so far scaled up to a whole week; later weeks
+            # cost the pace (or more, should a row already show more).
+            shown = (data_end - week) / timedelta(weeks=1) if week == projected_from else 1
+            actual = {s: max(rate[s], actual[s] / shown if shown > 0 else actual[s])
+                      for s in reached}
+        return accrued_usd(policy, d, actual)
 
     last_use = (datetime.fromisoformat(out["last_use_week"]).replace(tzinfo=timezone.utc)
                 if out["last_use_week"] else None)
@@ -321,11 +341,15 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
         if clear and covered:
             projected = sum(cost(start + timedelta(weeks=k)) for k in range(weeks))
             if projected >= value:
+                last_day = candidate - timedelta(days=1) - skill_usage.CENSUS_MAX_AGE
                 return answer("date", "projected at today's session pace",
-                              use_by=(candidate - timedelta(days=1)).date().isoformat(),
+                              use_by=last_day.date().isoformat(),
                               removable_from=candidate.date().isoformat(),
                               projected_usd=projected)
             if start >= current:
+                # Every later window is all projected weeks at the pace,
+                # which costs no more than this one: the rule is never met.
                 return answer("not-at-pace", "at today's session pace its description never "
-                              "costs what one use is worth", projected_usd=projected)
+                              "costs what one use is worth",
+                              projected_usd=weeks * accrued_usd(policy, d, rate))
         candidate += timedelta(weeks=1)
