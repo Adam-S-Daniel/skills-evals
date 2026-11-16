@@ -23,6 +23,9 @@ import yaml
 import guidance
 
 GUIDANCE_REPOSITORY = "Adam-S-Daniel/_agent-guidance"
+#: _agent-guidance ADR 0043: the generated contributor rules its sync delivers
+#: to every consumer, byte for byte, once the owner-only payload copy is gone.
+CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 CONTEXT_KEYS = frozenset(("repository", "revision", "guidance_revision", "budget"))
 BUDGET_KEYS = frozenset(("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes"))
 # Generous ceilings above deployed fixture sizes, bounding accidental or
@@ -582,16 +585,36 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
         suffix += b"\n" + raw
         files.append({"path": path, "digest": _sha256(raw), "bytes": len(raw)})
         sources.append((path, raw))
+    rules_source = source.read(source_tree, CONTRIBUTOR_RULES, optional=True)
+    owner_delivered = False
     if metadata is not None:
-        managed_source = base if mode == "full" else source.read(source_tree, "agents-md/stub.md")
+        if mode == "full":
+            # Before ADR 0043 full mode inlined base.md; since, the stub plus
+            # the contributor rules, and base.md reaches sessions only from the
+            # owner's own setup. A pin with the rules file proves either shape.
+            candidates = [(base, False)]
+            stub = source.read(source_tree, "agents-md/stub.md", optional=True)
+            if rules_source is not None and stub is not None:
+                candidates.append((stub + b"\n" + rules_source, True))
+        else:
+            candidates = [(source.read(source_tree, "agents-md/stub.md"), False)]
         # Exactly the build script's one framing newline, never arbitrary trim.
-        if shipped != managed_source + suffix + b"\n":
+        matched = [owner for managed_source, owner in candidates
+                   if shipped == managed_source + suffix + b"\n"]
+        if not matched:
             raise ContextError("guidance_unproven", "managed AGENTS.md bytes differ from the pinned source assembly")
+        owner_delivered = matched[0]
     copied = consumer.read(tree, ".claude/hooks/fleet-guidance.md", optional=True)
     if copied is not None and copied != base:
         raise ContextError("guidance_unproven", "shipped fleet-guidance.md bytes differ from the pinned base")
-    if mode in ("stub", "copy") and copied is None:
-        raise ContextError("guidance_unproven", "full guidance requires a complete managed block or a shipped payload copy")
+    if mode == "stub" and copied is None and rules_source is not None:
+        # ADR 0043: the sync removed the payload copy and delivers the
+        # contributor rules instead. Byte-equal rules prove the repo was synced
+        # from this pin, whose base.md the owner's own setup delivers.
+        if consumer.read(tree, CONTRIBUTOR_RULES, optional=True) == rules_source:
+            owner_delivered = True
+    if mode in ("stub", "copy") and copied is None and not owner_delivered:
+        raise ContextError("guidance_unproven", "full guidance requires a complete managed block, a shipped payload copy, or the pinned contributor rules")
     hook = source.read(source_tree, ".claude/hooks/fleet-memory.sh", optional=True)
     if hook is None and sections:
         raise ContextError("missing_object", "adopted guidance sections require the pinned fleet-memory hook")
@@ -606,6 +629,10 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
              "manifest_digest": _sha256(manifest_raw) if manifest_raw is not None else None,
              "hook_state": "present" if hook is not None else "absent",
              "hook_digest": _sha256(hook) if hook is not None else None}
+    if owner_delivered:
+        # Only on the ADR 0043 shapes, so every older proof keeps its bytes.
+        proof["delivery"] = "owner"
+        proof["contributor_rules_digest"] = _sha256(rules_source)
     rows = tuple(_freeze(dict(row)) for row in manifest or ())
     return payload, proof, {"files": tuple(sources), "hook": hook, "rows": rows}
 

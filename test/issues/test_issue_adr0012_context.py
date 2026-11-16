@@ -446,6 +446,59 @@ class ContextTests(unittest.TestCase):
         self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": managed(BASE, mode="full")})
         self.assertEqual(self.resolve().guidance, BASE)
 
+    # _agent-guidance ADR 0043: the sync removes the payload copy and delivers
+    # the contributor rules, and full mode inlines those rules after the stub.
+    RULES = b"<!-- Managed by _agent-guidance -->\n## Security\nContributor rule.\n"
+
+    def pin_with_rules(self):
+        self.metadata["guidance_revision"] = self.pin_guidance(
+            {".github/fleet-contributor-rules.md": self.RULES})
+
+    def test_post_0043_stub_with_pinned_contributor_rules_proves_owner_delivery(self):
+        self.pin_with_rules()
+        self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
+        self.metadata["revision"] = self.commit(self.consumer, {
+            ".github/fleet-contributor-rules.md": self.RULES})
+        frozen = self.resolve()
+        self.assertEqual(frozen.guidance, BASE)
+        self.assertEqual(frozen.manifest["guidance"]["mode"], "stub")
+        self.assertEqual(frozen.manifest["guidance"]["delivery"], "owner")
+        self.assertIsNone(frozen.manifest["guidance"]["payload_copy_digest"])
+
+    def test_post_0043_stub_refuses_contributor_rules_that_differ_from_the_pin(self):
+        self.pin_with_rules()
+        self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
+        for rules in (self.RULES + b"\n", b"other rules\n"):
+            with self.subTest(rules=rules):
+                self.metadata["revision"] = self.commit(self.consumer, {
+                    ".github/fleet-contributor-rules.md": rules})
+                self.error("guidance_unproven", self.resolve)
+
+    def test_post_0043_stub_without_any_rules_file_is_unproven(self):
+        self.pin_with_rules()
+        self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
+        self.metadata["revision"] = self.commit(self.consumer, {})
+        self.error("guidance_unproven", self.resolve)
+
+    def test_post_0043_full_block_is_stub_plus_contributor_rules(self):
+        self.pin_with_rules()
+        self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
+        block = managed(BASE, mode="full").replace(BASE, STUB + b"\n" + self.RULES)
+        self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": block})
+        frozen = self.resolve()
+        self.assertEqual(frozen.guidance, BASE)
+        self.assertEqual(frozen.manifest["guidance"]["mode"], "full")
+        self.assertEqual(frozen.manifest["guidance"]["delivery"], "owner")
+        # The same block against a pin with no rules file proves nothing.
+        self.git(self.guidance, "rm", "-q", ".github/fleet-contributor-rules.md")
+        self.metadata["guidance_revision"] = self.pin_guidance({})
+        self.error("guidance_unproven", self.resolve)
+
+    def test_pre_0043_proofs_carry_no_delivery_key(self):
+        frozen = self.resolve()
+        self.assertNotIn("delivery", frozen.manifest["guidance"])
+        self.assertNotIn("contributor_rules_digest", frozen.manifest["guidance"])
+
     def test_exact_payload_copy_without_agents_proves_zero_optins(self):
         self.git(self.consumer, "rm", "AGENTS.md")
         self.metadata["revision"] = self.commit(self.consumer, {})

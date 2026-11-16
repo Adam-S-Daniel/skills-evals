@@ -390,7 +390,13 @@ Guidance comprises the pinned `agents-md/base.md` and every recorded
 opt-in section. The resolver corroborates the managed section list,
 consumer opt-in configuration and pinned registry defaults, then proves
 those raw bytes against the context commit's managed `AGENTS.md` section
-or `.claude/hooks/fleet-guidance.md`. A timestamp is insufficient.
+or `.claude/hooks/fleet-guidance.md`. After `_agent-guidance` ADR 0043 the
+sync removes that copy and delivers `.github/fleet-contributor-rules.md`, and
+full mode inlines those rules after the stub: a stub-mode commit whose rules
+file equals the pin's, or a full block equal to the pin's stub plus its rules,
+proves the pin too, and the proof records `delivery: owner` (base.md reaches
+those sessions from the owner's own setup, not the repo). A timestamp is
+insufficient.
 `find_guidance_revision(repository, revision, repositories)` returns an
 immutable result with `revision` and `matching_revisions`. It searches every
 ancestor of the guidance repository's `origin/main`, including commits that
