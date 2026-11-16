@@ -20,6 +20,7 @@ import sys
 import tempfile
 import shutil
 import unittest
+from datetime import timedelta
 from unittest import mock
 from pathlib import Path
 
@@ -165,7 +166,7 @@ class ShapeAndMathTests(unittest.TestCase):
                                      "coverage", "discarded_runs", "evals", "fires_without_results",
                                      "fixture_queue", "generated_at",
                                      "guidance", "hooks", "lesson_funnel", "lessons",
-                                     "newest_run", "policy", "removed_skills",
+                                     "newest_run", "policy", "removal_policy", "removed_skills",
                                      "roster", "schema_version",
                                      "skills", "source", "spend", "usage"])
         self.assertIsNone(d["usage"])
@@ -199,8 +200,10 @@ class ShapeAndMathTests(unittest.TestCase):
                                          "decisions", "description", "discarded_runs", "name",
                                          "next_test", "registry", "run_utility", "runs",
                                          "skip_reason",
-                                         "stakes", "status", "usage", "verdict",
+                                         "stakes", "status", "usage", "use_by", "verdict",
                                          "verdict_reason"])
+            # Only adam-agentskills skills carry a deadline, and there is no checkout.
+            self.assertIsNone(s["use_by"])
             # No evals/stakes.yml row: normal.
             self.assertEqual(s["stakes"], {"level": "normal"})
             # No usage census in the tree: unknown, not zero. No schedule: no test.
@@ -245,6 +248,67 @@ class ShapeAndMathTests(unittest.TestCase):
         explorer_data.finish(doc)  # the dropped @ keeps the safety net quiet
         self.assertIsNone(explorer_data.skill_description({"pub": {"path": reg}}, "pub", ".."))
         self.assertIsNone(explorer_data.skill_description(None, "pub", "alpha"))
+
+    def test_use_by_is_null_off_adam_agentskills_and_an_object_on_it(self):
+        import jsonschema
+        import skill_usage
+        reg = self.t.root / "agentskills"
+        for skill in ("alpha", "beta"):
+            md = reg / "plugins" / "bundle-one" / "skills" / skill / "SKILL.md"
+            md.parent.mkdir(parents=True)
+            md.write_text(f"---\nname: {skill}\ndescription: Does the {skill} thing.\n---\nbody\n",
+                          encoding="utf-8")
+        (reg / "scripts").mkdir()
+        (reg / "scripts" / "plugin_layout.json").write_text(
+            json.dumps({"plugins": {"bundle-one": {"skills": ["alpha", "beta"]}}}), encoding="utf-8")
+        registries = {"adam-agentskills": {
+            "path": reg, "layout": "plugins/*/skills/*/SKILL.md",
+            "url": "https://github.com/Adam-S-Daniel/adam-agentskills"}}
+        # alpha and beta are listed under adam-agentskills, gamma under another registry.
+        doc = census(["alpha", "beta"])
+        doc["registries"].insert(1, {**census(["gamma"])["registries"][0]})
+        doc["registries"][0]["name"] = "adam-agentskills"
+        doc["registries"][1]["skills"] = doc["registries"][1]["skills"][:1]
+        self.t.write_json("coverage/latest.json", doc)
+
+        def built():
+            return explorer_data.build(self.t.tree, self.t.roster, self.t.policy, self.t.evals,
+                                       AS_OF, SHA_A, SHA_B, registries=registries, manifest=[])
+
+        def check(document):
+            schema = json.loads(explorer_data.SCHEMA_PATH.read_text(encoding="utf-8"))
+            jsonschema.validate(document, schema)
+            explorer_data.finish(document)
+            return {s["name"]: s for s in document["skills"]}
+
+        # No usage census: unknown, never a date.
+        by = check(built())
+        self.assertEqual(by["alpha"]["use_by"]["state"], "unknown")
+        self.assertEqual(sorted(by["alpha"]["use_by"]),
+                         ["last_use_week", "projected_usd", "removable_from", "state",
+                          "use_by", "why"])
+        self.assertIsNone(by["alpha"]["use_by"]["use_by"])
+        # gamma is listed under another registry, so it has no deadline.
+        self.assertIsNone(by["gamma"]["use_by"])
+        self.assertEqual(built()["removal_policy"], {"value_per_use_usd": 10, "floor_weeks": 8})
+        # A fresh census, one use in the week of 2026-10-19 and no listings.
+        now = plan_week._stamp_time(explorer_data.compute_gates.parse_as_of(AS_OF))
+        floor = now - timedelta(weeks=20)
+        usage = skill_usage.document(
+            [skill_usage.row("2026-W43", "skill", "alpha", 1, 1)], now, floor, sessions_scanned=1,
+            cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": True},
+            skill_keys=["alpha", "beta"])
+        skill_usage.add_rows(usage, [], skill_usage.digest_source(
+            floor, now, 0, surface=skill_usage.SURFACE_CLOUD))
+        self.t.write_json("usage/weekly-local.json", usage)
+        by = check(built())
+        self.assertEqual(by["alpha"]["use_by"]["last_use_week"], "2026-10-19")
+        self.assertEqual(by["alpha"]["use_by"]["state"], "not-at-pace")
+        self.assertIsNone(by["gamma"]["use_by"])
+        # Without the checkout every skill reads null, and the policy is still shown.
+        plain = self.t.build()
+        self.assertTrue(all(s["use_by"] is None for s in plain["skills"]))
+        self.assertEqual(plain["removal_policy"], {"value_per_use_usd": 10, "floor_weeks": 8})
 
     def test_stakes_rows_reach_the_document(self):
         (self.t.evals / "alpha").mkdir(parents=True, exist_ok=True)

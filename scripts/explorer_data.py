@@ -68,6 +68,15 @@ skill carries
 `usage`, its invocations in `usage/weekly-local.json`, whose window is the
 top-level `usage` (None without a census: unknown, not zero).
 
+Each skill also carries `use_by` (`skill_use_by`): `removal_policy.unused_deadline`'s
+answer for a skill of adam-agentskills ({state: exempt, local-only, unknown, due, date or
+not-at-pace; use_by, removable_from, last_use_week: ISO dates or null; projected_usd; why}),
+worked out as `retire_skill.unused_candidates` does from the `--registry` checkout's
+scripts/plugin_layout.json, the skill's SKILL.md, evals/removal-policy.yml, evals/usage-unknown.yml
+and the usage census. null for another registry, without the checkout, layout or policy, or for a
+skill that does not locate exactly once. The top-level `removal_policy` carries the policy's
+`value_per_use_usd` and `floor_weeks` for the page (null when unreadable).
+
 Each skill also carries `copies` (#562, 2026-11-02): which copies of it
 sessions loaded in the last COPY_WEEKS ISO weeks, from the `skill-digest`
 rows of `usage/weekly-local.json` joined by (name, the registry's public
@@ -263,6 +272,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_made  # noqa: E402
 import compute_gates  # noqa: E402
 import draft_new_skill  # noqa: E402
+import eval_scope  # noqa: E402
 import eval_coverage  # noqa: E402
 import eval_facts  # noqa: E402
 import explorer_public  # noqa: E402
@@ -274,6 +284,7 @@ import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
 import regression  # noqa: E402  (harness/, via compute_gates)
+import removal_policy  # noqa: E402  (harness/, via compute_gates)
 import retire_skill  # noqa: E402
 import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
@@ -2138,6 +2149,63 @@ def fleet_discards(skills: list, sections: list) -> dict:
             "skills": of_skills, "guidance": of_sections}
 
 
+def use_by_inputs(registries: dict | None, tree: Path) -> dict | None:
+    """What `skill_use_by` needs, read once: the policy, the exempt skills, the
+    census (None when missing: `unknown`) and, from the adam-agentskills
+    checkout's scripts/plugin_layout.json, each skill's plugin. The same
+    inputs `retire_skill.unused_candidates` reads. None when there is no
+    checkout, or the layout, policy or exempt list cannot be read."""
+    if retire_skill.TARGET not in (registries or {}):
+        return None
+    layout = Path(registries[retire_skill.TARGET]["path"]) / retire_skill.LAYOUT_FILE
+    if not layout.is_file() or layout.is_symlink():
+        return None
+    try:
+        return {"plugins": eval_scope._skill_plugins(layout),
+                "policy": removal_policy.load(retire_skill.REMOVAL_POLICY_FILE),
+                "exempt": set(eval_scope.usage_unknown(REPO_ROOT)),
+                "doc": skill_usage.load(tree / "usage" / "weekly-local.json")}
+    except (eval_scope.ScopeError, removal_policy.PolicyError):
+        return None
+
+
+def skill_use_by(inputs: dict | None, registries: dict | None, registry: str | None,
+                 name: str, now: datetime) -> dict | None:
+    """`removal_policy.unused_deadline` for an adam-agentskills skill, worked
+    out as `retire_skill.unused_candidates` does (the same plugins, surfaces,
+    description size, policy, exemptions and instant); None for any other
+    registry, without `inputs`, for a skill outside the layout, one that does
+    not locate exactly once, or whose SKILL.md has no readable frontmatter."""
+    if inputs is None or registry != retire_skill.TARGET or name not in inputs["plugins"] \
+            or not retire_skill.SKILL_RE.fullmatch(name):
+        return None
+    checkout = Path(registries[retire_skill.TARGET]["path"])
+    try:
+        location = retire_skill.locate(registries, name)
+        retire_skill.contained(checkout, [f"{location['path']}/SKILL.md"])
+        d = removal_policy.description_tokens(
+            (checkout / location["path"] / "SKILL.md").read_text(encoding="utf-8"))
+    except (retire_skill.RetireError, removal_policy.PolicyError, OSError, UnicodeDecodeError):
+        return None
+    return removal_policy.unused_deadline(
+        inputs["policy"], inputs["doc"], name,
+        eval_scope._surfaces(name, inputs["plugins"]), d, now, inputs["exempt"])
+
+
+def removal_policy_figures(inputs: dict | None) -> dict | None:
+    """The document's `removal_policy`: the figures the page needs to explain
+    a `use_by` date, from evals/removal-policy.yml; None when unreadable."""
+    if inputs is None:
+        try:
+            policy = removal_policy.load(retire_skill.REMOVAL_POLICY_FILE)
+        except removal_policy.PolicyError:
+            return None
+    else:
+        policy = inputs["policy"]
+    return {"value_per_use_usd": policy["value_per_use_usd"],
+            "floor_weeks": policy["floor_weeks"]}
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -2194,6 +2262,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now,
                            gates_doc.get("guidance_policy"), batch)
     counts, usage_window = usage_counts(tree)
+    use_by = use_by_inputs(registries, tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
 
@@ -2230,6 +2299,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "usage": None if usage_window is None
                        else counts.get(name, {"invocations": 0, "reads": 0}),
                        "copies": copies,
+                       "use_by": skill_use_by(use_by, registries, row["registry"], name, now),
                        "discarded_runs": discarded_runs(verdict),
                        "run_utility": run_utility(verdict),
                        "decisions": decisions(verdict),
@@ -2341,6 +2411,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "policy": {**{k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                              "min_cli_versions", "objective_margin")},
                    "max_runs_per_cell": policy.get("max_runs_per_cell")},
+        "removal_policy": removal_policy_figures(use_by),
         "skills": skills, "removed_skills": removed_list,
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "discarded_runs": fleet_discards(skills, sections),

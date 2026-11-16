@@ -257,6 +257,29 @@
     }
    ]
   },
+  "removal_policy": {
+   "anyOf": [
+    {
+     "type": "object",
+     "properties": {
+      "value_per_use_usd": {
+       "type": "number"
+      },
+      "floor_weeks": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "floor_weeks",
+      "value_per_use_usd"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
   "usage": {
    "anyOf": [
     {
@@ -458,6 +481,7 @@
   "lessons",
   "newest_run",
   "policy",
+  "removal_policy",
   "removed_skills",
   "roster",
   "schema_version",
@@ -2995,6 +3019,16 @@
       }
      ]
     },
+    "use_by": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/use_by"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
     "runs": {
      "type": "array",
      "items": {
@@ -3035,8 +3069,79 @@
     "stakes",
     "status",
     "usage",
+    "use_by",
     "verdict",
     "verdict_reason"
+   ],
+   "additionalProperties": false
+  },
+  "use_by": {
+   "type": "object",
+   "properties": {
+    "state": {
+     "enum": [
+      "exempt",
+      "local-only",
+      "unknown",
+      "due",
+      "date",
+      "not-at-pace"
+     ]
+    },
+    "use_by": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "removable_from": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "last_use_week": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "projected_usd": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "why": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "last_use_week",
+    "projected_usd",
+    "removable_from",
+    "state",
+    "use_by",
+    "why"
    ],
    "additionalProperties": false
   },
