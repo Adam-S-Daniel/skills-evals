@@ -245,7 +245,8 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
       `to` among the reached surfaces' sources and `generated_at`; that
       week, `now`'s week and every later one are projected: each surface at
       the larger of its pace and what the week has shown so far scaled up to
-      a whole week (by the share of the week before the data ends), where the
+      a whole week (by the share of the week before the data ends, held
+      between one day and the whole week), where the
       pace is its mean weekly full-listing sessions over its counted complete
       weeks, among the `floor_weeks` weeks before `now`'s, that end before
       the data does. Week W is counted whole, so the date errs early, never
@@ -326,9 +327,13 @@ def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now:
             # A week the data ends in costs at least the pace, and at least
             # what it has shown so far scaled up to a whole week; later weeks
             # cost the pace (or more, should a row already show more).
-            shown = (data_end - week) / timedelta(weeks=1) if week == projected_from else 1
-            actual = {s: max(rate[s], actual[s] / shown if shown > 0 else actual[s])
-                      for s in reached}
+            # The share of the week shown is held to at least one day, so a few
+            # sessions just after Monday do not scale up to a burst, and to at
+            # most the whole week.
+            shown = 1.0
+            if week == projected_from:
+                shown = min(1.0, max((data_end - week) / timedelta(weeks=1), 1 / 7))
+            actual = {s: max(rate[s], actual[s] / shown) for s in reached}
         return accrued_usd(policy, d, actual)
 
     last_use = (datetime.fromisoformat(out["last_use_week"]).replace(tzinfo=timezone.utc)
