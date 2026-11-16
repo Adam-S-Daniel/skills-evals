@@ -19,7 +19,7 @@ Stdlib and `yaml`, no network; the caller supplies `now`.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -211,3 +211,121 @@ def unused_removal(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: 
             "why": f"no use in {weeks} weeks, and its description has cost "
                    f"${out['accrued_usd']:.2f} of context, at least the "
                    f"${policy['value_per_use_usd']:g} one use is worth"}
+
+
+def _monday(moment: datetime) -> datetime:
+    """Midnight UTC of the Monday starting `moment`'s ISO week."""
+    day = moment.astimezone(timezone.utc)
+    return datetime(day.year, day.month, day.day, tzinfo=timezone.utc) - timedelta(
+        days=day.weekday())
+
+
+def unused_deadline(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: datetime,
+                    exempt) -> dict:
+    """The last day a use of `skill` still keeps `unused_removal` from removing it.
+
+    Returns {"state", "use_by", "removable_from", "last_use_week",
+    "projected_usd", "why"}. `state`, first match:
+
+    * `exempt`: listed in evals/usage-unknown.yml, never removed for use.
+    * `local-only`: reaches no cloud surface and `local_removal` is false.
+    * `unknown`: no fresh census, the census does not track the skill by name,
+      a reached surface's exposure is unknown (cloud without
+      `LISTING_RECORDED`) or has no `counted_from`, or a reached surface has
+      no counted complete week to set a pace from.
+    * `due`: `unused_removal` would remove it now.
+    * `date`: the first week W (from `now`'s) at whose start the rule would
+      hold, assuming no further use: (a) no use (`skill_usage.weight`'s rows)
+      in the `floor_weeks` ISO weeks ending with W; (b) every reached
+      surface's `counted_from` on or before the Monday starting that window;
+      (c) the projected accrued cost over the window at least
+      `value_per_use_usd`. A window week before `now`'s uses its actual
+      full-listing exposure (`skill_usage.listing_by_week`, the rows
+      `exposure_by_surface` counts); `now`'s week and later ones use each
+      surface's mean weekly full-listing sessions over its counted complete
+      weeks among the `floor_weeks` weeks before `now`'s. Week W is counted
+      whole, so the date errs early. `removable_from` is W's Monday and
+      `use_by` the day before (ISO dates; a `use_by` before `now` means the
+      skill can be removed this week).
+    * `not-at-pace`: once W's whole window lies in projected weeks (and past
+      both the use and coverage constraints) the accrual no longer changes,
+      so a steady-state accrual under `value_per_use_usd` never reaches it:
+      no date. The search is therefore bounded.
+
+    `last_use_week` is the Monday of the latest census week with a use (None
+    when the census shows none). `projected_usd` is the projected accrual at
+    `removable_from`, the actual accrual for `due`, the steady state for
+    `not-at-pace`, else None. Full precision; `why` is short and names no
+    figure beyond the policy's own.
+    """
+    out = {"state": "unknown", "use_by": None, "removable_from": None,
+           "last_use_week": None, "projected_usd": None}
+
+    def answer(state: str, why: str, **fields) -> dict:
+        return {**out, **fields, "state": state, "why": why}
+
+    reached = tuple(s for s in SURFACES if s in surfaces)
+    if skill in exempt:
+        return answer("exempt", "listed in evals/usage-unknown.yml")
+    if skill_usage.SURFACE_CLOUD not in reached and not policy["local_removal"]:
+        return answer("local-only", "reaches only the local surface and local removal is off")
+    if not reached:
+        return answer("unknown", "reaches no surface")
+    if doc is None or not skill_usage.is_fresh(doc, now):
+        return answer("unknown", "no fresh usage census")
+    if not skill_usage.is_tracked(doc, skill):
+        return answer("unknown", "the census does not track it by name")
+    uses = skill_usage.uses_by_week(doc, skill)
+    current = _monday(now)
+    used = sorted(m for m, n in uses.items() if n > 0
+                  and datetime.fromisoformat(m).replace(tzinfo=timezone.utc) <= current)
+    out["last_use_week"] = used[-1] if used else None
+    listings, counted = {}, {}
+    for surface in reached:
+        listings[surface] = skill_usage.listing_by_week(doc, surface)
+        counted[surface] = skill_usage.counted_from(doc, surface)
+        if listings[surface] is None:
+            return answer("unknown", f"its {surface} exposure is unknown")
+        if counted[surface] is None:
+            return answer("unknown", f"the census does not count the {surface} surface")
+
+    decision = unused_removal(policy, doc, skill, reached, d, now, exempt)
+    if decision["remove"]:
+        return answer("due", "the removal rule holds now", removable_from=current.date().isoformat(),
+                      projected_usd=decision["accrued_usd"])
+
+    weeks, value = policy["floor_weeks"], policy["value_per_use_usd"]
+    rate = {}
+    for surface in reached:
+        complete = [current - timedelta(weeks=k) for k in range(1, weeks + 1)]
+        complete = [m for m in complete if m >= counted[surface]]
+        if not complete:
+            return answer("unknown", f"no complete counted {surface} week to set a pace")
+        rate[surface] = sum(listings[surface].get(m.date().isoformat(), 0)
+                            for m in complete) / len(complete)
+
+    def cost(week: datetime) -> float:
+        if week < current:
+            sessions = {s: listings[s].get(week.date().isoformat(), 0) for s in reached}
+        else:
+            sessions = rate
+        return accrued_usd(policy, d, sessions)
+
+    last_use = (datetime.fromisoformat(out["last_use_week"]).replace(tzinfo=timezone.utc)
+                if out["last_use_week"] else None)
+    candidate = current
+    while True:
+        start = candidate - timedelta(weeks=weeks - 1)
+        clear = last_use is None or last_use < start
+        covered = all(counted[s] <= start for s in reached)
+        if clear and covered:
+            projected = sum(cost(start + timedelta(weeks=k)) for k in range(weeks))
+            if projected >= value:
+                return answer("date", "projected at today's session pace",
+                              use_by=(candidate - timedelta(days=1)).date().isoformat(),
+                              removable_from=candidate.date().isoformat(),
+                              projected_usd=projected)
+            if start >= current:
+                return answer("not-at-pace", "at today's session pace its description never "
+                              "costs what one use is worth", projected_usd=projected)
+        candidate += timedelta(weeks=1)
