@@ -513,14 +513,16 @@ class UnusedDeadlineProjectionTests(unittest.TestCase):
         self.assertGreaterEqual(got["projected_usd"], POLICY["value_per_use_usd"])
 
     def test_data_ending_just_after_monday_is_not_scaled_into_a_burst(self):
-        # Monday of W43, 00:30: 3 cloud sessions so far after eight quiet
-        # weeks (10 a week). Scaled by 30 minutes' share they would read about
-        # 1000 a week; the share is held to one day, so W43 counts 21.
+        # Monday of W43, 00:30: 30 cloud sessions so far after eight weeks at
+        # 400 (threshold 3400 at d = 100). Scaled by 30 minutes' share they
+        # would read 10080 a week and a false date this week; the share is
+        # held to one day, so W43 reads 210, under the pace, and counts 400:
+        # 3200 sessions, never 3400.
         now = datetime(2026, 10, 19, 0, 30, tzinfo=timezone.utc)
-        doc = paced(every_week(10, 35, 42) + [("2026-W43", 3)], generated=now)
+        doc = paced(every_week(400, 35, 42) + [("2026-W43", 30)], generated=now)
         got = removal_policy.unused_deadline(POLICY, doc, SKILL, BOTH, 100, now, set())
         self.assertEqual(got["state"], "not-at-pace", got)
-        self.assertAlmostEqual(got["projected_usd"], 8 * 10 * CLOUD_SESSION_USD)
+        self.assertAlmostEqual(got["projected_usd"], 8 * 400 * CLOUD_SESSION_USD)
 
     def test_a_stale_carried_cloud_source_makes_its_week_a_projected_one(self):
         # Friday of W43; the cloud source stopped 6 days before (Saturday of
