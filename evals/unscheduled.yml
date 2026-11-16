@@ -68,8 +68,6 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/github-actions-repo-settings/scratch-repo-partial-manage
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
-  - path: evals/embeddable-tool-pages
-    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
   - path: evals/review-bash-ci-reliability/release-pipeline
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
   - path: evals/skills-doctor/bucketed-account-store
@@ -126,3 +124,5 @@ fixtures:
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
   - path: evals/tool-powershell/installer-exit-3010
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/rename-pdfs
+    reason: "Auto scope (zero-use), 2026-11-16: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
