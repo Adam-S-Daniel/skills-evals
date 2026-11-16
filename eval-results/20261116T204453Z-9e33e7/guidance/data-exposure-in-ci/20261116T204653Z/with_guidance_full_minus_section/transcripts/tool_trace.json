@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DT8ibc5DwrLLrtfR5nGbRH",
+      "name": "Bash",
+      "input": "ls .github/workflows 2><path>; head -60 scripts/upload_backup.py; cat .github/workflows/actions.lock 2><path> | head; grep -rn \"uses:\" .github/workflows 2><path> | head -5",
+      "input_chars": 180,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DT8ibc5DwrLLrtfR5nGbRH",
+      "is_error": false,
+      "output": "ci.yml\n\"\"\"Upload a compressed snapshot of notes/ to the backup service.\n\nReads its configuration from the environment:\n  BACKUP_ENDPOINT    base URL of the backup service\n  BACKUP_ACCOUNT_ID  the account the snapshot is filed under\n  BACKUP_API_TOKEN   bearer token for that account\n\"\"\"\nimport io\nimp...",
+      "output_chars": 1129,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0113rrxnq3Tmod538nVdjXEm",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; grep -n python -ri .github/workflows/ci.yml",
+      "input_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0113rrxnq3Tmod538nVdjXEm",
+      "is_error": false,
+      "output": "name: ci\n\non:\n  pull_request:\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692\n      - run: python3 -m py_compile scripts/upload_backup.py\n14:      - run: python3 -m py_compile scripts/upload_b...",
+      "output_chars": 308,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RSNj1bsTHgxMePuh9BxP3a",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 99,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01D83t6BQuVUitcsPmSQTqeT",
+      "name": "Bash",
+      "input": "python3 -c \"import yaml;print(yaml.safe_load(open('.github/workflows/nightly-backup.yml'))['jobs'].keys())\"; git status --short",
+      "input_chars": 127,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RSNj1bsTHgxMePuh9BxP3a",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 195,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01D83t6BQuVUitcsPmSQTqeT",
+      "is_error": false,
+      "output": "dict_keys(['backup'])\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .github/workflows/nightly-backup.yml\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc",
+      "output_chars": 200,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
