@@ -2154,6 +2154,21 @@ class GuidanceRemovalTests(unittest.TestCase):
         self.assertIn(["node", "scripts/build-contributor-rules.js", "--write",
                        "(when _agent-guidance has the script)"], json.loads(out)["would_run"])
 
+    def test_a_checkout_without_the_payload_mirror_never_gets_one(self):
+        """_agent-guidance ADR 0043 retires its byte-copy mirror of base.md."""
+        root = guidance_repo(self)
+        sh(root, "git", "rm", "-q", ".claude/hooks/fleet-guidance.md")
+        sh(root, "git", "commit", "-q", "-m", "drop the mirror")
+        rc, _gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(pushed, ["retire-guidance/bravo"])
+        changed = sh(root, "git", "show", "--name-only", "--format=", "HEAD").stdout.split()
+        self.assertEqual(sorted(changed), sorted([
+            "AGENTS.md", "agents-md/base.md", "agents-md/eval-coverage.yml",
+            "docs/guidance-impact.md"]))
+        self.assertFalse((root / ".claude/hooks/fleet-guidance.md").exists())
+        self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")
+
     def test_auto_mode_notifies_adam_with_the_removal_and_its_reversal(self):
         # #557 (Adam, 2026-11-02): every removal notifies him and says how to
         # reverse it, through this repository's own token.
@@ -2277,7 +2292,8 @@ class GuidanceRemovalTests(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         plan = json.loads(out)
         self.assertEqual(plan["action"], "guidance-removal")
-        self.assertIn(["copy", "agents-md/base.md", ".claude/hooks/fleet-guidance.md"],
+        self.assertIn(["copy", "agents-md/base.md", ".claude/hooks/fleet-guidance.md",
+                       "(when the checkout still has that mirror)"],
                       plan["would_run"])
         self.assertEqual(pushed, [])
         self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")

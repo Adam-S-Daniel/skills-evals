@@ -467,6 +467,23 @@ class PrepareTests(unittest.TestCase):
         self.assertIn(gate.AGENT_TRAILER, self.git("log", "-1", "--format=%B"))
         self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def test_a_checkout_without_the_mirror_never_gets_one(self):
+        """_agent-guidance ADR 0043 retires the payload mirror: the gate copies
+        base.md only into a checkout that still has it."""
+        self.git("rm", "-q", ".claude/hooks/fleet-guidance.md")
+        self.git("commit", "-q", "-m", "drop the mirror")
+        self.measured = self.git("rev-parse", "HEAD")
+        (self.staged / "summary.json").write_text(json.dumps(record(
+            guidance={"path": "/tmp/x", "sha": self.measured})))
+        self.files.pop(".claude/hooks/fleet-guidance.md")
+        self.use_patch(self.honest)
+        self.prepare()
+        changed = self.git("diff", "--name-only", f"{self.measured}..HEAD").splitlines()
+        self.assertEqual(sorted(changed), ["agents-md/base.md", "agents-md/eval-coverage.yml",
+                                           "docs/guidance-impact.md"])
+        self.assertFalse((self.tree / ".claude/hooks/fleet-guidance.md").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
     def assertContentRejected(self, changes: dict, message: str):
         self.use_patch({**self.honest, **changes})
         with self.assertRaises(ingest.Rejected) as caught:

@@ -51,15 +51,17 @@ branch tip, holding no credential: it refuses unless the measured sha is an
 ancestor of the tip and `agents-md/` and `AGENTS.md` are unchanged between the
 two (what merges is what was measured), and the tip's manifest row is the
 record's; it applies the patch, re-copies `agents-md/base.md` to
-`.claude/hooks/fleet-guidance.md` when base.md changed (that repository's
-byte-identical fleet-memory payload), checks WHAT changed (`check_content`:
+`.claude/hooks/fleet-guidance.md` when base.md changed and that file exists
+(that repository's byte-identical fleet-memory payload until its ADR 0043
+retires it; a checkout without it never gets one), checks WHAT changed (`check_content`:
 nothing of the section's file outside the section's extent, no new `##`
 heading, only the row's `bytes` in the manifest, one inserted impact entry
 for the section; AGENTS.md is left to that repository's own staleness
 check, which regenerates it), and refuses any changed path outside
 repo-settings ADR 0014's allowlist for _agent-guidance: `agents-md/**`,
 `AGENTS.md`, `docs/guidance-impact.md`, `.claude/hooks/fleet-guidance.md`
-only as a byte-identical copy of `agents-md/base.md`, and
+only as a byte-identical copy of `agents-md/base.md` (while the mirror
+exists), and
 `.github/fleet-contributor-rules.md` only as what `node
 scripts/build-contributor-rules.js --check` accepts (`prepare` regenerates it
 with `--write` when base.md changed and that script exists; an older
@@ -622,7 +624,8 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, mode: str = "draft
         f"routine pushed [`{branch}`](https://github.com/Adam-S-Daniel/skills-evals/"
         f"tree/{sha}) at `{sha}`, and `routine-guidance-improve-gate.yml` validated it "
         "without running it and applied its `guidance.patch` here (and re-copied "
-        f"`{BASE_MD}` to `{PAYLOAD}` when the section is in base.md).",
+        f"`{BASE_MD}` to `{PAYLOAD}` when the section is in base.md and that mirror "
+        "still exists).",
         "", review, "", "---", "", report.rstrip("\n"), "", AGENT_MARKER, ""])
 
 
