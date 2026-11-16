@@ -2,6 +2,7 @@
 import { DATA_REPO } from '../config.js';
 import { useGlossVoice } from './glosses.js';
 import { SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, pts, ordinal, countWord } from './rules.js';
+import { fmtUsd } from './format.js';
 
 const ISSUES_URL = 'https://github.com/' + DATA_REPO + '/issues';
 const REMOVAL_RULE_URL = 'https://github.com/' + DATA_REPO + '/blob/main/docs/rules.md#removal';
@@ -154,13 +155,13 @@ function buildStrings(you) {
     date: (day) => 'Use by ' + day + ' or it is removed as unused',
     late: 'Use it this week or it may be removed as unused',
     due: (weeks) => 'Due for removal as unused: no use in the last ' + (weeks ? weeks + ' weeks' : 'weeks of the removal rule'),
-    notAtPace: (usd) => 'No use-by date: at today\'s session pace its description never costs ' + (usd === null ? 'what' : 'the $' + usd) + ' a use is worth',
+    notAtPace: (usd) => 'No use-by date: at today\'s session pace its description never costs ' + (usd === null ? 'what' : 'the ' + fmtUsd(usd)) + ' a use is worth',
     exempt: 'Exempt: removed only by its eval verdict',
     localOnly: 'Local-only: never removed for lack of use',
     unknown: 'Unknown: usage census can\'t say yet'
   },
   colUseBy: 'Use by',
-  useByCell: { due: 'due', notAtPace: 'no date', unknown: 'unknown', localOnly: 'local-only', exempt: 'exempt' },
+  useByCell: { late: 'use this week', due: 'due', notAtPace: 'no date', unknown: 'unknown', localOnly: 'local-only', exempt: 'exempt' },
   usedSplit: (calls, reads) => calls + (calls === 1 ? ' call' : ' calls') + ', ' + reads + ' by reading its files.',
   copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
   copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',

@@ -104,7 +104,11 @@ export function useBySort(ub) {
 }
 export function useByCell(ub, refMs) {
   if (!ub || typeof ub !== 'object') return STRINGS.noValue;
-  if (ub.state === 'date') return isDayKey(ub.use_by) ? fmtDayKey(ub.use_by, refMs) : STRINGS.useByCell.unknown;
+  if (ub.state === 'date') {
+    if (!isDayKey(ub.use_by)) return STRINGS.useByCell.unknown;
+    const late = isFinite(refMs) && dayKeyMs(ub.use_by) < dayKeyMs(dayKeyOf(refMs));
+    return late ? STRINGS.useByCell.late : fmtDayKey(ub.use_by, refMs);
+  }
   const k = ub.state === 'not-at-pace' ? 'notAtPace' : ub.state === 'local-only' ? 'localOnly' : ub.state;
   return STRINGS.useByCell[k] || STRINGS.noValue;
 }

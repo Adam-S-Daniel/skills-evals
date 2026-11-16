@@ -1767,7 +1767,7 @@ await test('the use-by line says each state in plain words, from the policy numb
   eq(line({ state: 'date', use_by: '2027-01-03' }), 'Use by Sun Jan 3, 2027 or it is removed as unused (removal rule)');
   eq(line({ state: 'date', use_by: '2026-11-10' }), 'Use it this week or it may be removed as unused (removal rule)');
   eq(line({ state: 'due' }), 'Due for removal as unused: no use in the last 8 weeks (removal rule)');
-  eq(line({ state: 'not-at-pace' }), 'No use-by date: at today\'s session pace its description never costs the $10 a use is worth (removal rule)');
+  eq(line({ state: 'not-at-pace' }), 'No use-by date: at today\'s session pace its description never costs the $10.00 a use is worth (removal rule)');
   eq(line({ state: 'exempt' }), 'Exempt: removed only by its eval verdict (removal rule)');
   eq(line({ state: 'local-only' }), 'Local-only: never removed for lack of use (removal rule)');
   eq(line({ state: 'unknown' }), 'Unknown: usage census can\'t say yet (removal rule)');
@@ -1784,6 +1784,8 @@ await test('the Use by column sorts dated skills by date (due first), then no da
   const rows = [null, { state: 'exempt' }, { state: 'local-only' }, { state: 'unknown' }, { state: 'not-at-pace' },
     { state: 'date', use_by: '2027-01-03' }, { state: 'date', use_by: '2026-12-20' }, { state: 'due' }];
   const sorted = rows.slice().sort((x, y) => useBySort(x) - useBySort(y)).map((u) => useByCell(u, ref));
+  eq(useByCell({ state: 'date', use_by: '2026-11-10' }, ref), 'use this week');
+  eq(useByCell({ state: 'date', use_by: '2026-11-16' }, ref), 'Nov 16');
   eq(JSON.stringify(sorted), JSON.stringify(['due', 'Dec 20', 'Jan 3, 2027', 'no date', 'unknown', 'local-only', 'exempt', STRINGS.noValue]));
   const d = doc({ generated_at: '2026-11-16T16:00:00Z', skills: [
     { name: 'late', status: 'covered', use_by: { state: 'date', use_by: '2027-01-03' } },
