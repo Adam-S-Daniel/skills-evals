@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
-    "context_declared": 72,
-    "context_missing": 95,
+    "context_declared": 73,
+    "context_missing": 98,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 167
+    "total": 171
   },
-  "generated_at": "2026-11-15T12:56:44Z",
+  "generated_at": "2026-11-16T13:58:29Z",
   "include_private_names": false,
   "paused_removed": [
     {
@@ -109,7 +109,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "vendor-release-impact-issues",

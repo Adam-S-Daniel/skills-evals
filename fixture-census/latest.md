@@ -21,7 +21,7 @@
 | adam-coding-anywhere | red-ci-adamdaniel-ai | covered | 5 |  |
 | adam-coding-anywhere | review-bash-ci-reliability | covered | 6 |  |
 | adam-coding-anywhere | skills-doctor | covered | 5 |  |
-| adam-coding-anywhere | vendor-release-impact-issues | covered | 4 |  |
+| adam-coding-anywhere | vendor-release-impact-issues | covered | 5 |  |
 | adam-coding-anywhere | workflow-path-audit | covered | 6 |  |
 | adam-coding-local | launch-top-level-claude-session | GAP | 0 |  |
 | adam-coding-local | migrate-claude-memory | skipped | 0 | rechecked 2026-11-05, holds on criterion 1 only: one recorded local use since 2026-09-14 (week of 2026-09-21). Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows |
@@ -75,6 +75,6 @@ Fixtures whose skill is gone from its registry, kept by the eval scope pass. Not
 
 ## Fixture metadata readiness
 
-- Fixtures: 167; draft: 11.
-- Context declared: 72; missing: 95; guidance unproven: 0.
+- Fixtures: 171; draft: 11.
+- Context declared: 73; missing: 98; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
