@@ -233,7 +233,8 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     `--guidance PATH` checkout of _agent-guidance that removes the
     section's extent from its file (the whole file for a sections/*.md file
     with no other `##`; for base.md, re-copied to the repository's own
-    `.claude/hooks/fleet-guidance.md` payload), deletes its
+    `.claude/hooks/fleet-guidance.md` payload while that mirror exists, which
+    _agent-guidance ADR 0043 retires), deletes its
     `agents-md/eval-coverage.yml` row,
     rewrites the manifest's bytes (`check-guidance-coverage.js
     --write-bytes`), adds a typed `remove` entry to
@@ -2780,7 +2781,8 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
         _git(checkout, "rm", "-q", "--", row["file"])
     else:
         _write_exact(source, remaining)
-        if row["file"] == "agents-md/base.md":
+        # The mirror exists only before _agent-guidance ADR 0043 removed it.
+        if row["file"] == "agents-md/base.md" and (checkout / GUIDANCE_PAYLOAD).is_file():
             (checkout / GUIDANCE_PAYLOAD).write_bytes(source.read_bytes())
     manifest = checkout / GUIDANCE_MANIFEST
     _write_exact(manifest, manifest_without_row(_read_exact(manifest), action["section"]))
@@ -2792,8 +2794,10 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
     rules = (checkout / GUIDANCE_CONTRIBUTOR_SCRIPT).is_file()
     if rules:
         _run(checkout, "node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write")
+    payload = (checkout / GUIDANCE_PAYLOAD).is_file()
     _git(checkout, "add", "-A", "--", "agents-md", GUIDANCE_IMPACT, GUIDANCE_AGENTS,
-         GUIDANCE_PAYLOAD, *([GUIDANCE_CONTRIBUTOR_RULES] if rules else []))
+         *([GUIDANCE_PAYLOAD] if payload else []),
+         *([GUIDANCE_CONTRIBUTOR_RULES] if rules else []))
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
@@ -2814,7 +2818,8 @@ def guidance_commands(action: dict) -> list:
     if kind == "guidance-removal":
         return [["git", "checkout", "-b", action["branch"]],
                 ["edit", action["file"], f"remove ## {action['heading']}"],
-                *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD]]
+                *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD,
+                    "(when _agent-guidance still has the mirror)"]]
                   if action["file"] == "agents-md/base.md" else []),
                 ["edit", GUIDANCE_MANIFEST, f"delete row {action['section']}"],
                 ["npm", "ci", "--ignore-scripts", "(when node_modules is missing)"],

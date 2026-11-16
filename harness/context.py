@@ -23,6 +23,7 @@ import yaml
 import guidance
 
 GUIDANCE_REPOSITORY = "Adam-S-Daniel/_agent-guidance"
+CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 CONTEXT_KEYS = frozenset(("repository", "revision", "guidance_revision", "budget"))
 BUDGET_KEYS = frozenset(("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes"))
 # Generous ceilings above deployed fixture sizes, bounding accidental or
@@ -590,8 +591,19 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
     copied = consumer.read(tree, ".claude/hooks/fleet-guidance.md", optional=True)
     if copied is not None and copied != base:
         raise ContextError("guidance_unproven", "shipped fleet-guidance.md bytes differ from the pinned base")
-    if mode in ("stub", "copy") and copied is None:
-        raise ContextError("guidance_unproven", "full guidance requires a complete managed block or a shipped payload copy")
+    # _agent-guidance ADR 0043: the owner payload left the consumer repos and
+    # reaches the owner's sessions from the owner's own routes, so a stub
+    # consumer proves the full guidance by shipping the pinned source's
+    # contributor file, byte for byte, in place of a payload copy.
+    contributor = None
+    if mode == "stub" and copied is None:
+        rules = source.read(source_tree, CONTRIBUTOR_RULES, optional=True)
+        contributor = consumer.read(tree, CONTRIBUTOR_RULES, optional=True)
+        if rules is None or contributor != rules:
+            contributor = None
+    if mode in ("stub", "copy") and copied is None and contributor is None:
+        raise ContextError("guidance_unproven", "full guidance requires a complete managed block, a shipped "
+                           "payload copy, or (ADR 0043) the pinned contributor file")
     hook = source.read(source_tree, ".claude/hooks/fleet-memory.sh", optional=True)
     if hook is None and sections:
         raise ContextError("missing_object", "adopted guidance sections require the pinned fleet-memory hook")
@@ -606,6 +618,9 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
              "manifest_digest": _sha256(manifest_raw) if manifest_raw is not None else None,
              "hook_state": "present" if hook is not None else "absent",
              "hook_digest": _sha256(hook) if hook is not None else None}
+    if contributor is not None:
+        # Only when used, so every earlier proof keeps its exact bytes.
+        proof["contributor_digest"] = _sha256(contributor)
     rows = tuple(_freeze(dict(row)) for row in manifest or ())
     return payload, proof, {"files": tuple(sources), "hook": hook, "rows": rows}
 
