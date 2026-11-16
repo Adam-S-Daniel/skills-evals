@@ -257,6 +257,9 @@ class DashboardBuildTests(unittest.TestCase):
             self.assertEqual(d["staleAfterHours"], floor, name)
             self.assertNotRegex(d["schedule"], r"every (\d+ )?hours?\b", name)
             self.assertIn("Rebuilt on every refresh", d["schedule"], name)
+            # No clock time: the refresh moved from twice a day to once (2026-11-15) and
+            # seventeen copies of "7:29 AM and 7:29 PM ET" went stale.
+            self.assertNotRegex(d["schedule"], r"\d{1,2}:\d\d", name)
         self.assertGreater(checked, 10)
         readme = " ".join((DASH / "README.md").read_text().split())
         self.assertNotIn("hand-kept ones", readme, "the Compare step stamps every file dataset")
