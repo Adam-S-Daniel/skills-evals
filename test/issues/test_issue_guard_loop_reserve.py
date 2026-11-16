@@ -103,7 +103,7 @@ class ProducerTests(unittest.TestCase):
         # A task fired by a workflow that was not scanned has no rate: omit, never undercount.
         write_json(self.inputs / "triggers.json",
                    {"t1": {"enabled": True, "cron_expression": "0 9 * * *"},
-                    "t2": {"enabled": True, "name": "Fleet worker", "last_run": "2026-11-15T00:00:00Z"}})
+                    "t2": {"enabled": True, "name": "Loop worker", "last_run": "2026-11-15T00:00:00Z"}})
         self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW,
                                           str(self.ledger)))
 
