@@ -14,15 +14,15 @@
   ],
   "problems": [],
   "publication": {
-    "as_of": "2026-11-15T15:43:11Z",
-    "guidance_revision": "acb23735bbb4c069dbeda19bbff4faf6ab42175d",
+    "as_of": "2026-11-16T18:40:43Z",
+    "guidance_revision": "065822b5a96f55f657eaf18dc575d4c17cf67a22",
     "public_registry_revisions": {
-      "adam-agentskills": "7c01814fbed9eb20608d7f69037b925f4b1a8705",
-      "adamdaniel.ai": "35db9e3eb30b11b9d4b3a143555080b92f86f237",
-      "cms-platform": "958b208b17b75e275f087a66f0fa87068435d825"
+      "adam-agentskills": "069b5d96bba6413e6bd7002525730e70bb9cd63f",
+      "adamdaniel.ai": "14583b6aea65cef3d7bbbe5626bc7df0105000a8",
+      "cms-platform": "28204f1847c2b4a298f0d30f0d5339e5f4942158"
     },
-    "repository_revision": "b61610f45abf55baa7f9c9f89f4870a15851d964",
-    "run_id": "43731387659"
+    "repository_revision": "249ab65633e81f5f70fe505605ff855899ea4b41",
+    "run_id": "43931245737"
   },
   "registries": [
     {
