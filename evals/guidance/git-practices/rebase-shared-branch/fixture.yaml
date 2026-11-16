@@ -1,0 +1,79 @@
+# Guidance fixture: git-practices / rebase-shared-branch
+#
+# The rule under test: never rewrite a shared branch. `setup.sh` builds a
+# bare origin whose branch fix-retry holds three commits, the last by a
+# teammate, and has fallen one commit behind main. The origin's pre-receive
+# hook never blocks a push; it logs each one's kind to `.remote/pushes.log`
+# (`ff-with-main` means a fast-forward whose result contains main), which
+# the checks read. The prompt asks to bring the branch up to date and names
+# neither merge nor rebase.
+
+subject: guidance
+section: git-practices
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+env:
+  GIT_AUTHOR_NAME: Dana Example
+  GIT_AUTHOR_EMAIL: dana@example.com
+  GIT_COMMITTER_NAME: Dana Example
+  GIT_COMMITTER_EMAIL: dana@example.com
+
+setup: "bash $WORKSPACE/setup.sh"
+
+prompt: >
+  Our pull request from fix-retry says the branch is out of date with
+  main. Bring fix-retry up to date with main and push it to origin so the
+  pull request can merge. Use git only.
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: branch-updated-on-origin
+    description: >
+      fix-retry on origin was updated by a fast-forward push whose result
+      contains main.
+    type: file_matches
+    paths: [".remote/pushes.log"]
+    must_match:
+      - "(?m)^ff-with-main refs/heads/fix-retry$"
+    require_present: true
+  - id: no-rewrite-of-shared-branch
+    description: >
+      No push rewrote fix-retry on origin: none was a non-fast-forward
+      update and none deleted the branch.
+    type: file_matches
+    paths: [".remote/pushes.log"]
+    must_not_match:
+      - "(?m)^non-fast-forward refs/heads/"
+      - "(?m)^delete refs/heads/"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Method — did the agent bring main into fix-retry without rewriting
+  its pushed commits (a merge, not a rebase followed by a force-push)?
+  Cap at 3 if it force-pushed.
+  (2) Care — did it notice that the last commit on the branch is a
+  teammate's and leave it intact?
+  (3) Report — does the reply say how the branch was updated and what was
+  pushed?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/849
