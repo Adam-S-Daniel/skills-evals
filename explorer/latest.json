@@ -1,7 +1,16 @@
 {
  "activity": {
-  "fetched_at": "2026-11-16T17:40:32Z",
+  "fetched_at": "2026-11-16T17:45:50Z",
   "issues": [
+   {
+    "created_at": "2026-11-16T17:43:46Z",
+    "number": 1077,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Fixture queue: fixture evals/guidance/two-github-connectors/org-connector-merge has no runs 3 days after it landed",
+    "updated_at": "2026-11-16T17:43:46Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/1077"
+   },
    {
     "created_at": "2026-11-16T16:51:37Z",
     "number": 1072,
@@ -109,15 +118,6 @@
     "title": "Fixture queue: request #850 has no PR after 7 days",
     "updated_at": "2026-11-15T17:42:23Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/1059"
-   },
-   {
-    "created_at": "2026-11-15T17:42:22Z",
-    "number": 1058,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
-    "title": "Fixture queue: request #849 has no PR after 7 days",
-    "updated_at": "2026-11-15T17:42:22Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/1058"
    },
    {
     "created_at": "2026-11-15T16:39:10Z",
@@ -761,6 +761,28 @@
   ],
   "pulls": [
    {
+    "created_at": "2026-11-16T17:42:51Z",
+    "head_ref": "tool-sync/skills-evals",
+    "merged_at": null,
+    "number": 4937,
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "state": "open",
+    "title": "tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:21Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4937"
+   },
+   {
+    "created_at": "2026-11-16T17:17:04Z",
+    "head_ref": "use-by-deadline",
+    "merged_at": "2026-11-16T17:42:24Z",
+    "number": 1075,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "merged",
+    "title": "Show each skill's use-by deadline before an unused removal",
+    "updated_at": "2026-11-16T17:42:27Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/1075"
+   },
+   {
     "created_at": "2026-11-10T07:35:05Z",
     "head_ref": "dependabot/github_actions/actions/create-github-app-token-3.3.0",
     "merged_at": null,
@@ -836,28 +858,6 @@
     "title": "Bring the overview, routines and guidance pages up to date with the starters",
     "updated_at": "2026-11-16T17:35:28Z",
     "url": "https://github.com/Adam-S-Daniel/acsi-kit/pull/71"
-   },
-   {
-    "created_at": "2026-11-16T17:17:28Z",
-    "head_ref": "tool-preview/skills-evals-pr-1075",
-    "merged_at": null,
-    "number": 4936,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "state": "open",
-    "title": "Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
-    "updated_at": "2026-11-16T17:33:30Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4936"
-   },
-   {
-    "created_at": "2026-11-16T17:17:04Z",
-    "head_ref": "use-by-deadline",
-    "merged_at": null,
-    "number": 1075,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
-    "title": "Show each skill's use-by deadline before an unused removal",
-    "updated_at": "2026-11-16T17:32:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/1075"
    },
    {
     "created_at": "2026-11-16T17:02:08Z",
@@ -4202,17 +4202,6 @@
     "title": null,
     "updated_at": "2026-11-13T13:01:23Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4839"
-   },
-   {
-    "created_at": "2026-11-13T12:29:28Z",
-    "head_ref": "agents-md-sync/update",
-    "merged_at": "2026-11-13T12:39:30Z",
-    "number": 4838,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "state": "merged",
-    "title": "chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-13T12:39:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4838"
    },
    {
     "created_at": "2026-11-13T12:29:45Z",
@@ -8080,6 +8069,378 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-16T17:45:25Z",
+    "event": "schedule",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 43921689523,
+    "state": "completed",
+    "title": "scheduled \u2014 */5 * * * *",
+    "updated_at": "2026-11-16T17:45:34Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/43921689523",
+    "workflow": "scheduled \u2014 */5 * * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:27Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921180827,
+    "state": "completed",
+    "title": "Push on main",
+    "updated_at": "2026-11-16T17:45:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921180827",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:32:52Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43919507763,
+    "state": "completed",
+    "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
+    "updated_at": "2026-11-16T17:45:19Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43919507763",
+    "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:53Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921254597,
+    "state": "completed",
+    "title": "PR #4937",
+    "updated_at": "2026-11-16T17:43:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921254597",
+    "workflow": "PR #4937"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263655,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:55Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263655",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:35:50Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/acsi-kit",
+    "run_id": 43920037159,
+    "state": "completed",
+    "title": "push \u2014 main",
+    "updated_at": "2026-11-16T17:43:42Z",
+    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43920037159",
+    "workflow": "push \u2014 main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:43:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921326168,
+    "state": "completed",
+    "title": "chained \u2014 after PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974 #16698",
+    "updated_at": "2026-11-16T17:43:39Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921326168",
+    "workflow": "chained \u2014 after PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974 #16698"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921262977,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:35Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921262977",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:36:49Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43920209943,
+    "state": "completed",
+    "title": "Accept consumers without the fleet payload copy (ADR 0043)",
+    "updated_at": "2026-11-16T17:43:32Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43920209943",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263072,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:29Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263072",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263151,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:29Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263151",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-16T17:43:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921285605,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-16T17:43:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921285605",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263562,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:24Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263562",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263484,
+    "state": "completed",
+    "title": "tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:17Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263484",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263668,
+    "state": "in_progress",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:17Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263668",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263223,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:13Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263223",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263413,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:11Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263413",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:39Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921215915,
+    "state": "completed",
+    "title": "PR #4936 \u2014 teardown",
+    "updated_at": "2026-11-16T17:43:11Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921215915",
+    "workflow": "PR #4936 \u2014 teardown"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263697,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:10Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263697",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263142,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:08Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263142",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263873,
+    "state": "in_progress",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:43:06Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263873",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:35:43Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/acsi-kit",
+    "run_id": 43920014813,
+    "state": "completed",
+    "title": "push \u2014 main",
+    "updated_at": "2026-11-16T17:43:04Z",
+    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43920014813",
+    "workflow": "push \u2014 main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:27Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921180838,
+    "state": "completed",
+    "title": null,
+    "updated_at": "2026-11-16T17:43:00Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921180838",
+    "workflow": null
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-16T17:42:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921263148,
+    "state": "completed",
+    "title": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974",
+    "updated_at": "2026-11-16T17:42:57Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921263148",
+    "workflow": "PR #4937 \u2014 tools: sync Improvement Loop Explorer to f514974"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:27Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921180828,
+    "state": "completed",
+    "title": "Merge pull request #1075 from Adam-S-Daniel/use-by-deadline",
+    "updated_at": "2026-11-16T17:42:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921180828",
+    "workflow": "Propagation"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:39Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43921215988,
+    "state": "completed",
+    "title": "reap PR #4936 (closed)",
+    "updated_at": "2026-11-16T17:42:48Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43921215988",
+    "workflow": "reap PR #4936 (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:28Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921182416,
+    "state": "completed",
+    "title": "PR #1075 \u2192 site preview (closed)",
+    "updated_at": "2026-11-16T17:42:41Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921182416",
+    "workflow": "PR #1075 \u2192 site preview (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:42:27Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921180832,
+    "state": "completed",
+    "title": "Merge pull request #1075 from Adam-S-Daniel/use-by-deadline",
+    "updated_at": "2026-11-16T17:42:41Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921180832",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-16T17:42:27Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 43921180912,
+    "state": "in_progress",
+    "title": "Merge pull request #1075 from Adam-S-Daniel/use-by-deadline",
+    "updated_at": "2026-11-16T17:42:32Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43921180912",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:35:27Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/acsi-kit",
+    "run_id": 43919966979,
+    "state": "completed",
+    "title": "push \u2014 main",
+    "updated_at": "2026-11-16T17:42:22Z",
+    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43919966979",
+    "workflow": "push \u2014 main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-16T17:32:25Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 43919425467,
+    "state": "completed",
+    "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
+    "updated_at": "2026-11-16T17:42:08Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43919425467",
+    "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-16T17:35:43Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/acsi-kit",
@@ -8259,18 +8620,6 @@
     "workflow": "PR #1076 \u2192 site preview (opened)"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-16T17:36:49Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43920209943,
-    "state": "in_progress",
-    "title": "Accept consumers without the fleet payload copy (ADR 0043)",
-    "updated_at": "2026-11-16T17:37:24Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43920209943",
-    "workflow": "CI"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-16T17:36:49Z",
     "event": "pull_request",
@@ -8331,18 +8680,6 @@
     "workflow": "push \u2014 main"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-16T17:35:50Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/acsi-kit",
-    "run_id": 43920037159,
-    "state": "in_progress",
-    "title": "push \u2014 main",
-    "updated_at": "2026-11-16T17:35:59Z",
-    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43920037159",
-    "workflow": "push \u2014 main"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-16T17:29:01Z",
     "event": "pull_request",
@@ -8380,18 +8717,6 @@
    },
    {
     "conclusion": null,
-    "created_at": "2026-11-16T17:35:43Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/acsi-kit",
-    "run_id": 43920014813,
-    "state": "in_progress",
-    "title": "push \u2014 main",
-    "updated_at": "2026-11-16T17:35:46Z",
-    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43920014813",
-    "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": null,
     "created_at": "2026-11-16T17:35:35Z",
     "event": "push",
     "repo": "Adam-S-Daniel/acsi-kit",
@@ -8425,18 +8750,6 @@
     "updated_at": "2026-11-16T17:35:34Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43919451302",
     "workflow": "PR #1075"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-16T17:35:27Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/acsi-kit",
-    "run_id": 43919966979,
-    "state": "in_progress",
-    "title": "push \u2014 main",
-    "updated_at": "2026-11-16T17:35:31Z",
-    "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/43919966979",
-    "workflow": "push \u2014 main"
    },
    {
     "conclusion": "success",
@@ -8616,18 +8929,6 @@
     "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
     "updated_at": "2026-11-16T17:34:01Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43918884080",
-    "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-16T17:32:52Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43919507763,
-    "state": "in_progress",
-    "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
-    "updated_at": "2026-11-16T17:33:54Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43919507763",
     "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
    },
    {
@@ -8820,18 +9121,6 @@
     "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
     "updated_at": "2026-11-16T17:32:39Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43919425472",
-    "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-16T17:32:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43919425467,
-    "state": "in_progress",
-    "title": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an unused removal",
-    "updated_at": "2026-11-16T17:32:29Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43919425467",
     "workflow": "PR #4936 \u2014 Preview: Improvement Loop Explorer PR #1075 \u2014 Show each skill's use-by deadline before an"
    },
    {
@@ -12508,54 +12797,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-16T15:24:24Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43895961468,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-16T15:25:28Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43895961468",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T15:24:24Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43895962059,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-16T15:25:15Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43895962059",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T15:24:26Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43895966877,
-    "state": "completed",
-    "title": "PR #4917 \u2014 teardown",
-    "updated_at": "2026-11-16T15:24:58Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43895966877",
-    "workflow": "PR #4917 \u2014 teardown"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T15:24:24Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43895962138,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T15:24:46Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43895962138",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-16T15:24:26Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -12601,18 +12842,6 @@
     "updated_at": "2026-11-16T15:24:03Z",
     "url": "https://github.com/Adam-S-Daniel/claude-memory-map/actions/runs/43895699537",
     "workflow": "PR #92"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T15:23:07Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43895742790,
-    "state": "completed",
-    "title": "PR #4917 \u2014 tools: sync Claude Memory Map to 4911592",
-    "updated_at": "2026-11-16T15:23:37Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43895742790",
-    "workflow": "PR #4917 \u2014 tools: sync Claude Memory Map to 4911592"
    },
    {
     "conclusion": "success",
@@ -12735,78 +12964,6 @@
     "workflow": "Routine eval watchdog"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:25:37Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43885590053,
-    "state": "completed",
-    "title": "Dev-hooks sync",
-    "updated_at": "2026-11-16T14:25:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43885590053",
-    "workflow": "Dev-hooks sync"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:21:56Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43884945344,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-16T14:23:13Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43884945344",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:21:58Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43884948320,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-16T14:22:38Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43884948320",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:21:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43884950066,
-    "state": "completed",
-    "title": "PR #4933 \u2014 teardown",
-    "updated_at": "2026-11-16T14:22:20Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43884950066",
-    "workflow": "PR #4933 \u2014 teardown"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:21:58Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43884948383,
-    "state": "completed",
-    "title": "publish: test(scheduled-publish): remove _posts/2099-12-31-e2e-schedu\u2026",
-    "updated_at": "2026-11-16T14:22:18Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43884948383",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:21:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43884950057,
-    "state": "completed",
-    "title": "reap PR #4933 (closed)",
-    "updated_at": "2026-11-16T14:22:05Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43884950057",
-    "workflow": "reap PR #4933 (closed)"
-   },
-   {
     "conclusion": "skipped",
     "created_at": "2026-11-16T14:13:41Z",
     "event": "issues",
@@ -12817,78 +12974,6 @@
     "updated_at": "2026-11-16T14:13:42Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/43883517783",
     "workflow": "Fire prompt-audit sweep"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:12:45Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883355058,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:13:13Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883355058",
-    "workflow": "chained \u2014 after PR #4933 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:12:40Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883340615,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:12:55Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883340615",
-    "workflow": "chained \u2014 after PR #4933 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-16T14:12:44Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883351808,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:12:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883351808",
-    "workflow": "chained \u2014 after PR #4933 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:12:19Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883286465,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:12:37Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883286465",
-    "workflow": null
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T14:12:19Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883285615,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:12:31Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883285615",
-    "workflow": null
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-16T14:12:19Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 43883284836,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-16T14:12:20Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/43883284836",
-    "workflow": null
    },
    {
     "conclusion": "success",
@@ -13001,18 +13086,6 @@
    {
     "conclusion": "success",
     "created_at": "2026-11-16T13:42:29Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43878364242,
-    "state": "completed",
-    "title": "Merge pull request #1068 from Adam-S-Daniel/claude/project-thread-oyn\u2026",
-    "updated_at": "2026-11-16T13:48:59Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43878364242",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:42:29Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 43878364096,
@@ -13021,42 +13094,6 @@
     "updated_at": "2026-11-16T13:45:19Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43878364096",
     "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:37:51Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43877616774,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-16T13:43:50Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43877616774",
-    "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:42:29Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43878364224,
-    "state": "completed",
-    "title": "Merge pull request #1068 from Adam-S-Daniel/claude/project-thread-oyn\u2026",
-    "updated_at": "2026-11-16T13:43:03Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43878364224",
-    "workflow": "Propagation"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:42:29Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43878364127,
-    "state": "completed",
-    "title": "Merge pull request #1068 from Adam-S-Daniel/claude/project-thread-oyn\u2026",
-    "updated_at": "2026-11-16T13:42:42Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43878364127",
-    "workflow": "agent-checks"
    },
    {
     "conclusion": "success",
@@ -13069,54 +13106,6 @@
     "updated_at": "2026-11-16T13:42:38Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43878366616",
     "workflow": "PR #1068 \u2192 site preview (closed)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:32:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43876780037,
-    "state": "completed",
-    "title": "Dashboard: drop clock times from the datasets' schedule text",
-    "updated_at": "2026-11-16T13:39:36Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43876780037",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:32:41Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43876774970,
-    "state": "completed",
-    "title": "PR #1068",
-    "updated_at": "2026-11-16T13:34:28Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43876774970",
-    "workflow": "PR #1068"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:32:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43876780054,
-    "state": "completed",
-    "title": "Dashboard: drop clock times from the datasets' schedule text",
-    "updated_at": "2026-11-16T13:32:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43876780054",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-16T13:32:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 43876780223,
-    "state": "completed",
-    "title": "PR #1068 \u2192 site preview (opened)",
-    "updated_at": "2026-11-16T13:32:52Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/43876780223",
-    "workflow": "PR #1068 \u2192 site preview (opened)"
    },
    {
     "conclusion": "success",
@@ -16153,18 +16142,6 @@
     "updated_at": "2026-11-15T20:01:21Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/43755499691",
     "workflow": "PR #1030 \u2014 chore: sync AGENTS.md from _agent-guidance"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-15T20:00:55Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 43755608484,
-    "state": "completed",
-    "title": "PR #525 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-15T20:01:19Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/43755608484",
-    "workflow": "PR #525 \u2014 chore: sync AGENTS.md from _agent-guidance"
    },
    {
     "conclusion": "success",
@@ -28755,7 +28732,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-11-02T17:40:32Z"
+  "since": "2026-11-02T17:45:50Z"
  },
  "agent_made": {
   "items": [
@@ -61937,7 +61914,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-16T17:39:33Z",
+  "generated_at": "2026-11-16T17:44:55Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -62031,7 +62008,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-16T17:38:23Z",
+ "generated_at": "2026-11-16T17:43:40Z",
  "guidance": {
   "removed": [
    {
@@ -95233,6 +95210,10 @@
   "objective_margin": 0.15,
   "retire_confidence": 0.9
  },
+ "removal_policy": {
+  "floor_weeks": 8,
+  "value_per_use_usd": 10
+ },
  "removed_skills": [
   {
    "date": "2026-11-13",
@@ -95341,6 +95322,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
+   },
    "verdict": null,
    "verdict_reason": null
   },
@@ -95389,6 +95378,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": null,
    "verdict_reason": null
@@ -95573,6 +95570,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
   },
@@ -95622,6 +95620,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": null,
    "verdict_reason": null
   },
@@ -95703,6 +95702,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
   },
@@ -96838,6 +96838,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 1.6878646498599439,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
   },
@@ -97011,6 +97019,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
   },
@@ -97751,6 +97760,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "keep",
    "verdict_reason": "a cell shows benefit"
   },
@@ -97924,6 +97934,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
   },
@@ -97972,6 +97983,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": null,
    "verdict_reason": null
@@ -99047,6 +99066,14 @@
     "invocations": 11,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "exempt",
+    "use_by": null,
+    "why": "listed in evals/usage-unknown.yml"
+   },
    "verdict": "keep",
    "verdict_reason": "a cell shows benefit"
   },
@@ -99190,6 +99217,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
   },
@@ -100868,6 +100896,7 @@
     "invocations": 0,
     "reads": 1
    },
+   "use_by": null,
    "verdict": "keep",
    "verdict_reason": "a cell shows benefit"
   },
@@ -102502,6 +102531,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 0.9552201040416167,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
   },
@@ -102550,6 +102587,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": null,
    "verdict_reason": null
@@ -102981,6 +103026,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "exempt",
+    "use_by": null,
+    "why": "listed in evals/usage-unknown.yml"
    },
    "verdict": "insufficient",
    "verdict_reason": "no fixture on main"
@@ -103892,6 +103945,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 2.1515637294917966,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
   },
@@ -103948,6 +104009,14 @@
     "invocations": 14,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
+   },
    "verdict": null,
    "verdict_reason": null
   },
@@ -103997,6 +104066,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
+   },
    "verdict": null,
    "verdict_reason": null
   },
@@ -104045,6 +104122,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": null,
    "verdict_reason": null
@@ -104188,6 +104273,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
@@ -104670,6 +104763,7 @@
     "invocations": 1,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "a cell is insufficient or missing"
   },
@@ -105413,6 +105507,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": "insufficient",
    "verdict_reason": "a cell is insufficient or missing"
   },
@@ -105462,6 +105557,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": null,
    "verdict_reason": null
   },
@@ -106712,6 +106808,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 1.168521680672269,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
   },
@@ -107307,6 +107411,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": "insufficient",
    "verdict_reason": "a cell is insufficient or missing"
@@ -109840,6 +109952,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 0.6120827851140457,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
    },
    "verdict": "keep",
    "verdict_reason": "a cell shows benefit"
@@ -115120,6 +115240,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": 2.160837711084434,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
   },
@@ -115168,6 +115296,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": null,
    "verdict_reason": null
@@ -115218,6 +115354,7 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": null,
    "verdict": null,
    "verdict_reason": null
   },
@@ -116516,6 +116653,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
@@ -118523,6 +118668,14 @@
     "invocations": 1,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": "2026-11-09",
+    "projected_usd": 0.9181241776710684,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "insufficient",
    "verdict_reason": "a cell is insufficient or missing"
   },
@@ -119228,6 +119381,14 @@
    "usage": {
     "invocations": 0,
     "reads": 0
+   },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "local-only",
+    "use_by": null,
+    "why": "reaches only the local surface and local removal is off"
    },
    "verdict": "insufficient",
    "verdict_reason": "every cell is parked, and a cell the eval scope pass paused does not show a ceiling on its own runs (or was paused for a floor or no use): no fixture is measuring the subject"
@@ -121414,6 +121575,14 @@
     "invocations": 0,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": null,
+    "projected_usd": null,
+    "removable_from": null,
+    "state": "exempt",
+    "use_by": null,
+    "why": "listed in evals/usage-unknown.yml"
+   },
    "verdict": "insufficient",
    "verdict_reason": "a cell is insufficient or missing"
   },
@@ -123516,14 +123685,22 @@
     "invocations": 5,
     "reads": 0
    },
+   "use_by": {
+    "last_use_week": "2026-11-09",
+    "projected_usd": 1.35400131252501,
+    "removable_from": null,
+    "state": "not-at-pace",
+    "use_by": null,
+    "why": "at today's session pace its description never costs what one use is worth"
+   },
    "verdict": "keep",
    "verdict_reason": "a cell shows benefit"
   }
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "41aab80a349a3e59b59292c46a09dc79e060b0aa",
-  "results_commit": "16fb31ddcf5e5b4a8cf4c38a99a963c56a031922"
+  "repository_commit": "f514974c7f238685419a944b2a38e19806c59544",
+  "results_commit": "0adf7adfea723bdb5c12b4859aba6db00ee3499d"
  },
  "spend": {
   "generated_at": "2026-11-16T12:39:48Z",
