@@ -14,7 +14,7 @@ export const PAIR_CAP = 6;
 /* A week is called out when one task took at least this share of its eval runs. */
 export const TOP_TASK_SHARE = 1 / 3;
 
-/* Arm labels by kind of comparison: the first is the solid dot, the second the open square. */
+/* Arm labels by kind of comparison: the first is the solid dot, the second the open square. A section page draws them in its bars' colors. */
 const armsOf = (kind) => (kind === 'skills' ? [STRINGS.barWith, STRINGS.barWithout] : kind === 'guidance' ? [STRINGS.barAll, STRINGS.barAblated] : [STRINGS.barWholeFull, STRINGS.barWholeNone]);
 
 const pct = (x) => Math.round(x * 100) + '%';
@@ -76,8 +76,8 @@ function pairPanel(p, refMs, kind) {
   const labelYs = (a, b) => { const ya = y(a), yb = y(b); if (Math.abs(ya - yb) >= 12) return [ya, yb]; const mid = (ya + yb) / 2; return ya <= yb ? [mid - 6, mid + 6] : [mid + 6, mid - 6]; };
   const [twY, toY] = labelYs(p.then.with, p.then.without), [nwY, noY] = labelYs(p.now.with, p.now.without);
   const arms = [
-    { key: 'with', label: labWith, color: 'var(--s1)', ys: [twY, nwY], pk: 'wp', tk: 'wt', square: false },
-    { key: 'without', label: labWithout, color: 'var(--s2)', ys: [toY, noY], pk: 'op', tk: 'ot', square: true }
+    { key: 'with', label: labWith, color: kind === 'guidance' ? 'var(--axis)' : 'var(--s1)', ys: [twY, nwY], pk: 'wp', tk: 'wt', square: false },
+    { key: 'without', label: labWithout, color: kind === 'guidance' ? 'var(--s3)' : 'var(--s2)', ys: [toY, noY], pk: 'op', tk: 'ot', square: true }
   ];
   for (const a of arms) {
     kids.push(h('line', { x1: XL, x2: XR, y1: y(p.then[a.key]).toFixed(1), y2: y(p.now[a.key]).toFixed(1), stroke: a.color, 'stroke-width': 2, 'stroke-linecap': 'round' }));
