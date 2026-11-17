@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated_at": "2026-11-16T12:39:48Z",
+ "generated_at": "2026-11-17T12:40:19Z",
  "weeks": [
   {
    "week": "2026-10-19",
@@ -32,21 +32,29 @@
    "plan_meter_points": 11.0,
    "run_usd": 138.280329115,
    "api_usd": 128.36016569999995,
-   "thread_spend_usd": 1030.2709723220166
+   "thread_spend_usd": 1045.4223633971317
+  },
+  {
+   "week": "2026-11-16",
+   "eval_runs": 96,
+   "plan_meter_points": 0,
+   "run_usd": 34.6369292,
+   "api_usd": 0,
+   "thread_spend_usd": 26.883040884884764
   }
  ],
  "total": {
   "since": "2026-10-19",
-  "usd": 6555.847524725,
-  "run_usd": 996.517010785,
-  "thread_spend_usd": 5339.245379435,
+  "usd": 6632.518885885,
+  "run_usd": 1031.153939985,
+  "thread_spend_usd": 5381.279811395,
   "api_usd": 220.08513450499998,
-  "verdicts": 7,
-  "cost_per_verdict": 936.5496463892857
+  "verdicts": 8,
+  "cost_per_verdict": 829.064860735625
  },
  "loop_jobs": {
-  "as_of": "2026-11-16T12:39:48Z",
-  "points_per_week": 15.929287728,
-  "usd_per_week": 106.19525152
+  "as_of": "2026-11-17T12:40:19Z",
+  "points_per_week": 8.322084445500002,
+  "usd_per_week": 55.48056297000001
  }
 }
