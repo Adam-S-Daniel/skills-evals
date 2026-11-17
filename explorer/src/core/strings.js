@@ -190,8 +190,6 @@ function buildStrings(you) {
     all: 'The full guidance, every section. The bar is the share of checks passed in these eval runs.',
     ablated: 'The full guidance with only this section taken out. The bar is the share of checks passed in these eval runs.'
   },
-  trendTitle: { skills: 'Weekly gain: checks passed with the skill minus without it, in percentage points',
-    guidance: 'Weekly gain: checks passed with all the guidance minus all but this section, in percentage points' },
   // The whole-guidance comparison taken apart (views/wholecharts.js).
   spreadTitle: 'Checks passed section by section: all the guidance vs none',
   spreadCaption: 'The totals above add every section\'s tasks together, so a section with more eval runs counts for more. Each line here is one section on its own tasks: the open square is the share of checks passed with no guidance, the dot the share with all of it.',
@@ -208,10 +206,20 @@ function buildStrings(you) {
   pairHead: (from, to) => 'Week of ' + from + ' to week of ' + to,
   pairNone: 'No task was tested in both weeks, so these two weeks cannot be compared.',
   pairMix: (shared, dropped, added) => (shared === 1 ? 'One task' : shared + ' tasks') + ' tested in both weeks. ' + dropped + ' not tested again, ' + added + ' new.',
-  pairGap: (then, now) => { const f = (x) => (x < 0 ? 'cost ' + (-x) : 'added ' + x) + (Math.abs(x) === 1 ? ' percentage point' : ' percentage points');
-    return 'The guidance ' + f(then) + ' in the earlier week and ' + f(now) + ' in the later one.'; },
+  pairGap: (then, now, noun = 'The guidance') => { const f = (x) => (x < 0 ? 'cost ' + (-x) : 'added ' + x) + (Math.abs(x) === 1 ? ' percentage point' : ' percentage points');
+    return noun + ' ' + f(then) + ' in the earlier week and ' + f(now) + ' in the later one.'; },
   pairTip: (arm, when, rate, tasks, p, t, n) => arm + ', week of ' + when + ': ' + rate + ' of checks passed, averaged over ' + (tasks === 1 ? 'the one shared task' : 'the ' + tasks + ' shared tasks') + ' (' + p + ' of ' + t + ' checks in ' + n + (n === 1 ? ' eval run' : ' eval runs') + ')',
-  pairAria: (from, to, tw, to_, nw, no) => 'On the tasks tested in both weeks: week of ' + from + ', ' + tw + ' of checks passed with all the guidance and ' + to_ + ' with none; week of ' + to + ', ' + nw + ' and ' + no,
+  pairAria: (from, to, tw, to_, nw, no, a = 'with all the guidance', b = 'with none') => 'On the tasks tested in both weeks: week of ' + from + ', ' + tw + ' of checks passed ' + a + ' and ' + to_ + ' ' + b + '; week of ' + to + ', ' + nw + ' and ' + no,
+  pairKinds: {
+    skills: { title: 'Week to week on the same tasks: share of checks passed, with this skill vs without it', noun: 'The skill',
+      caption: 'Each panel compares two weeks using only the tasks tested in both, each counted once, so a new or harder task does not read as a drop. The space between the lines is what the skill adds.',
+      arms: ['with the skill', 'without it'] },
+    guidance: { title: 'Week to week on the same tasks: share of checks passed, all the guidance vs all but this section', noun: 'The section',
+      caption: 'Each panel compares two weeks using only the tasks tested in both, each counted once, so a new or harder task does not read as a drop. The space between the lines is what the section adds.',
+      arms: ['with all the guidance', 'with all but this section'] }
+  },
+  weekMixOne: (when, n, tasks) => 'Week of ' + when + ': ' + n + (n === 1 ? ' eval run' : ' eval runs') + ' on ' + tasks + (tasks === 1 ? ' task' : ' tasks') + '.',
+  weekTopOne: (k, n, task) => k + ' of the ' + n + ' were one task (' + task + '), so that task alone moves the week\'s total.',
   weekMixTitle: 'What each week tested',
   weekMix: (when, n, tasks, secs) => 'Week of ' + when + ': ' + n + (n === 1 ? ' eval run' : ' eval runs') + ' on ' + tasks + (tasks === 1 ? ' task' : ' tasks') + ' from ' + secs + (secs === 1 ? ' section' : ' sections') + '.',
   weekTop: (k, n, section, task) => k + ' of the ' + n + ' were one task (' + section + ': ' + task + '), so that task alone moves the week\'s total.',
@@ -233,10 +241,7 @@ function buildStrings(you) {
     discarded: 'An eval run that could never count toward a decision, for a recorded reason.'
   },
   funnelTitle: 'Lessons by where they ended up, as a share of all lessons',
-  trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
-  trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
   trendNone: 'No weekly trend yet.',
-  trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
   gainUp: (p) => p + ' points better with it',
   gainDown: (p) => p + ' points worse with it',
   gainZero: 'no difference',

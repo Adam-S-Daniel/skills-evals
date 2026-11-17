@@ -212,10 +212,15 @@ export function gainPer100Words(pooled, bytes) {
    mix still: one row per section, and week-to-week changes on the tasks both
    weeks share. A task is one fixture of one section. */
 
-const pairedWhole = (raw, refMs) => {
-  const r = normRun(raw, 'whole');
-  return r && r.model && inWindow(r, refMs) && r.with && r.without ? r : null;
+/* A run's compared pair as with/without: for 'guidance' the in-situ pair
+   (all the guidance as with, all but the section as without). */
+const pairedRun = (raw, refMs, subject) => {
+  const r = normRun(raw, subject);
+  if (!r || !r.model || !inWindow(r, refMs)) return null;
+  if (subject === 'guidance') return r.full && r.ablated ? Object.assign({}, r, { with: r.full, without: r.ablated, full: null, ablated: null }) : null;
+  return r.with && r.without ? r : null;
 };
+const pairedWhole = (raw, refMs) => pairedRun(raw, refMs, 'whole');
 const rateOf = (p, t) => (t > 0 ? p / t : null);
 
 /* One row per section with a paired full-vs-none run, biggest gain first.
@@ -247,14 +252,17 @@ export function sectionSpread(sections, refMs) {
    both oldest first. A pair joins two consecutive weeks that had runs; its
    sides cover only the tasks tested in both: {with, without} are the mean of
    each task's pass rate (every task counted once, so a task with many runs
-   weighs no more than one with few), beside the pooled check counts. */
-export function weekPairs(sections, refMs) {
+   weighs no more than one with few), beside the pooled check counts.
+   `subject` picks the pair of arms: 'whole' (all the guidance vs none, the
+   default), 'skills' (with vs without) or 'guidance' (all the guidance vs all
+   but the section, shown as with and without). */
+export function weekPairs(sections, refMs, subject = 'whole') {
   if (!isFinite(refMs)) return { weeks: [], pairs: [] };
   const buckets = new Map();
   for (const s of Array.isArray(sections) ? sections : []) {
     if (!s || !s.id) continue;
     for (const raw of Array.isArray(s.runs) ? s.runs : []) {
-      const r = pairedWhole(raw, refMs);
+      const r = pairedRun(raw, refMs, subject);
       if (!r) continue;
       const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
       if (w >= WINDOW_WEEKS) continue;

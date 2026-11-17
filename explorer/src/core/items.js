@@ -62,7 +62,8 @@ export function skillItems(doc) {
       const pooled = poolRuns(s.runs, 'skills', c.refMs, c.order);
       return { name: String(s.name || ''), raw: s, pooled: pooled,
         chip: chipFor(pooled, { subject: 'skills', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'skill', s.name) }),
-        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
+        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs),
+        weekly: weekPairs([{ id: s.name, runs: s.runs }], c.refMs, 'skills') };
     }).sort((a, b) => byNext(a, b) || byFaring(SKILL_RANK)(a, b) || byName(a, b));
 }
 
@@ -82,7 +83,8 @@ export function sectionItems(doc) {
     const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
     return { id: String(s.id), name: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
       chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
-      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs) };
+      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
+      weekly: weekPairs([{ id: s.id, heading: s.heading, runs: s.runs }], c.refMs, 'guidance') };
   });
   items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
   return items;

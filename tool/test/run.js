@@ -608,6 +608,75 @@ test('the whole-guidance panel draws the same-task panels and names a week one t
   ok(P.textOf(P.weekPairsChart(P.wholeGuidance(apart).weekly, Date.parse(apart.generated_at))).includes(P.STRINGS.pairNone));
 });
 
+// --- the same-task weekly panels on a skill page and a section page ---------------------
+const taskSkillRun = (at, fixtureName, wp, op, total) => ({ at, model: 'example-large-2-0', fixture: fixtureName,
+  with: { checks_passed: wp, checks_total: total, trials: 1 }, without: { checks_passed: op, checks_total: total, trials: 1 } });
+const taskSectionRun = (at, fixtureName, fp, ap, total) => ({ at, model: 'example-large-2-0', fixture: fixtureName,
+  modes: { full: { checks_passed: fp, checks_total: total, trials: 1 }, full_minus_section: { checks_passed: ap, checks_total: total, trials: 1 } } });
+/* The same task helps by 60 points in both weeks; in the newer week a new, harder task takes 8 eval runs. */
+const subjectRuns = (mk) => [mk('2026-11-03T00:00:00Z', 'task-a', 9, 3, 10), mk('2026-11-10T00:00:00Z', 'task-a', 9, 3, 10)]
+  .concat(times(8, (i) => mk('2026-11-1' + (i % 4) + 'T0' + i + ':00:00Z', 'task-new', 5, 10, 10)));
+const GEN = '2026-11-15T00:00:00Z';
+
+test('a skill page compares weeks on the shared tasks, so a new harder task does not read as a drop', () => {
+  const runs = subjectRuns(taskSkillRun);
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: GEN, guidance: { sections: [] }, skills: [{ name: 'example-skill-one', status: 'covered', runs }] };
+  const pooled = P.weeklyGains(runs, 'skills', Date.parse(GEN));
+  ok(pooled[0].gain > 0.5 && pooled[1].gain < 0, 'the pooled weekly gain falls below zero: ' + JSON.stringify(pooled));
+  const p = P.weekPairs([{ id: 'example-skill-one', runs }], Date.parse(GEN), 'skills').pairs[0];
+  eq(p.shared, 1);
+  eq(p.then.with - p.then.without, p.now.with - p.now.without, 'the same gain on the shared task in both weeks');
+  eq(p.now.wp + ' of ' + p.now.wt + ' vs ' + p.now.op + ' of ' + p.now.ot, '9 of 10 vs 3 of 10');
+  eq(P.skillItems(doc)[0].weekly.pairs.length, 1, 'the item carries the weekly pairs');
+  ok(P.skillItems(doc)[0].trend.length === 2, 'the old trend field is kept');
+  const t = P.textOf(P.renderRoute(doc, { name: 'skills', id: 'example-skill-one' }, {})).replace(/\s+/g, ' ');
+  ok(t.includes(P.STRINGS.pairKinds.skills.title), 'the skills title');
+  ok(t.includes('The skill added 60 percentage points in the earlier week and added 60 percentage points in the later one.'), t);
+  ok(t.includes('8 of the 9 were one task (task-new)') && !t.includes('Section: ') && !/from 1 section/.test(t), 'the callout names only the fixture');
+  ok(t.includes('With the skill, week of') && t.includes('90% of checks passed, averaged over the one shared task (9 of 10 checks in 1 eval run)'), t);
+  ok(!t.includes('Weekly gain'), 'no pooled weekly line');
+});
+
+test('a section page uses the all-the-guidance vs all-but-this-section pair', () => {
+  const runs = subjectRuns(taskSectionRun);
+  // Runs of the other pair must not count here.
+  runs.push({ at: '2026-11-10T00:00:00Z', model: 'example-large-2-0', fixture: 'task-a', modes: { section: { checks_passed: 0, checks_total: 10, trials: 1 }, none: { checks_passed: 10, checks_total: 10, trials: 1 } } });
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: GEN, skills: [], guidance: { sections: [{ id: 'example-section', heading: 'Example section', status: 'covered', runs }] } };
+  const w = P.sectionItems(doc)[0].weekly;
+  eq(w.pairs.length, 1); eq(w.weeks[1].n, 9, 'only runs with both the full and the ablated arm');
+  eq(Math.round((w.pairs[0].now.with - w.pairs[0].now.without) * 100), 60);
+  const t = P.textOf(P.renderRoute(doc, { name: 'guidance', id: 'example-section' }, {})).replace(/\s+/g, ' ');
+  ok(t.includes(P.STRINGS.pairKinds.guidance.title), 'the section title');
+  ok(t.includes('The section added 60 percentage points in the earlier week and added 60 percentage points in the later one.'), t);
+  ok(t.includes('8 of the 9 were one task (task-new)') && !t.includes('Section: '), 'the callout names only the fixture');
+  eq(P.STRINGS.pairGap(-5, 1, 'The section'), 'The section cost 5 percentage points in the earlier week and added 1 percentage point in the later one.');
+});
+
+test('weekPairs defaults to the whole-guidance pair, and a kind reads only its own arms', () => {
+  const ref = Date.parse(GEN);
+  const whole = [{ id: 'a', status: 'covered', runs: [wholeRun('2026-11-03T00:00:00Z', 't', 9, 3, 10), wholeRun('2026-11-10T00:00:00Z', 't', 9, 3, 10)] }];
+  eq(JSON.stringify(P.weekPairs(whole, ref)), JSON.stringify(P.weekPairs(whole, ref, 'whole')));
+  eq(P.weekPairs(whole, ref).pairs[0].shared, 1);
+  eq(P.weekPairs(whole, ref, 'skills').weeks.length, 0, 'whole runs carry no skill arms');
+  eq(P.weekPairs(whole, ref, 'guidance').weeks.length, 0, 'a run without the ablated arm is skipped');
+});
+
+test('a skill with one week of eval runs says there is nothing to compare and lists the week without a section count', () => {
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: GEN, guidance: { sections: [] }, skills: [{ name: 'example-skill-one', status: 'covered', runs: [taskSkillRun('2026-11-10T00:00:00Z', 't', 1, 0, 1)] }] };
+  const t = P.textOf(P.weekPairsChart(P.skillItems(doc)[0].weekly, Date.parse(GEN), 'skills')).replace(/\s+/g, ' ');
+  ok(t.includes(P.STRINGS.pairOneWeek) && t.includes('1 eval run on 1 task.') && !t.includes('section'), t);
+});
+
+test('each kind labels its two arms in the tooltips and the aria text', () => {
+  const ref = Date.parse(GEN);
+  const label = (mk, kind, id, a, b) => {
+    const tips = P.findAll(P.weekPairsChart(P.weekPairs([{ id, runs: subjectRuns(mk) }], ref, kind), ref, kind), (x) => x.attrs && x.attrs['data-tip']).map((x) => x.attrs['data-tip']);
+    ok(tips.some((x) => x.startsWith(a + ', week of')) && tips.some((x) => x.startsWith(b + ', week of')), kind + ': ' + tips[0]);
+  };
+  label(taskSkillRun, 'skills', 'k', P.STRINGS.barWith, P.STRINGS.barWithout);
+  label(taskSectionRun, 'guidance', 'k', P.STRINGS.barAll, P.STRINGS.barAblated);
+});
+
 // --- failure states ---------------------------------------------------------
 const mode = 'skills';
 test('failure state when the fetch fails', async () => {
@@ -947,40 +1016,11 @@ test('no markup is built from data strings', () => {
   ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(html), 'page must not use HTML-string sinks');
 });
 
-// --- trend chart ----------------------------------------------------------------------
-const trendPts = (specs) => specs.map(([week, gain]) => ({ week, start: Date.UTC(2026, 0, 1) + (25 - week) * 7 * 86400000, gain }));
-const trendRef = Date.UTC(2026, 6, 1);
-test('trendChart: no points gives the none caption and no svg', () => {
-  const n = P.trendChart([], trendRef);
+// --- weekly panel with no data ----------------------------------------------------------
+test('weekPairsChart: no weeks gives the none caption and no svg', () => {
+  const n = P.weekPairsChart({ weeks: [], pairs: [] }, Date.UTC(2026, 6, 1), 'skills');
   eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
   eq(P.textOf(n).trim(), P.STRINGS.trendNone);
-});
-test('trendChart: one point gives a sentence and no svg', () => {
-  const n = P.trendChart(trendPts([[0, 0.07]]), trendRef);
-  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
-  const t = P.textOf(n);
-  ok(t.includes('only one week'), t);
-  ok(t.includes('7 points better with it'), t);
-});
-test('trendChart: three points span the plot with labeled axis', () => {
-  const n = P.trendChart(trendPts([[2, 0.07], [1, -0.03], [0, 0.12]]), trendRef);
-  eq(P.findAll(n, (x) => x.tag === 'svg').length, 1);
-  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
-  for (const want of ['0', '+15', '\u221215']) ok(labels.includes(want), 'label ' + want + ' in ' + labels.join('|'));
-  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
-  eq(dots.length, 3);
-  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
-  ok(Math.abs(Number(dots[2].attrs.cx) - 292) < 0.5, 'last cx ' + dots[2].attrs.cx);
-  const targets = P.findAll(n, (x) => x.tag === 'circle' && x.attrs.class === 'mark');
-  eq(targets.length, 3);
-  ok(targets.every((x) => x.attrs['data-tip-pos'] === 'below'), 'every target is below');
-});
-test('trendChart: old weeks still span the full width', () => {
-  const n = P.trendChart(trendPts([[25, 0.02], [24, 0.04]]), trendRef);
-  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
-  eq(dots.length, 2);
-  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
-  ok(Math.abs(Number(dots[1].attrs.cx) - 292) < 0.5, 'last cx ' + dots[1].attrs.cx);
 });
 
 test('guidance bars draw "All the guidance" as its own bar, not a tick line', () => {
@@ -1073,7 +1113,7 @@ test('every chart has a title above it and every legend item is a definition but
     let titled = 0;
     (function walk(n) {
       if (!n || typeof n !== 'object') return;
-      n.children.forEach((c, i) => { if (c && c.tag === 'svg' && i > 0) { let j = i - 1; while (j > 0 && n.children[j] && n.children[j].attrs && n.children[j].attrs.class === 'model') j--; const prev = n.children[j]; if (prev && prev.attrs && prev.attrs.class === 'chart-title') titled++; } walk(c); });
+      n.children.forEach((c, i) => { if (c && c.tag === 'svg' && i > 0) { let j = i - 1; while (j > 0 && n.children[j] && n.children[j].attrs && n.children[j].attrs.class === 'model') j--; const prev = n.children[j]; if (prev && prev.attrs && (prev.attrs.class === 'chart-title' || prev.attrs.class === 'pair-head')) titled++; } walk(c); });
     })(page);
     eq(titled, charts.length, mode + ': every chart is titled');
     for (const lg of P.findAll(page, (n) => n.attrs && n.attrs.class === 'legend')) {

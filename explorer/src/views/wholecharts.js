@@ -14,6 +14,9 @@ export const PAIR_CAP = 6;
 /* A week is called out when one task took at least this share of its eval runs. */
 export const TOP_TASK_SHARE = 1 / 3;
 
+/* Arm labels by kind of comparison: the first is the solid dot, the second the open square. */
+const ARMS = { whole: [STRINGS.barWholeFull, STRINGS.barWholeNone], skills: [STRINGS.barWith, STRINGS.barWithout], guidance: [STRINGS.barAll, STRINGS.barAblated] };
+
 const pct = (x) => Math.round(x * 100) + '%';
 const weekDay = (w, refMs) => fmtDay(w.start + 1000, refMs);
 
@@ -52,7 +55,9 @@ export function sectionSpreadChart(rows, refMs) {
       group(STRINGS.spreadOn(on.length), null, on), group(STRINGS.spreadOff(off.length), STRINGS.spreadOffNote, off)));
 }
 
-function pairPanel(p, refMs) {
+function pairPanel(p, refMs, kind) {
+  const kd = STRINGS.pairKinds[kind] || {};
+  const [labWith, labWithout] = ARMS[kind] || ARMS.whole;
   const from = weekDay(p.from, refMs), to = weekDay(p.to, refMs);
   const head = h('p', { class: 'pair-head' }, STRINGS.pairHead(from, to));
   const mix = h('p', { class: 'sub' }, STRINGS.pairMix(p.shared, p.dropped, p.added));
@@ -71,8 +76,8 @@ function pairPanel(p, refMs) {
   const labelYs = (a, b) => { const ya = y(a), yb = y(b); if (Math.abs(ya - yb) >= 12) return [ya, yb]; const mid = (ya + yb) / 2; return ya <= yb ? [mid - 6, mid + 6] : [mid + 6, mid - 6]; };
   const [twY, toY] = labelYs(p.then.with, p.then.without), [nwY, noY] = labelYs(p.now.with, p.now.without);
   const arms = [
-    { key: 'with', label: STRINGS.barWholeFull, color: 'var(--s1)', ys: [twY, nwY], pk: 'wp', tk: 'wt', square: false },
-    { key: 'without', label: STRINGS.barWholeNone, color: 'var(--s2)', ys: [toY, noY], pk: 'op', tk: 'ot', square: true }
+    { key: 'with', label: labWith, color: 'var(--s1)', ys: [twY, nwY], pk: 'wp', tk: 'wt', square: false },
+    { key: 'without', label: labWithout, color: 'var(--s2)', ys: [toY, noY], pk: 'op', tk: 'ot', square: true }
   ];
   for (const a of arms) {
     kids.push(h('line', { x1: XL, x2: XR, y1: y(p.then[a.key]).toFixed(1), y2: y(p.now[a.key]).toFixed(1), stroke: a.color, 'stroke-width': 2, 'stroke-linecap': 'round' }));
@@ -87,25 +92,27 @@ function pairPanel(p, refMs) {
     });
   }
   return h('div', { class: 'pair' }, head,
-    h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'pair-chart', role: 'img', 'aria-label': STRINGS.pairAria(from, to, pct(p.then.with), pct(p.then.without), pct(p.now.with), pct(p.now.without)) }, kids),
-    h('p', { class: 'pair-gap' }, STRINGS.pairGap(Math.round((p.then.with - p.then.without) * 100), Math.round((p.now.with - p.now.without) * 100))),
+    h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'pair-chart', role: 'img', 'aria-label': STRINGS.pairAria(from, to, pct(p.then.with), pct(p.then.without), pct(p.now.with), pct(p.now.without), ...(kd.arms || [])) }, kids),
+    h('p', { class: 'pair-gap' }, STRINGS.pairGap(Math.round((p.then.with - p.then.without) * 100), Math.round((p.now.with - p.now.without) * 100), kd.noun)),
     mix);
 }
 
 /* What each week tested: how much, and whether one task took most of it. */
-function weekLine(w, refMs) {
+function weekLine(w, refMs, single) {
   const big = w.n > 1 && w.top.n / w.n >= TOP_TASK_SHARE - 1e-9 && w.tasks > 1;
-  return h('li', null, STRINGS.weekMix(weekDay(w, refMs), w.n, w.tasks, w.sections),
-    big ? [' ', h('strong', null, STRINGS.weekTop(w.top.n, w.n, clean(w.top.heading), clean(w.top.fixture)))] : null);
+  return h('li', null, single ? STRINGS.weekMixOne(weekDay(w, refMs), w.n, w.tasks) : STRINGS.weekMix(weekDay(w, refMs), w.n, w.tasks, w.sections),
+    big ? [' ', h('strong', null, single ? STRINGS.weekTopOne(w.top.n, w.n, clean(w.top.fixture))
+      : STRINGS.weekTop(w.top.n, w.n, clean(w.top.heading), clean(w.top.fixture)))] : null);
 }
 
-/* weekly: core/stats.js weekPairs. */
-export function weekPairsChart(weekly, refMs) {
+/* weekly: core/stats.js weekPairs; kind: 'whole' (default), 'skills' or 'guidance'. */
+export function weekPairsChart(weekly, refMs, kind = 'whole') {
   if (!weekly.weeks.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
+  const kd = STRINGS.pairKinds[kind] || { title: STRINGS.pairTitle, caption: STRINGS.pairCaption };
   const weeks = weekly.weeks.slice(-PAIR_CAP).reverse();
-  const list = h('ul', { class: 'plain weekmix' }, weeks.map((w) => weekLine(w, refMs)));
-  if (!weekly.pairs.length) return h('div', null, chartTitle(STRINGS.pairTitle), h('p', { class: 'trend-cap' }, STRINGS.pairOneWeek), list);
-  return h('div', null, chartTitle(STRINGS.pairTitle), h('p', { class: 'trend-cap' }, STRINGS.pairCaption),
-    h('div', { class: 'pairs' }, weekly.pairs.slice(-PAIR_CAP).map((p) => pairPanel(p, refMs))),
+  const list = h('ul', { class: 'plain weekmix' }, weeks.map((w) => weekLine(w, refMs, kind !== 'whole')));
+  if (!weekly.pairs.length) return h('div', null, chartTitle(kd.title), h('p', { class: 'trend-cap' }, STRINGS.pairOneWeek), list);
+  return h('div', null, chartTitle(kd.title), h('p', { class: 'trend-cap' }, kd.caption),
+    h('div', { class: 'pairs' }, weekly.pairs.slice(-PAIR_CAP).map((p) => pairPanel(p, refMs, kind))),
     chartTitle(STRINGS.weekMixTitle), list);
 }
