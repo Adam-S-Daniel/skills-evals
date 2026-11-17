@@ -1,0 +1,72 @@
+{
+ "schema": 1,
+ "generated_at": "2026-11-17T22:49:32Z",
+ "weeks": [
+  {
+   "week": "2026-10-19",
+   "eval_runs": 192,
+   "plan_meter_points": 71.0,
+   "run_usd": 261.482429025,
+   "scheduled_usd": null,
+   "api_usd": 0,
+   "thread_spend_usd": 621.4202246088876
+  },
+  {
+   "week": "2026-10-26",
+   "eval_runs": 56,
+   "plan_meter_points": 5.0,
+   "run_usd": 17.184334,
+   "scheduled_usd": null,
+   "api_usd": 0,
+   "thread_spend_usd": 1747.1519355771477
+  },
+  {
+   "week": "2026-11-02",
+   "eval_runs": 943,
+   "plan_meter_points": 131.0,
+   "run_usd": 579.569918645,
+   "scheduled_usd": 115.47392382000001,
+   "api_usd": 91.72496880500002,
+   "thread_spend_usd": 1940.4022469269485
+  },
+  {
+   "week": "2026-11-09",
+   "eval_runs": 388,
+   "plan_meter_points": 11.0,
+   "run_usd": 138.280329115,
+   "scheduled_usd": 115.47392382000001,
+   "api_usd": 128.36016569999995,
+   "thread_spend_usd": 1004.7223047623646
+  },
+  {
+   "week": "2026-11-16",
+   "eval_runs": 146,
+   "plan_meter_points": 0,
+   "run_usd": 53.285669635,
+   "scheduled_usd": 20.500489047822498,
+   "api_usd": 0,
+   "thread_spend_usd": 64.26518128965195
+  }
+ ],
+ "total": {
+  "since": "2026-10-19",
+  "usd": 1521.3361516128227,
+  "run_usd": 1049.8026804200001,
+  "scheduled_usd": 251.44833668782252,
+  "scheduled_since": "2026-11-02",
+  "api_usd": 220.08513450499998,
+  "thread_spend_usd": 5377.961893165,
+  "verdicts": 9,
+  "cost_per_verdict": 169.03735017920252
+ },
+ "rates": {
+  "eval_usd_per_point": 6.67,
+  "scheduled_task_usd_per_point": 6.67,
+  "thread_usd_per_point": 42.51900097602588
+ },
+ "loop_jobs": {
+  "as_of": "2026-11-17T22:49:32Z",
+  "points_per_week": 8.299805155500001,
+  "usd_per_week": 55.33203437
+ }
+}
