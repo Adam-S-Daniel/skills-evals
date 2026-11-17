@@ -491,7 +491,7 @@ await test('times line: a subject page dates its own newest run, not the fleet\'
   const d = doc({ generated_at: '2026-11-15T00:37:06Z', newest_run: '2026-11-12T02:26:42Z',
     skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [{ at: '2026-11-03T15:00:00Z' }, { at: '2026-11-05T15:00:00Z' }] }] });
   const text = textOf(renderRoute(d, { name: 'skills', id: 'demo-skill' }, {})).replace(/\s+/g, ' ');
-  ok(text.includes('its newest run Nov 5, 2026, 10:00 AM ET'), text);
+  ok(text.includes('its newest eval run Nov 5, 2026, 10:00 AM ET'), text);
   ok(!text.includes('newest eval run Nov 11'), text);
 });
 await test('C4 guard: no view prints the single document time for a panel (srcLine(STRINGS.srcDoc, refMs))', () => {
@@ -812,10 +812,10 @@ await test('a subject page shows its discarded runs, their cost and top reasons,
   const text = page({ total: 9, cost_usd: 1.23456, cost_unknown: 1, by_reason: {
     over_cap: { runs: 2, cost_usd: 0.2, cost_unknown: 0 }, fixture_changed: { runs: 5, cost_usd: 1, cost_unknown: 1 },
     unpaired: { runs: 1, cost_usd: 0.03456, cost_unknown: 0 }, duplicate: { runs: 1, cost_usd: 0, cost_unknown: 0 } } });
-  ok(text.includes('Discarded runs: 9 runs not counted toward this decision, $1.23 (1 with no recorded cost)'), text);
-  ok(text.includes('Most often: fixture changed (5), past the run cap (2), duplicate copy (1)'), text);
+  ok(text.includes('Discarded: 9 eval runs not counted toward this decision, $1.23 (1 with no recorded cost)'), text);
+  ok(text.includes('Most often: fixture changed (5), past the eval run cap (2), duplicate copy (1)'), text);
   ok(!text.includes('no partner arm'), 'three reasons at most');
-  for (const d of [null, { total: 0, cost_usd: 0, cost_unknown: 0, by_reason: {} }]) ok(!page(d).includes('Discarded runs'), JSON.stringify(d));
+  for (const d of [null, { total: 0, cost_usd: 0, cost_unknown: 0, by_reason: {} }]) ok(!page(d).includes('not counted toward this decision'), JSON.stringify(d));
 });
 
 // Run usefulness (Adam, 2026-11-07): rows of `run_utility`, summed over a period
@@ -856,25 +856,25 @@ await test('a subject page shows run usefulness for the last 30 days, stranded o
       { fixture: 'task-b', model: 'claude-sonnet-4-5', current: false, from: '2026-10-20', to: '2026-10-21', class: 'insufficient', decided: null, pair: null }] }] });
   const node = renderRoute(d, { name: 'skills', id: 'demo-skill' }, {});
   const text = textOf(node);
-  ok(text.includes('Run usefulness'), text);
-  ok(text.includes('No use: 10 of 23 runs, $2.50 of $5.75.'), text);
+  ok(text.includes('Eval run usefulness'), text);
+  ok(text.includes('No use: 10 of 23 eval runs, $2.50 of $5.75.'), text);
   ok(text.includes('Stranded') && text.includes('fixture changed 6 ($1.50)'), text);
-  ok(text.includes('v1 kept (helps) on 2026-11-02, runs 2026-10-28 to 2026-11-02; v2 (current) building, runs 2026-11-05 to 2026-11-07'), text);
-  ok(text.includes('on task-b: v1 never decided before it changed (stranded), runs 2026-10-20 to 2026-10-21'), text);
+  ok(text.includes('v1 kept (helps) on 2026-11-02, eval runs 2026-10-28 to 2026-11-02; v2 (current) building, eval runs 2026-11-05 to 2026-11-07'), text);
+  ok(text.includes('on task-b: v1 never decided before it changed (stranded), eval runs 2026-10-20 to 2026-10-21'), text);
   const pressed = findAll(node, (n) => n.tag === 'button' && n.attrs['data-period'] && n.attrs['aria-pressed'] === 'true');
   eq(pressed.map((n) => n.attrs['data-period']).join(','), '30');
   ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-class'] === 'stranded').length === 1, 'stranded has its own segment');
   const none = textOf(renderRoute(doc({ skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [], run_utility: null }] }), { name: 'skills', id: 'demo-skill' }, {}));
-  ok(!none.includes('Run usefulness'), 'nothing when unknown');
+  ok(!none.includes('Eval run usefulness'), 'nothing when unknown');
 });
 await test('the summary shows run usefulness for every subject, skills and guidance', () => {
   const d = doc({ generated_at: '2026-11-07T20:00:00Z', skills: [{ name: 'a', run_utility: [U('2026-11-07', 'decisive', 2, 0.5)] }],
     guidance: { sections: [{ id: 's', run_utility: [U('2026-11-07', 'stranded', 4, 1, 'rest_changed')] }] } });
   const text = textOf(renderRoute(d, { name: 'summary' }, {}));
-  ok(text.includes('Run usefulness, every subject'), text);
-  ok(text.includes('No use: 4 of 6 runs, $1.00 of $1.50.'), text);
+  ok(text.includes('Eval run usefulness, every subject'), text);
+  ok(text.includes('No use: 4 of 6 eval runs, $1.00 of $1.50.'), text);
   ok(text.includes('All subjects') && text.includes('Skills') && text.includes('Guidance'), text);
-  ok(!textOf(renderRoute(doc({}), { name: 'summary' }, {})).includes('Run usefulness'), 'nothing without a ledger');
+  ok(!textOf(renderRoute(doc({}), { name: 'summary' }, {})).includes('Eval run usefulness'), 'nothing without a ledger');
 });
 
 // Building into decisive (2026-11-08): building runs against decisive ones.
@@ -910,11 +910,11 @@ await test('the summary shows building into decisive with its lead, table, plann
   ok(!textOf(renderRoute(CDOC(), { name: 'summary' }, {})).includes('Building into decisive'), 'public render has no panel');
   const text = textOf(node);
   ok(text.includes('Building into decisive'), text);
-  ok(text.includes('Of 23 runs that have resolved, 15 helped decide keep or remove (65%) and 8 were stranded by a change first: 0.5 stranded for every one that decided. 46 runs ($4.60) are still building.'), text);
+  ok(text.includes('Of 23 eval runs that have resolved, 15 helped decide keep or remove (65%) and 8 were stranded by a change first: 0.5 stranded for every one that decided. 46 eval runs ($4.60) are still building.'), text);
   for (const l of ['Near a verdict (confidence 65% or more)', 'Partway (30% to 65%)', 'Far (under 30%)', 'Never (subject no longer tested)', 'Total']) ok(text.includes(l), l);
   ok(text.includes('~18') && text.includes('~21'), 'expected counts');
   ok(text.includes('Cells that reached a verdict, by day: Nov 5 2, Nov 7 1.'), text);
-  ok(text.includes('Since the deep-before-wide planner change (') && text.includes(', Nov 8): 17 runs, 29% near a verdict, 59% partway, 0% far, 12% never.') && text.includes('Before it: 54 runs, 56% near a verdict, 22% partway, 7% far, 15% never.'), text);
+  ok(text.includes('Since the deep-before-wide planner change (') && text.includes(', Nov 8): 17 eval runs, 29% near a verdict, 59% partway, 0% far, 12% never.') && text.includes('Before it: 54 eval runs, 56% near a verdict, 22% partway, 7% far, 15% never.'), text);
   const a = findAll(node, (n) => n.tag === 'a' && n.attrs.href === PLANNER_CHANGE.url);
   eq(a.length, 1);
   ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-group'] === 'stranded').length === 2, 'stranded segments');
@@ -924,11 +924,11 @@ await test('building into decisive toggles between percent and run counts', () =
   const btns = findAll(node, (n) => n.tag === 'button' && n.attrs['data-mode']);
   eq(btns.map((b) => b.attrs['data-mode'] + ':' + b.attrs['aria-pressed']).join(','), 'share:true,count:false');
   const share = textOf(conversionBody(CDOC(), 'share'));
-  ok(share.includes('17 runs, 29% near a verdict, 59% partway'), share);
+  ok(share.includes('17 eval runs, 29% near a verdict, 59% partway'), share);
   const count = textOf(conversionBody(CDOC(), 'count'));
-  ok(count.includes(', Nov 8): 17 runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
-  ok(count.includes('Before it: 54 runs: 30 near a verdict, 12 partway, 4 far, 8 never.'), count);
-  ok(count.includes('Runs by the day they ran, and where they stand now.') && !count.includes('fills from decided'), count);
+  ok(count.includes(', Nov 8): 17 eval runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
+  ok(count.includes('Before it: 54 eval runs: 30 near a verdict, 12 partway, 4 far, 8 never.'), count);
+  ok(count.includes('Eval runs by the day they ran, and where they stand now.') && !count.includes('fills from decided'), count);
   // The busiest day (2026-11-05) has 30 runs, so the axis tops out there.
   const top = findAll(conversionBody(CDOC(), 'count'), (n) => n.tag === 'text' && n.children[0] === '30');
   eq(top.length, 1);

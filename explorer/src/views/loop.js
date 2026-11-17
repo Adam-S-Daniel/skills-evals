@@ -36,7 +36,7 @@ export function fixtureRequestsView(doc, refMs) {
       { label: STRINGS.colAge, num: true, sort: (r) => r.ageDays, cell: (r) => (r.ageDays === null ? '' : STRINGS.ageDays(Math.round(r.ageDays))) },
       { label: STRINGS.colPr, sort: (r) => r.prs, cell: (r) => (r.prs ? link(r.prUrl, STRINGS.prState(r.merged, r.prs)) : '') },
       { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + ' (' + r.realWork + ')' },
-      { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
+      { label: STRINGS.colEvalRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
       { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd(r.costUsd) }
     ], fq.rows, { tall: true, foot: [fq.unlisted && Object.assign({ subject: STRINGS.fqUnlisted }, fq.unlisted), fq.noRequest && Object.assign({ subject: STRINGS.fqNoRequest }, fq.noRequest)]
       .filter(Boolean).map((r) => Object.assign({ issueUrl: null, kind: '', state: '', ageDays: null, prs: 0 }, r)) }) : null];

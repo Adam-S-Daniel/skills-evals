@@ -158,7 +158,7 @@ export function subjectTable(items, kind, refMs) {
     { label: STRINGS.colName, sort: (it) => it.name, cell: (it) => [navLink(hashFor(kind, it.id || it.name), clean(guidance ? it.raw.heading || it.id : it.name)), it.raw.private === true ? [' ', badge(STRINGS.privateBadge, 'private')] : null] },
     { label: STRINGS.colStatus, sort: (it) => TABLE_RANK.indexOf(it.chip), cell: (it) => chip(it.chip) },
     { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => (gain(it) === null ? STRINGS.noValue : signedPoints(gain(it) * 100)) },
-    { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
+    { label: STRINGS.colEvalRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
     guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
