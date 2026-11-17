@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QEnTMZ6Ap8Wiua71gzd6ow",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -3; grep -rIn \"v0\\.1\\.[0-9]*\" --exclude-dir=.git --exclude-dir=node_modules . | head -40",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QEnTMZ6Ap8Wiua71gzd6ow",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n52c006c initial commit\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep:...",
+      "output_chars": 4831,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A4H4WnNL33JZCU7Ko2JV3m",
+      "name": "Bash",
+      "input": "cat platform.lock PLATFORM_REF; sed -n 1,60p README.md; sed -n 1,60p .cms-platform/scripts/verify-consumer-pins.sh; sed -n 1,25p Gemfile.lock; ls; ls .cms-platform; git ls-files | head -50",
+      "input_chars": 188,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A4H4WnNL33JZCU7Ko2JV3m",
+      "is_error": false,
+      "output": "platform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\ntag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nExample site checkout. The deployment workflow uses the shared platform release.\nA changelog entry for v0.1.99 is historical context, not a current pin.\n#!<path> bash\n# THI...",
+      "output_chars": 7273,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015n1o4NxSZoEnBTHjyiwk1K",
+      "name": "Bash",
+      "input": "sed -i 's/v0\\.1\\.103/v0.1.104/g' platform.lock Gemfile Gemfile.lock .github/actions/local/action.yml .github/workflows/*.yml && sed -i 's/(0\\.1\\.103)/(0.1.104)/; s/revision: 11111111111111111111111111...",
+      "input_chars": 535,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015n1o4NxSZoEnBTHjyiwk1K",
+      "is_error": false,
+      "output": " Gemfile.lock                                     | 6 +++---\n platform.lock                                    | 2 +-\n 16 files changed, 30 insertions(+), 30 deletions(-)\n  pull-requests: write\njobs:\n  bump:\n    uses: Adam-S-Daniel/cms-platform/.github/workflows/platform-bump.yml@v0.1.104\n    secret...",
+      "output_chars": 2773,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DWfmA5tAoQFnVdhTmc6LQg",
+      "name": "Bash",
+      "input": "ls .cms-platform/examples/site/.github/workflows/; cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml; echo ----; cat .github/workflows/old-preview-cleanup.yml",
+      "input_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DWfmA5tAoQFnVdhTmc6LQg",
+      "is_error": false,
+      "output": "cms-delete-published-preview.yml\ncms-editorial-workflow.yml\ncms-media-roundtrip.yml\ncms-preview-loops.yml\ncms-publish-loop-host.yml\ncms-publish-loop-preview.yml\ncms-publish-loop-prod.yml\ncms-scheduled-publish-loop.yml\ndeploy-preview.yml\ndeploy-production.yml\nplatform-bump.yml\nplatform-pin-consistenc...",
+      "output_chars": 3653,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UvS6GCBE69zNa5wxS4rf65",
+      "name": "Bash",
+      "input": "ls .cms-platform/.github/workflows 2><path> | grep -i -E \"resolve|delete\"; grep -rIl \"auto-resolve-newline\\|old-preview-cleanup\" --exclude-dir=node_modules --exclude-dir=.git . 2><path> | head",
+      "input_chars": 198,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UvS6GCBE69zNa5wxS4rf65",
+      "is_error": false,
+      "output": "./.github/workflows/old-preview-cleanup.yml",
+      "output_chars": 43,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qz4Ytii9UkpnjJzCyEmeTS",
+      "name": "Bash",
+      "input": "cp .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml .github/workflows/ && git rm -q .github/workflows/old-preview-cleanup.yml && bash .cms-platform/scripts/verify-consume...",
+      "input_chars": 225,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qz4Ytii9UkpnjJzCyEmeTS",
+      "is_error": false,
+      "output": "error: the following file has local modifications:\n    .github/workflows/old-preview-cleanup.yml\n(use --cached to keep the file, or -f to force removal)\nexit=1",
+      "output_chars": 159,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JCUhMhTK1SsQdWX9BfFqgB",
+      "name": "Bash",
+      "input": "rm .github/workflows/old-preview-cleanup.yml; bash .cms-platform/scripts/verify-consumer-pins.sh; echo \"exit=$?\"",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JCUhMhTK1SsQdWX9BfFqgB",
+      "is_error": false,
+      "output": "ok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok: no stale platform ref in platform.lock / Gemfile* / .github/workflows (canonical v0.1.104)\nok: all 12 workflow file(s) parse as YAML\nplatform-pin-consistency: OK \u2014 all 39 platform-consistency check(s) in ....",
+      "output_chars": 489,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
