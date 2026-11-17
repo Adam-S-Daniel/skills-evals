@@ -2,7 +2,8 @@
    about it in one place. */
 import { STRINGS } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
-import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor, fmtUsd } from '../core/format.js';
+import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor } from '../core/format.js';
+import { spendCell, spendText } from '../core/points.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, purposeOf } from '../core/items.js';
@@ -24,7 +25,6 @@ import { utilityView, decisionsView, utilityTotals } from './utility.js';
 import { lessonItem, lessonIssue, lessonTitle, lessonStatus, lessonIssueTitle } from './lessons.js';
 
 const share = (x) => (typeof x === 'number' && isFinite(x) ? Math.round(x * 100) + '%' : STRINGS.noValue);
-const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 const one = (x) => (typeof x === 'number' && isFinite(x) ? fmtCount(x) : STRINGS.noValue);
 
 /* Scored runs of one subject from the document's evals, newest first. A
@@ -61,7 +61,6 @@ export function judgeCell(r) {
 
 export function runsTable(runs, refMs) {
   if (!runs.length) return h('p', { class: 'note' }, STRINGS.runsNone);
-  const points = runs.some((r) => typeof r.meter_points === 'number');
   const cols = [
     // The start time links to the report, so the table needs no column for it.
     { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => link(r.report_url, fmtDateTime(parseTime(r.fired_at))) || fmtDateTime(parseTime(r.fired_at)) },
@@ -70,9 +69,10 @@ export function runsTable(runs, refMs) {
     { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + ' (' + share(r.with_share) + ')' },
     { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + ' (' + share(r.without_share) + ')' },
     { label: STRINGS.colJudge, sort: (r) => r.judge, cell: judgeCell },
-    { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
+    // Allowance spend as approximate points at the eval rate. The meter's own
+    // movement during a run (`meter_points`) is the whole account's and is not shown.
+    { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => spendCell(r.cost_usd, 'eval') }
   ];
-  if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
   return table(cols, runs, { tall: true, scroll: true });
 }
 
@@ -129,11 +129,11 @@ function lessonsAbout(doc, kind, name, refMs) {
     issues.map((it) => h('li', null, lessonIssueTitle(it), ' — ', link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')')));
 }
 
-/* What the subject's tests cost over the last 30 days, at list price, from its
-   run usefulness rows; nothing when it has none. */
+/* What the target's eval runs used of the allowance over the last 30 days,
+   from its eval run usefulness rows; nothing when it has none. */
 function testCost(rows, refMs) {
   const t = Array.isArray(rows) && rows.length ? utilityTotals(rows, '30', refMs).total : null;
-  return t && t.runs ? h('p', { class: 'meta' }, STRINGS.testCost(usd(t.cost))) : null;
+  return t && t.runs ? h('p', { class: 'meta' }, STRINGS.testCost(spendText(t.cost, 'eval'))) : null;
 }
 
 export function subjectPage(doc, kind, name, ctx) {

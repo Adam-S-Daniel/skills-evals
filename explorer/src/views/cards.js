@@ -1,6 +1,7 @@
 /* The lines a subject's page and the Skills and Guidance tables share, and the counts line above the table. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, fmtWeekStart, fmtDayKey, dayKeyOf, dayKeyMs, isDayKey, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, fmtWeekStart, fmtDayKey, dayKeyOf, dayKeyMs, isDayKey, wordsFor, fmtCount } from '../core/format.js';
+import { spendText } from '../core/points.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf, nextKey, usesOf } from '../core/items.js';
@@ -53,7 +54,7 @@ export function stakesLine(st) {
 // (unknown) or empty.
 export function discardedLine(d) {
   if (!d || typeof d !== 'object' || !Number.isInteger(d.total) || d.total <= 0) return null;
-  const usd = typeof d.cost_usd === 'number' && isFinite(d.cost_usd) ? fmtUsd(d.cost_usd) : STRINGS.noValue;
+  const usd = typeof d.cost_usd === 'number' && isFinite(d.cost_usd) ? spendText(d.cost_usd, 'eval') : STRINGS.noValue;
   const rows = Object.entries(d.by_reason && typeof d.by_reason === 'object' ? d.by_reason : {})
     .filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0)
     .sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1))

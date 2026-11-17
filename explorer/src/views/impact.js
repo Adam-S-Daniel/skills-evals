@@ -11,6 +11,7 @@ import { table, panel, navLink, timesLine, srcLineFor, fold } from './bits.js';
 import { VERDICT_CHIPS } from '../core/stats.js';
 import { noUseShare } from './utility.js';
 import { weekChart, weekScale } from './weekchart.js';
+import { spendCell, spendText, toPoints, fmtPoints } from '../core/points.js';
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 
@@ -59,27 +60,34 @@ function checkUseView(doc) {
   ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
 }
 
-/* "Since Oct 19: $5,541.65 for 12 decided verdicts, $461.80 each (tests ..., building ..., API ...)",
-   from spend.total; null for a document without one. */
-export function spendTotalLine(s) {
-  const t = s && s.total;
-  if (!t || typeof t !== 'object' || typeof t.usd !== 'number') return null;
-  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), usd(t.usd), fmtCount(t.verdicts || 0),
-    typeof t.cost_per_verdict === 'number' ? usd(t.cost_per_verdict) : STRINGS.noValue, usd(t.run_usd), usd(t.thread_spend_usd), usd(t.api_usd)));
+/* Eval runs plus project threads in approximate points; no value when a part
+   or a rate is missing. */
+function allowanceTotal(evalUsd, threadUsd) {
+  const a = toPoints(evalUsd, 'eval'), b = toPoints(threadUsd, 'thread');
+  return a === null || b === null ? STRINGS.noValue : fmtPoints(a + b);
 }
 
-/* The two newest weeks side by side: tests, building (threads), API and their
-   total in dollars, and the plan points the tests used. A part a week does not
-   carry reads as no value, and so does the total then. */
+/* "Since Oct 19: ≈310.2 points (eval runs ≈150.1, threads ≈160.1) and $128.36
+   API credit for 12 decided verdicts, ≈25.9 points and $10.70 each", from
+   spend.total; null for a document without one. Allowance spend is in points,
+   the API credit in dollars, never summed. */
+export function spendTotalLine(s) {
+  const t = s && s.total;
+  if (!t || typeof t !== 'object' || typeof t.api_usd !== 'number') return null;
+  const v = t.verdicts || 0;
+  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), allowanceTotal(t.run_usd, t.thread_spend_usd), spendText(t.run_usd, 'eval'),
+    spendText(t.thread_spend_usd, 'thread'), usd(t.api_usd), fmtCount(v), v ? allowanceTotal(t.run_usd / v, t.thread_spend_usd / v) : STRINGS.noValue,
+    v ? usd(t.api_usd / v) : STRINGS.noValue));
+}
+
+/* The two newest weeks side by side, in dollars as the data holds them: eval
+   runs and project threads (allowance spend, shown as points) and the API
+   credit. A part a week does not carry reads as no value. */
 export function spendWeeks(doc) {
   const s = doc.spend;
   const weeks = s && Array.isArray(s.weeks) ? s.weeks.filter((w) => w && typeof w.week === 'string').slice().sort((a, b) => (a.week < b.week ? 1 : -1)) : [];
   const part = (w, k) => (w && typeof w[k] === 'number' && isFinite(w[k]) ? w[k] : null);
-  const row = (w) => {
-    const tests = part(w, 'run_usd'), build = part(w, 'thread_spend_usd'), api = part(w, 'api_usd');
-    return { week: w.week, tests, build, api, total: tests === null || build === null || api === null ? null : tests + build + api, points: part(w, 'plan_meter_points') };
-  };
-  return weeks.slice(0, 2).map(row);
+  return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: part(w, 'run_usd'), build: part(w, 'thread_spend_usd'), api: part(w, 'api_usd') }));
 }
 
 /* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
@@ -93,27 +101,27 @@ const weekWhich = (w, refMs) => {
 };
 
 /* One panel for the loop's money: this week and last week side by side, the
-   share of test dollars that bought nothing, and every week below. */
+   share of eval run spend that bought nothing, and every week below. */
 function spendView(doc, refMs) {
   const s = doc.spend;
   if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
   const two = spendWeeks(doc);
   const share = noUseShare(doc, refMs);
-  const cell = (r, k) => (r && r[k] !== null ? usd(r[k]) : STRINGS.noValue);
-  const rows = [{ label: STRINGS.spendTests, k: 'tests' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendApi, k: 'api' }, { label: STRINGS.spendTotal, k: 'total' }];
+  const cell = (w, k) => (k === 'total' ? allowanceTotal(w.evals, w.build) : w[k] === null ? STRINGS.noValue
+    : k === 'evals' ? spendCell(w.evals, 'eval') : k === 'build' ? spendCell(w.build, 'thread') : usd(w[k]));
+  const rows = [{ label: STRINGS.spendTests, k: 'evals' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendTotal, k: 'total' }, { label: STRINGS.spendApi, k: 'api' }];
   return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs)) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
     two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), fmtWeekStart(w.week, refMs)), num: true,
-      cell: (r) => cell(w, r.k) + (r.k === 'tests' && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : '') }))), rows) : null,
-    share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', usd(share.noUse), usd(share.total), share.top.map(([name, cost]) => name + ' (' + usd(cost) + ')').join(' and ')),
+      cell: (r) => cell(w, r.k) }))), rows) : null,
+    share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', spendText(share.noUse, 'eval'), spendText(share.total, 'eval'), share.top.map(([name, cost]) => name + ' (' + spendText(cost, 'eval') + ')').join(' and ')),
       ' ', navLink(hashFor('summary'), STRINGS.spendUsefulnessLink)) : null,
     spendTotalLine(s),
     h('details', { class: 'history' }, h('summary', null, STRINGS.spendAllWeeks),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => fmtWeekStart(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
-        { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => (w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1)) },
-        { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => (typeof w.run_usd === 'number' ? usd(w.run_usd) : STRINGS.noValue) },
-        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd(w.thread_spend_usd) },
+        { label: STRINGS.colRunPoints, num: true, sort: (w) => w.run_usd, cell: (w) => spendCell(w.run_usd, 'eval') },
+        { label: STRINGS.colThreadPoints, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => spendCell(w.thread_spend_usd, 'thread') },
         { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
       ], s.weeks))];
 }

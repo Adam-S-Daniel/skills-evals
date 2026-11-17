@@ -347,6 +347,12 @@ class DashboardBuildTests(unittest.TestCase):
                 self.assertEqual(out.get(key), value, key)
         for key, value in doc["total"].items():
             self.assertEqual(got["total"].get(key), value, key)
+        # The display rates travel from the build to the public document unchanged.
+        self.assertEqual(doc["rates"]["eval_usd_per_point"], build.eval_usd_per_point())
+        self.assertEqual(got["rates"], doc["rates"])
+        bad = dict(doc, rates=dict(doc["rates"], session_count=1))
+        with self.assertRaisesRegex(ingest.Rejected, "not a display rate"):
+            ingest.check_spend(bad, json.dumps(bad), "built spend file")
 
     def test_retired_routines_are_left_out_of_the_table(self):
         rows = build.routines([routine(source={"kind": "none"}, retired=True), routine(source={"kind": "none"})], {}, {}, NOW)
@@ -573,17 +579,37 @@ class DashboardBuildTests(unittest.TestCase):
     def plan_row(self, at, cost, after=None, points=None):
         return {"run_id": "r" + at, "fired_at": at, "cost_usd": cost, "meter_points": points, "account_week_after": after}
 
-    def test_points_per_usd_is_the_account_reading_over_all_spend_of_complete_weeks(self):
+    def test_thread_rate_is_thread_dollars_over_the_meter_reading_less_eval_points(self):
         starts = self.cb_starts()
         rows = [self.plan_row("2026-10-20T10:00:00Z", 5, after=20), self.plan_row("2026-10-22T10:00:00Z", 5, after=30),
                 self.plan_row("2026-11-03T10:00:00Z", 50, after=90)]  # the current week is not complete
-        rate, basis, weeks = build.points_per_usd(rows, {0: 20, 2: 999}, starts, self.cb_now())
-        self.assertEqual((rate, weeks), (1.0, 1))  # the week's largest reading, 30, over $20 + $10
+        rate, basis, weeks = build.thread_usd_per_point(rows, {0: 20, 2: 999}, starts, self.cb_now(), 0.5)
+        # The week's largest reading, 30, less its eval points ($10 at $0.50 a point, 20): 10 points for $20 of threads.
+        self.assertEqual((rate, weeks), (2.0, 1))
         self.assertIn("upper bound", basis)
-        rate, basis, weeks = build.points_per_usd([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts, self.cb_now())
-        self.assertEqual((rate, weeks), (build.DEFAULT_POINTS_PER_USD, 0))
-        self.assertEqual(build.DEFAULT_POINTS_PER_USD, 0.07)
-        self.assertIn("default", basis)
+        # No reading in a complete week, or readings the eval runs alone explain: no rate, and no default.
+        rate, basis, weeks = build.thread_usd_per_point([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts,
+                                                        self.cb_now(), 0.5)
+        self.assertEqual((rate, weeks), (None, 0))
+        self.assertIn("no complete week", basis)
+        rate, basis, _ = build.thread_usd_per_point(rows, {0: 20}, starts, self.cb_now(), 0.1)
+        self.assertIsNone(rate)
+        self.assertIn("leave no points", basis)
+        self.assertFalse(hasattr(build, "DEFAULT_POINTS_PER_USD"), "no hard-coded rate fallback")
+
+    def test_the_eval_rate_comes_only_from_the_points_config(self):
+        self.assertEqual(build.eval_usd_per_point(), 6.67)
+        for text, why in (("other: 1\n", "eval_usd_per_point must be a positive number"),
+                          ("eval_usd_per_point: 0\n", "eval_usd_per_point must be a positive number"),
+                          ("eval_usd_per_point: true\n", "eval_usd_per_point must be a positive number")):
+            path = self.tmp / "points.yml"
+            path.write_text(text)
+            with self.assertRaises(SystemExit) as caught:
+                build.eval_usd_per_point(path)
+            self.assertIn(why, str(caught.exception))
+        with self.assertRaises(SystemExit) as caught:
+            build.eval_usd_per_point(self.tmp / "missing.yml")
+        self.assertIn("cannot read the points display config", str(caught.exception))
 
     def test_loop_changes_parse_each_prefix_and_ignore_unmerged_prs(self):
         def pr(n, ref, merged="2026-10-27T10:00:00Z"):
@@ -601,7 +627,7 @@ class DashboardBuildTests(unittest.TestCase):
         args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], samples=[],
                     owner_msgs=[], prs=[], explorer={}, now=self.cb_now())
         args.update(kw)
-        return build.cost_benefit(*args.values())
+        return build.cost_benefit(**args)
 
     def test_real_work_reach_counts_uses_in_weeks_after_a_change_merged(self):
         pr = {"repo": "example-owner/r", "number": 1, "url": "u", "head_ref": "eval-improve/writing-adrs",
@@ -645,16 +671,25 @@ class DashboardBuildTests(unittest.TestCase):
                     "guidance": {"sections": [{"verdict": "retire"}]}}
         plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=10, points=2)]
         samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10)]
-        weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer)
+        raw = {}
+        weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer,
+                                      raw=raw, eval_rate=2.0)
         w = weeks[0]
-        rate = 10 / (10 + 10)  # reading 10 over thread $10 + plan-run $10 in the one complete week with a reading
+        # Reading 10 less the eval run's 5 points ($10 at $2 a point) leaves 5 points for $10 of threads.
+        thread_rate = 10 / 5
         self.assertEqual((w["api_usd"], w["build_usd"], w["build_estimated"]), (1.0, 10.0, False))
-        self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 10 * rate))
-        self.assertEqual((w["build_points"], w["total_points"]), (10 * rate, 10 * rate + 10 * rate + 1.0 * rate))
+        self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 5.0))
+        # The allowance total is eval runs plus threads; the API credit's dollars never join it.
+        self.assertEqual((w["build_points"], w["total_points"]), (5.0, 10.0))
         self.assertEqual([x["verdicts"] for x in weeks], [None, None, 2])
         sm = {r["key"]: r for r in summary_rows}
-        self.assertEqual(sm["points_per_usd"]["value"], rate)
-        self.assertEqual(sm["cost_per_verdict"]["value"], round((10 + 10 + 1.0) / 2, 2))
+        self.assertEqual((sm["eval_usd_per_point"]["value"], sm["thread_usd_per_point"]["value"]), (2.0, thread_rate))
+        self.assertEqual(sm["points_per_verdict"]["value"], round((5 + 5) / 2, 2))
+        self.assertEqual(sm["api_usd_per_verdict"]["value"], round(1.0 / 2, 2))
+        self.assertIn("\u224810.0 points", sm["points_per_verdict"]["note"])
+        self.assertIn("$1.00", sm["api_usd_per_verdict"]["note"])
+        self.assertNotIn("cost_per_verdict", sm)
+        self.assertEqual(raw["rates"], {"eval_usd_per_point": 2.0, "thread_usd_per_point": thread_rate})
 
     def test_the_bars_follow_the_week_and_the_date(self):
         def bars(now, **kw):
@@ -671,6 +706,9 @@ class DashboardBuildTests(unittest.TestCase):
         sm = bars(late, prs=prs, usage_rows=usage)
         self.assertEqual((sm["bar_changes"]["status"], sm["bar_verdict"]["value"]), ("Met", "Met: keep the eval system"))
         hot = [self.sample("2026-12-10T00:00:00Z", 100000, created="2026-12-10T00:00:00Z")]
+        # A thread rate needs thread dollars in a complete week with a meter reading.
+        hot = [self.sample("2026-10-20T00:00:00Z", 0, created="2026-10-20T00:00:00Z"),
+               self.sample("2026-10-21T00:00:00Z", 100, created="2026-10-20T00:00:00Z")] + hot
         ppu_rows = [self.plan_row("2026-10-20T10:00:00Z", 1, after=50)]
         sm = bars(late, prs=prs, usage_rows=usage, samples=hot, plan_rows=ppu_rows)
         self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
@@ -682,7 +720,8 @@ class DashboardBuildTests(unittest.TestCase):
         notes = {r["key"]: r["note"] for r in rows}
         for key, note in notes.items():
             self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", note), f"{key}: {note}")
-        self.assertIn("since Oct 19:", notes["cost_per_verdict"])
+        self.assertIn("since Oct 19:", notes["points_per_verdict"])
+        self.assertIn("since Oct 19 over", notes["api_usd_per_verdict"])
         self.assertIn("merged since Oct 19 out of", notes["decision_yield"])
         self.assertIn("in the week of Mon Oct 26", notes["real_work_reach"])
         self.assertIn("Due Dec 15.", notes["bar_build"])

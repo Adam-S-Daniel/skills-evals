@@ -1,0 +1,22 @@
+# How the dashboard and the Improvement Loop Explorer show spend drawn from
+# the weekly Max allowance: as approximate points (percent of the weekly
+# allowance), never dollars. dashboard/build.py reads this file, refuses to
+# build without it, and ships the rates in spend/weekly.json `rates`, which
+# every page conversion reads. Nothing else holds a rate or a default.
+#
+# Display only: scripts/allowance_guard.py charges eval runs at
+# evals/budget.yml `points_per_usd`, and a change here does not move it.
+#
+# Spend paid from the separate monthly API credit (eval.yml's API-billed eval
+# runs) is not allowance spend: the pages keep it in dollars.
+
+# API-equivalent dollars of routine eval runs per point. Measured on quiet
+# overnight windows from 2026-11-10 to 2026-11-12, when eval runs were the
+# account's only use ($6 to $7.3 per point; Adam chose $6.67 on 2026-11-11).
+eval_usd_per_point: 6.67
+
+# Project-thread spend has no rate here on purpose: one fixed rate cannot fit
+# both kinds (the week of 2026-11-09 spent $1,045 on threads: 157 points at
+# the eval rate, more than the whole weekly allowance). dashboard/build.py derives it on every refresh as the
+# account meter's weekly reading, less that week's eval points at the rate
+# above, over the week's thread dollars, summed over every complete week.

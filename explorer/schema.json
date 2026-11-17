@@ -3258,6 +3258,21 @@
        "type": "null"
       }
      ]
+    },
+    "rates": {
+     "description": "Dollars per point of the weekly Max allowance that the pages convert allowance spend with: evals/points.yml for eval runs, derived from the account meter for project threads (null when the refresh could not derive it). API-credit spend is never converted. Null when the spend file predates it.",
+     "anyOf": [
+      {
+       "type": "object",
+       "required": ["eval_usd_per_point", "thread_usd_per_point"],
+       "additionalProperties": false,
+       "properties": {
+        "eval_usd_per_point": { "type": "number", "exclusiveMinimum": 0 },
+        "thread_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] }
+       }
+      },
+      { "type": "null" }
+     ]
     }
    },
    "required": [
@@ -3297,6 +3312,14 @@
     },
     "plan": {
      "type": "string"
+    },
+    "rates": {
+     "description": "Dollars per point the pages convert allowance spend with (dashboard/build.py cost_benefit; the ingest refuses any other key here).",
+     "type": "object",
+     "properties": {
+      "eval_usd_per_point": { "type": "number", "exclusiveMinimum": 0 },
+      "thread_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] }
+     }
     },
     "loop_jobs": {
      "description": "The loop's own automatic jobs' weekly meter use (scripts/automatic_spend.py), which scripts/allowance_guard.py reserves out of the eval cap. Omitted when the refresh had no fire ledger.",

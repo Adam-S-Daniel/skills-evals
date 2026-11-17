@@ -1308,19 +1308,21 @@ test('Made by agents uses plain words, pluralizes, adds Unknown when above 0, su
   eq(P.STRINGS.agentVerdicts.retired, 'Removed');
   ok(t.includes('Never blocked 1') && t.includes('Not enough data 1'), 'plain labels with counts');
 });
-test('a skill page leads with what its tests cost, folds the long tables, and has no Checks or Report columns', () => {
+test('a skill page leads with the allowance its eval runs used, folds the long tables, and has no Checks or Report columns', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
   s.run_utility = [{ date: '2026-10-30', class: 'decisive', runs: 2, cost_usd: 1.25 }];
+  doc.spend = { generated_at: '2026-11-12T01:00:00Z', weeks: [], total: null, rates: { eval_usd_per_point: 0.5, thread_usd_per_point: 10 } };
+  P.renderRoute(doc, { name: 'summary' }, {}); // a render reads the document's display rates
   const page = P.subjectPage(doc, 'skills', 'example-skill-alpha', {});
-  ok(flat(page).includes('Its tests cost $1.25 in the last 30 days, at list price.'), 'cost line');
+  ok(flat(page).includes('Its eval runs used \u22482.5 points of the weekly allowance in the last 30 days.'), 'cost line: ' + flat(page).slice(0, 400));
   const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => flat(n.children[0]).trim());
   ok(folds.includes(P.STRINGS.runsHeading) && folds.includes(P.STRINGS.fixturesHeading), 'folds: ' + folds);
   const runsFold = P.findAll(page, (n) => n.tag === 'details')[0];
   const hs = heads(runsFold);
   ok(!hs.includes('Checks') && !hs.includes('Report'), hs.join(','));
   const noCost = JSON.parse(JSON.stringify(fixture));
-  ok(!flat(P.subjectPage(noCost, 'skills', 'example-skill-alpha', {})).includes('Its tests cost'), 'nothing without usefulness rows');
+  ok(!flat(P.subjectPage(noCost, 'skills', 'example-skill-alpha', {})).includes('Its eval runs used'), 'nothing without usefulness rows');
 });
 
 // --- size -----------------------------------------------------------------------------

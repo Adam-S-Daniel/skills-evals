@@ -31,7 +31,7 @@
   "title": "Scheduled check-ins"
  },
  "cost_benefit_summary": {
-  "description": "Cost per decided verdict, decision yield, real-work reach, the Dec 15 bar and the points-per-dollar rate used. Built by Claude with the weekly rows.",
+  "description": "Allowance points and API credit per decided verdict, decision yield, real-work reach, the Dec 15 bar and the two dollars-per-point rates used. Built by Claude with the weekly rows.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -42,7 +42,7 @@
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
-  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
+  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their approximate points, API-billed eval dollars (API credit), project-thread spend and its approximate points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",

@@ -730,6 +730,9 @@ SPEND_WEEK_KEYS = ("week", "eval_runs", "plan_meter_points", "api_usd", "thread_
 #: `spend/weekly.json`), the sentence "Since <date>: $X for N decided verdicts".
 SPEND_TOTAL_KEYS = ("since", "verdicts", "usd", "run_usd", "thread_spend_usd", "api_usd",
                     "cost_per_verdict")
+#: The one published shape of the display rates (`rates` in `spend/weekly.json`):
+#: dollars per point of the weekly allowance (dashboard/build.py cost_benefit).
+SPEND_RATES_KEYS = ("eval_usd_per_point", "thread_usd_per_point")
 _PLAN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,39}")
 
 
@@ -762,7 +765,24 @@ def build_spend(tree: Path, enabled: bool) -> dict | None:
                                   "run_usd"), numbers)), "plan": plan})
     weeks.sort(key=lambda w: w["week"], reverse=True)
     return {"generated_at": _stamp(doc.get("generated_at")), "weeks": weeks,
-            "total": _spend_total(doc.get("total"))}
+            "total": _spend_total(doc.get("total")), "rates": _spend_rates(doc.get("rates"))}
+
+
+def _spend_rates(raw) -> dict | None:
+    """`rates` of the spend file (dollars per point of the weekly allowance, which
+    the pages convert allowance spend with; dashboard/build.py cost_benefit), or
+    None when it is absent (an older file) or `eval_usd_per_point` is not a
+    positive number. `thread_usd_per_point` is None when the refresh could not
+    derive one."""
+    if not isinstance(raw, dict):
+        return None
+    out = {k: raw.get(k) for k in SPEND_RATES_KEYS}
+    if not (_number(out["eval_usd_per_point"]) and out["eval_usd_per_point"] > 0):
+        return None
+    if out["thread_usd_per_point"] is not None and not (
+            _number(out["thread_usd_per_point"]) and out["thread_usd_per_point"] > 0):
+        out["thread_usd_per_point"] = None
+    return out
 
 
 def _spend_total(raw) -> dict | None:

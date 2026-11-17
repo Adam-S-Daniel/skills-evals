@@ -5,6 +5,7 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, utcClockToEt, utcMomentToEt } from '../core/format.js';
 import { h } from '../core/h.js';
+import { fmtPoints } from '../core/points.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, fold, srcLine, tile, badge, navLink, foldSummary } from '../views/bits.js';
 import { alertText, alertHref } from '../views/alerts.js';
@@ -384,6 +385,18 @@ function usageGroup(rows, keyOf) {
   return Array.from(by.values());
 }
 
+/* A cost panel value: approximate points for allowance spend, dollars for the
+   API credit and the two rates (dollars per point), else as the data says. */
+const POINT_KEYS = ['points_per_verdict', 'bar_build'];
+const approxCell = (v) => (typeof v === 'number' ? fmtPoints(v) : STRINGS.noValue);
+function costValue(r) {
+  if (r.value === null || r.value === undefined) return STRINGS.noValue;
+  if (POINT_KEYS.includes(r.key)) return approxCell(r.value);
+  if (r.key === 'api_usd_per_verdict') return usd(r.value);
+  if (r.key === 'eval_usd_per_point' || r.key === 'thread_usd_per_point') return usd(r.value) + P.perPoint;
+  return typeof r.value === 'number' ? fmtCount(r.value) : clean(r.value);
+}
+
 export function makeExt(dash, opts) {
   const now = (opts && opts.now) || Date.now;
   const asOf = (id) => asOfLine(id, snapshotMs(dash));
@@ -469,17 +482,17 @@ export function makeExt(dash, opts) {
       const weeks = some(dash, 'cost_benefit_weeks');
       return panel(P.costHeading, [h('p', { class: 'note' }, P.costNote), asOf('cost_benefit_summary'), table([
         { label: P.colMeasure, cell: (r) => clean(r.label) },
-        { label: P.colValue, num: true, sort: (r) => r.value, cell: (r) => (r.value === null ? STRINGS.noValue : r.key === 'cost_per_verdict' ? usd(r.value) : typeof r.value === 'number' ? fmtCount(r.value) : clean(r.value)) },
+        { label: P.colValue, num: true, sort: (r) => r.value, cell: costValue },
         { label: P.colTarget, cell: (r) => clean(r.target || '') },
         { label: P.colStatus, cell: (r) => (r.status ? pill(r.status) : '') },
         { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'cost_benefit_summary')),
       weeks ? [h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
         { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
         { label: P.colEvalRuns, num: true, sort: (r) => r.run_count, cell: (r) => n(r.run_count) },
-        { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => n(r.run_points_est) },
+        { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => approxCell(r.run_points_est) },
+        { label: P.colThreadPoints, num: true, sort: (r) => r.build_points, cell: (r) => [approxCell(r.build_points), r.build_estimated ? P.estimated : ''] },
+        { label: P.colAllowancePoints, num: true, sort: (r) => r.total_points, cell: (r) => approxCell(r.total_points) },
         { label: P.colApi, num: true, sort: (r) => r.api_usd, cell: (r) => usd(r.api_usd) },
-        { label: P.colThreads, num: true, sort: (r) => r.build_usd, cell: (r) => usd(r.build_usd) + (r.build_estimated ? P.estimated : '') },
-        { label: P.colThreadPoints, num: true, sort: (r) => r.build_points, cell: (r) => n(r.build_points) },
         { label: P.colChanges, num: true, sort: (r) => r.changes, cell: (r) => n(r.changes) },
         { label: P.colReach, num: true, sort: (r) => r.real_work_reach, cell: (r) => n(r.real_work_reach) },
         { label: P.colMessages, num: true, sort: (r) => r.owner_messages, cell: (r) => n(r.owner_messages) }], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))),
