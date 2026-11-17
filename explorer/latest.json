@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-17T04:48:10Z",
+  "fetched_at": "2026-11-17T04:52:45Z",
   "issues": [
    {
     "created_at": "2026-11-17T02:10:06Z",
@@ -7820,6 +7820,30 @@
   ],
   "runs": [
    {
+    "conclusion": null,
+    "created_at": "2026-11-17T04:42:02Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44018974292,
+    "state": "queued",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-17T04:51:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44018974292",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-17T04:45:58Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44019423145,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-17T04:49:44Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44019423145",
+    "workflow": "Routine eval watchdog"
+   },
+   {
     "conclusion": "success",
     "created_at": "2026-11-17T04:46:41Z",
     "event": "workflow_run",
@@ -7914,30 +7938,6 @@
     "updated_at": "2026-11-17T04:46:11Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44019436390",
     "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-17T04:45:58Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44019423145,
-    "state": "in_progress",
-    "title": "Routine eval watchdog",
-    "updated_at": "2026-11-17T04:46:04Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44019423145",
-    "workflow": "Routine eval watchdog"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-17T04:42:02Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44018974292,
-    "state": "in_progress",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-17T04:46:04Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44018974292",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -28256,7 +28256,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-11-03T04:48:10Z"
+  "since": "2026-11-03T04:52:45Z"
  },
  "agent_made": {
   "items": [
@@ -63057,7 +63057,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-17T04:47:24Z",
+  "generated_at": "2026-11-17T04:51:46Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -63151,7 +63151,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-17T04:46:31Z",
+ "generated_at": "2026-11-17T04:50:31Z",
  "guidance": {
   "removed": [
    {
@@ -126578,7 +126578,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
-  "results_commit": "c0b59aae8025f5a776437c9cd1b556b4c095f49e"
+  "results_commit": "107681590e15ed0fd216b54b800075957c906d11"
  },
  "spend": {
   "generated_at": "2026-11-16T12:39:48Z",
