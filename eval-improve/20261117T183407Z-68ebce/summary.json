@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "skill": "writing-adrs",
+  "timestamp": "20261117T183624Z",
+  "mode": "trim",
+  "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+  "registry": {
+    "name": "adam-agentskills",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills",
+    "sha": "0370ab7ea012d00015ff2590349450404f019d88",
+    "skill_md": "plugins/adam-anything-anywhere/skills/writing-adrs/SKILL.md"
+  },
+  "models": {
+    "arm": "claude-sonnet-5-5",
+    "proposal": "claude-fable-5-2"
+  },
+  "trials": 3,
+  "no_judge": true,
+  "description": {
+    "original": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
+    "candidate": "Write a Nygard-style Architecture Decision Record in docs/decisions/ for a non-obvious decision whose context won't fit a code comment and would rot in a PR description. For \"should I document this\", \"add an ADR\", \"why did we do X\" about a past choice with no comment trail, or a multi-paragraph PR description justifying a one-line change. Bootstraps the folder (README + first ADR) if missing."
+  },
+  "trim": {
+    "max_chars": 400,
+    "original_chars": 572,
+    "candidate_chars": 395,
+    "rule": "aggregate-noninferior-per-fixture-drop-1",
+    "tolerance_checks": 0,
+    "fixture_drop_checks": 1,
+    "baseline": {
+      "bootstrap": {
+        "passed": 27,
+        "total": 27
+      },
+      "existing-convention": {
+        "passed": 21,
+        "total": 21
+      },
+      "pr-body-outgrows-itself": {
+        "passed": 14,
+        "total": 39
+      },
+      "supersede": {
+        "passed": 39,
+        "total": 39
+      },
+      "why-no-comment-trail": {
+        "passed": 30,
+        "total": 33
+      }
+    },
+    "candidate": {
+      "bootstrap": {
+        "passed": 27,
+        "total": 27
+      },
+      "existing-convention": {
+        "passed": 21,
+        "total": 21
+      },
+      "pr-body-outgrows-itself": {
+        "passed": 14,
+        "total": 39
+      },
+      "supersede": {
+        "passed": 39,
+        "total": 39
+      },
+      "why-no-comment-trail": {
+        "passed": 30,
+        "total": 33
+      }
+    }
+  },
+  "files": {
+    "patch": "/tmp/tmp.GpFrtBX3yv/improvements/writing-adrs/20261117T183624Z.patch",
+    "pr_body": "/tmp/tmp.GpFrtBX3yv/improvements/writing-adrs/20261117T183624Z.pr-body.md",
+    "record": "/tmp/tmp.GpFrtBX3yv/improvements/writing-adrs/20261117T183624Z.json"
+  },
+  "runs": {
+    "baseline": "/tmp/tmp.GpFrtBX3yv/runs/baseline/writing-adrs/20261117T183624Z",
+    "candidate": "/tmp/tmp.GpFrtBX3yv/runs/candidate/writing-adrs/20261117T183624Z"
+  },
+  "status": "accepted",
+  "reasons": [
+    "objective checks passed over all fixtures 131/159 -> 131/159",
+    "no worse in aggregate, and no fixture lost more than 1 check(s)"
+  ],
+  "decision": "accepted"
+}
