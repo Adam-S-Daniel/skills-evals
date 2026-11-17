@@ -56,7 +56,7 @@ env:
 
 jobs:
   freshness:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Decide whether there is a site to check

@@ -545,3 +545,11 @@ class DrawnStateTests(unittest.TestCase):
     def test_the_browser_check_reads_every_frame(self):
         src = Path(sf.__file__).read_text()
         self.assertIn("drawn_state(page.frames)", src)
+
+
+class RunnerPinTests(unittest.TestCase):
+    def test_the_job_runs_on_a_pinned_image_the_pinned_playwright_supports(self):
+        # ubuntu-latest moved to 26.04, where Playwright 1.55.0 cannot install
+        # its browser dependencies, so every run failed at the install step.
+        doc = yaml.safe_load(WORKFLOW.read_text())
+        self.assertEqual(doc["jobs"]["freshness"]["runs-on"], "ubuntu-24.04")
