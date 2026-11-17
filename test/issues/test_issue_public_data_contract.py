@@ -598,9 +598,9 @@ class SpendTests(unittest.TestCase):
         self.assertEqual(spend["generated_at"], "2026-10-31T12:00:00Z")
         self.assertEqual(spend["weeks"], [
             {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1, "api_usd": 0,
-             "thread_spend_usd": 2, "run_usd": 1.5, "plan": "Pro"},
+             "thread_spend_usd": 2, "run_usd": 1.5, "scheduled_usd": None, "plan": "Pro"},
             {"week": "2026-10-19", "eval_runs": 12, "plan_meter_points": 30.5, "api_usd": 4.25,
-             "thread_spend_usd": 18.123456789, "run_usd": None, "plan": "Max 20x"}])
+             "thread_spend_usd": 18.123456789, "run_usd": None, "scheduled_usd": None, "plan": "Max 20x"}])
         self.assertIsNone(spend["total"], "a file without a total publishes none")
         self.assertNotIn("invented", json.dumps(spend))
         self.assertNotIn("thread-0001", json.dumps(spend))

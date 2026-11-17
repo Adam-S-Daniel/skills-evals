@@ -18,6 +18,8 @@ import { LOOP_BRANCH, LIST_CAP, repoNumber } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
+/* A sortable column that shows one field through `f`. */
+const col = (label, k, f, num) => ({ label, num, sort: (r) => r[k], cell: (r) => f(r[k]) });
 const usd = (v) => (typeof v === 'number' ? fmtUsd(v) : STRINGS.noValue);
 const SAFE = /^https:\/\/(github\.com|claude\.ai)\//;
 export function plink(url, text) {
@@ -333,8 +335,8 @@ export function healthStrip(doc, rh, stale) {
 function routineTable(rows) {
   return table([
     { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
-    { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
-    { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) }], rows);
+    col(P.colHealth, 'health', pill),
+    col(P.colLastRun, 'last_run', at)], rows);
 }
 
 function needsView(dash, ctx, nowMs) {
@@ -353,7 +355,7 @@ function needsView(dash, ctx, nowMs) {
       { label: P.colWhat, sort: (r) => r.item, cell: (r) => plink(r.link, clean(r.item)) },
       { label: P.colWhy, sort: (r) => r.why || '', cell: (r) => clean(r.why || '') },
       { label: P.colWhere, sort: (r) => r.where, cell: (r) => clean(r.where || '') },
-      { label: P.colSince, sort: (r) => r.since, cell: (r) => at(r.since) }], waiting)] : h('p', null, P.waitingNone)) : null,
+      col(P.colSince, 'since', at)], waiting)] : h('p', null, P.waitingNone)) : null,
     panel(P.healthHeading, h('p', { class: 'big' }, healthStrip(doc, rh, staleHours(snap, nowMs, refreshHours(dash))))),
     panel(P.attentionHeading, [h('p', { class: 'note' }, P.attentionNote),
       hbc && hbc.open > 0 ? h('p', { class: 'note' }, P.hbLine(n(hbc.open), n(hbc.high), n(hbc.needsOwner), n(hbc.fixed)), ' ',
@@ -386,15 +388,28 @@ function usageGroup(rows, keyOf) {
 }
 
 /* A cost panel value: approximate points for allowance spend, dollars for the
-   API credit and the two rates (dollars per point), else as the data says. */
-const POINT_KEYS = ['points_per_verdict', 'bar_build'];
+   API credit and the rates (dollars per point), else as the data says. */
+const POINT_KEYS = ['points_per_verdict', 'bar_build', 'dev_points', 'sched_points_per_week'];
 const approxCell = (v) => (typeof v === 'number' ? fmtPoints(v) : STRINGS.noValue);
+/* A routine's cost: blank on a row with no cost of its own (a workflow), else as approxCell. */
+const taskPts = (v) => (v === undefined ? '' : approxCell(v));
 function costValue(r) {
   if (r.value === null || r.value === undefined) return STRINGS.noValue;
   if (POINT_KEYS.includes(r.key)) return approxCell(r.value);
   if (r.key === 'api_usd_per_verdict') return usd(r.value);
-  if (r.key === 'eval_usd_per_point' || r.key === 'thread_usd_per_point') return usd(r.value) + P.perPoint;
+  if (/usd_per_point$/.test(r.key)) return usd(r.value) + P.perPoint;
   return typeof r.value === 'number' ? fmtCount(r.value) : clean(r.value);
+}
+
+/* "Scheduled tasks use ≈X a week: ≈Y in the loop, ≈Z outside it…" from the
+   routines rows' cost (dashboard/build.py task_costs); null when no row has
+   one. The eval runner (lane eval_cap) is in eval runs, not this total. */
+export function taskCostLine(rows) {
+  const meter = rows.filter((r) => r.lane === 'meter'), cap = rows.filter((r) => r.lane === 'eval_cap');
+  if (!meter.length && !cap.length) return null;
+  const sum = (list) => list.reduce((t, r) => t + (r.points_per_week || 0), 0);
+  return h('p', null, P.taskCost(fmtPoints(sum(meter)), fmtPoints(sum(meter.filter((r) => r.in_loop))), fmtPoints(sum(meter.filter((r) => !r.in_loop))),
+    cap.length ? fmtPoints(sum(cap)) : '', meter.filter((r) => r.points_per_week === null).length));
 }
 
 export function makeExt(dash, opts) {
@@ -443,8 +458,8 @@ export function makeExt(dash, opts) {
       if (!rows.length) return null;
       const byRepo = usageGroup(rows, (r) => r.repo).sort((a, b) => b.uses - a.uses);
       return [h('h3', null, P.byRepoHeading), table([
-        { label: P.colRepo, sort: (g) => g.repo, cell: (g) => clean(g.repo) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
+        col(P.colRepo, 'repo', clean),
+        col(P.colUses, 'uses', n, true),
         { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], byRepo)];
     },
     /* The live merged pull requests, in the document's own shape, for the changes list. */
@@ -457,57 +472,62 @@ export function makeExt(dash, opts) {
       const sources = some(dash, 'usage_sources');
       return [panel(P.useHeading, rows.length ? [h('p', { class: 'note' }, P.useNote), asOf('usage_rows'), table([
         { label: P.colKind, sort: (g) => g.kind, cell: (g) => (g.kind === 'hook' ? 'git hook' : clean(g.kind)) },
-        { label: P.colName, sort: (g) => g.name, cell: (g) => clean(g.name) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
-        { label: P.colSessions, num: true, sort: (g) => g.sessions, cell: (g) => n(g.sessions) },
-        { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
-        { label: P.colRedCi, num: true, sort: (g) => g.overridden, cell: (g) => n(g.overridden) },
+        col(P.colName, 'name', clean),
+        col(P.colUses, 'uses', n, true),
+        col(P.colSessions, 'sessions', n, true),
+        col(P.colBlocked, 'blocked', n, true),
+        col(P.colRedCi, 'overridden', n, true),
         { label: P.colRepos, num: true, sort: (g) => g.repos.size, cell: (g) => n(g.repos.size) },
         { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], usageGroup(rows, (r) => r.kind + '|' + r.name).sort((a, b) => b.uses - a.uses), { tall: true }),
       h('h3', null, P.byWeekHeading), table([
         { label: P.colWeek, sort: (g) => g.week, cell: (g) => fmtWeekStart(g.week) },
-        { label: P.colSurface, sort: (g) => g.surface, cell: (g) => clean(g.surface) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
-        { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
-        { label: P.colRedCi, num: true, sort: (g) => g.overridden, cell: (g) => n(g.overridden) }],
+        col(P.colSurface, 'surface', clean),
+        col(P.colUses, 'uses', n, true),
+        col(P.colBlocked, 'blocked', n, true),
+        col(P.colRedCi, 'overridden', n, true)],
       usageGroup(rows.filter((r) => r.kind !== 'guidance-check'), (r) => r.week + '|' + r.surface).sort((a, b) => (a.week < b.week ? 1 : -1)), { tall: true })] : null),
       panel(P.sourcesHeading, sources ? table([
-        { label: P.colFile, sort: (r) => r.file, cell: (r) => clean(r.file) }, { label: P.colSurface, cell: (r) => clean(r.surface) },
-        { label: P.colScope, cell: (r) => clean(r.scope) }, { label: P.colFrom, sort: (r) => r.from, cell: (r) => at(r.from) },
-        { label: P.colTo, sort: (r) => r.to, cell: (r) => at(r.to) },
+        col(P.colFile, 'file', clean), { label: P.colSurface, cell: (r) => clean(r.surface) },
+        { label: P.colScope, cell: (r) => clean(r.scope) }, col(P.colFrom, 'from', at),
+        col(P.colTo, 'to', at),
         { label: P.colRead, num: true, sort: (r) => r.scanned, cell: (r) => (r.scanned === null ? '' : fmtCount(r.scanned) + ' ' + clean(r.scanned_unit || '')) },
-        { label: P.colMade, sort: (r) => r.generated_at, cell: (r) => at(r.generated_at) }], sources) : null)];
+        col(P.colMade, 'generated_at', at)], sources) : null)];
     },
     cost() {
       const weeks = some(dash, 'cost_benefit_weeks');
-      return panel(P.costHeading, [h('p', { class: 'note' }, P.costNote), asOf('cost_benefit_summary'), table([
+      const rows = some(dash, 'cost_benefit_summary') || [];
+      const dev = (r) => r.group === 'development';
+      const sumTable = (list) => table([
         { label: P.colMeasure, cell: (r) => clean(r.label) },
         { label: P.colValue, num: true, sort: (r) => r.value, cell: costValue },
         { label: P.colTarget, cell: (r) => clean(r.target || '') },
         { label: P.colStatus, cell: (r) => (r.status ? pill(r.status) : '') },
-        { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'cost_benefit_summary')),
-      weeks ? [h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
-        { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
-        { label: P.colEvalRuns, num: true, sort: (r) => r.run_count, cell: (r) => n(r.run_count) },
-        { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => approxCell(r.run_points_est) },
-        { label: P.colThreadPoints, num: true, sort: (r) => r.build_points, cell: (r) => [approxCell(r.build_points), r.build_estimated ? P.estimated : ''] },
-        { label: P.colAllowancePoints, num: true, sort: (r) => r.total_points, cell: (r) => approxCell(r.total_points) },
-        { label: P.colApi, num: true, sort: (r) => r.api_usd, cell: (r) => usd(r.api_usd) },
-        { label: P.colChanges, num: true, sort: (r) => r.changes, cell: (r) => n(r.changes) },
-        { label: P.colReach, num: true, sort: (r) => r.real_work_reach, cell: (r) => n(r.real_work_reach) },
-        { label: P.colMessages, num: true, sort: (r) => r.owner_messages, cell: (r) => n(r.owner_messages) }], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))),
-      h('p', { class: 'note' }, P.estimatedNote))] : null]);
+        { label: P.colNote, cell: (r) => clean(r.note || '') }], list);
+      return [panel(P.costHeading, [h('p', { class: 'note' }, P.costNote), asOf('cost_benefit_summary'), sumTable(rows.filter((r) => !dev(r))),
+        weeks ? h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
+          { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
+          col(STRINGS.colEvalRuns, 'run_count', n, true),
+          col(STRINGS.colRunPoints, 'run_points_est', approxCell, true),
+          col(STRINGS.colSchedPoints, 'sched_points', approxCell, true),
+          col(P.colAllowancePoints, 'total_points', approxCell, true),
+          col(STRINGS.colApi, 'api_usd', usd, true),
+          col(P.colChanges, 'changes', n, true),
+          col(P.colReach, 'real_work_reach', n, true),
+          col(P.colMessages, 'owner_messages', n, true)], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1)))) : null]),
+      panel(P.devHeading, [h('p', { class: 'note' }, P.devNote), sumTable(rows.filter(dev))])];
     },
     opsTop() {
-      return [panel(P.routinesTable, ok('routines') ? [asOf('routines'), table([
+      const rows = some(dash, 'routines');
+      return [panel(P.routinesTable, rows ? [asOf('routines'), taskCostLine(rows), table([
         { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
         { label: P.colDoes, cell: (r) => clean(r.what) },
         { label: P.colSchedule, cell: (r) => clean(etSchedule(r.schedule, now())) },
-        { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) },
-        { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
-        { label: P.colNote, cell: (r) => clean(etSchedule(r.note || '', now())) }], some(dash, 'routines'), { cap: 10 })] : null),
+        col(P.colLastRun, 'last_run', at),
+        col(P.colHealth, 'health', pill),
+        col(P.colRunsWeek, 'runs_per_week', n, true), col(P.colPtsRun, 'points_per_run', taskPts, true), col(P.colPtsWeek, 'points_per_week', taskPts, true),
+        { label: P.colNote, cell: (r) => clean(etSchedule(r.note || '', now())) }], rows, { cap: 10 })] : null),
       panel(P.checkinsHeading, ok('checkins') ? table([
-        { label: P.colWhen, sort: (r) => r.when, cell: (r) => at(r.when) },
+        col(P.colWhen, 'when', at),
         { label: P.colWhat, cell: (r) => clean(r.what) }], some(dash, 'checkins')) : null)];
     },
     runs() {
@@ -517,7 +537,7 @@ export function makeExt(dash, opts) {
           : Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's');
       return panel(P.runsHeading, [h('p', { class: 'note' }, P.runsNote(refreshHours(dash))), asOf('run_stream'), problemsToggle(), table([
         { label: P.colWhen, cls: 'when', sort: (r) => r.at, cell: (r) => at(r.at) },
-        { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
+        col(P.colState, 'state', pill),
         { label: P.colWhere, sort: (r) => r.source, cell: (r) => clean(r.source || '') },
         { label: P.colRun, sort: (r) => runName(r.title, r.name), cell: (r) => plink(r.link, clean(runName(r.title, r.name))) },
         { label: P.colTook, num: true, sort: (r) => r.duration_s, cell: (r) => took(r.duration_s, r) }],
@@ -530,21 +550,21 @@ export function makeExt(dash, opts) {
         { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => repoNumber(p.repo, p.number, p.url) },
         { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
           p.labels ? [' ', h('span', { class: 'sub' }, clean(p.labels))] : null] },
-        { label: P.colOpened, sort: (p) => p.created_at, cell: (p) => at(p.created_at) }], open, { tall: true, cap: LIST_CAP })] : null,
+        col(P.colOpened, 'created_at', at)], open, { tall: true, cap: LIST_CAP })] : null,
       merged.length ? [h('h3', null, P.mergedPrs), prRows(merged.map((p) => Object.assign({ state: 'merged' }, p)))] : null]);
     },
     issues() {
       return panel(P.issuesHeading, [srcLine(P.srcLive, NaN), table([
         { label: STRINGS.colRepoNumber, sort: (i) => i.repo + '#' + String(i.number).padStart(9, '0'), cell: (i) => repoNumber(i.repo, i.number, i.url) },
         { label: P.colTitle, sort: (i) => i.title, cell: (i) => [plink(i.url, clean(i.title)), i.labels ? [' ', h('span', { class: 'sub' }, clean(i.labels))] : null] },
-        { label: P.colUpdated, sort: (i) => i.updated_at, cell: (i) => at(i.updated_at) }],
+        col(P.colUpdated, 'updated_at', at)],
       some(dash, 'open_issues').slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))), { tall: true, cap: LIST_CAP })]);
     },
     opsBottom() {
       return [
         panel(P.ingestsHeading, ok('eval_ingests') ? [h('p', { class: 'note' }, P.ingestsNote), table([
           { label: P.colEvalRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
-          { label: P.colSaved, sort: (r) => r.ingested_at, cell: (r) => at(r.ingested_at) }], some(dash, 'eval_ingests'), { tall: true })] : null),
+          col(P.colSaved, 'ingested_at', at)], some(dash, 'eval_ingests'), { tall: true })] : null),
         panel(P.threadsHeading, ok('threads') ? threadTables(some(dash, 'threads')) : null)];
     },
     searchExtra() {
@@ -563,8 +583,8 @@ export function makeExt(dash, opts) {
 export function threadTables(threads) {
   const cols = [
     { label: P.colThread, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title)) },
-    { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
-    { label: P.colActive, sort: (r) => r.last_active, cell: (r) => at(r.last_active) }];
+    col(P.colState, 'state', pill),
+    col(P.colActive, 'last_active', at)];
   const open = threads.filter((r) => r.state !== 'Done'), done = threads.filter((r) => r.state === 'Done');
   return [open.length ? table(cols, open) : h('p', null, P.threadsNoneOpen), fold(P.threadsDone(done.length), done.length ? table(cols, done, { tall: true }) : null)];
 }

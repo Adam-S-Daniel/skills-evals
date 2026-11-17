@@ -15,10 +15,11 @@ const positive = (x) => (typeof x === 'number' && isFinite(x) && x > 0 ? x : nul
 export function useRates(doc) {
   const r = (doc && doc.spend && doc.spend.rates) || {};
   RATES.eval = positive(r.eval_usd_per_point);
+  RATES.scheduled = positive(r.scheduled_task_usd_per_point);
   RATES.thread = positive(r.thread_usd_per_point);
 }
 
-/* Points for dollars of one kind ('eval' or 'thread'), full precision; null without a rate or a number. */
+/* Points for dollars of one kind ('eval', 'scheduled' or 'thread'), full precision; null without a rate or a number. */
 export const toPoints = (usd, kind) => (RATES[kind] && typeof usd === 'number' && isFinite(usd) ? usd / RATES[kind] : null);
 
 /* "≈12.3 points"; two decimals under one point, so a small eval run does not read as zero. */

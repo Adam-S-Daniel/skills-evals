@@ -113,6 +113,11 @@ tokens and cost $5.43, for a task that fires twice a day.
      with `add_repo`, push access): it names private tasks and session ids, so it never goes in
      this public repository. Shallow-clone that branch (`git clone --depth 1 --branch
      persistent/usage-events ...`) and export `ROUTINE_FIRES_LEDGER=<clone>/spend/routine-fires.jsonl`.
+     Also sparse-clone `.github/workflows` of `Adam-S-Daniel/_agent-guidance` to
+     `<root>/_agent-guidance/.github/workflows` (`git clone --depth 1 --filter=blob:none --sparse`,
+     then `git sparse-checkout set .github/workflows`) and export `WORKFLOWS_ROOT=<root>`: the fleet
+     worker's runs a week come from the workflow that fires it. `refresh.sh` stops when either is
+     missing, since scheduled-task cost would read as no value.
      For each of the rows above whose `last_run.session_id` is not yet in the ledger and whose
      `last_run.finished_at` is set, read the session's final
      cost: `list_events` with `kinds: ["result"]`, `limit: 100`, no cursor, and take
@@ -127,7 +132,8 @@ tokens and cost $5.43, for a task that fires twice a day.
 6. **Run console.** `python3 -I dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
    It keeps 7 days of workflow runs from `site.json` `run_console_repos` and of scheduled-task
    runs in `inputs/run_stream.json`.
-7. **Build.** `bash dashboard/refresh/refresh.sh '<arg 1>' '{}'`. It runs `half_built.sh`, reads
+7. **Build.** `bash dashboard/refresh/refresh.sh '<arg 1>' '{}'`, with `ROUTINE_FIRES_LEDGER` and
+   `WORKFLOWS_ROOT` exported from step 5 (it stops without them). It runs `half_built.sh`, reads
    workflow runs and states, builds every dataset into `$REFRESH_WORK/ds_now` (default
    `/tmp/dashboard-refresh/ds_now`) and lists what changed.
    - A line starting `STOP:` means an input is missing or stale. Do what it says and run it
@@ -156,10 +162,8 @@ tokens and cost $5.43, for a task that fires twice a day.
    ArtifactData `files/index.html` (field `text`) with `if_version`; keep the `dash/look` doc.
    Then `bash dashboard/refresh/mark_published.sh` (add `page` if you wrote the page): it copies
    what is now live into `$DASHBOARD_HOME/ds`, the baseline the next run compares against.
-9. **Spend.** First sparse-clone `.github/workflows` of `Adam-S-Daniel/_agent-guidance` to
-   `<root>/_agent-guidance/.github/workflows` (`git clone --depth 1 --filter=blob:none --sparse`,
-   then `git sparse-checkout set .github/workflows`), keep `ROUTINE_FIRES_LEDGER` exported from
-   step 5, and build with `--spend` (below) plus `--workflows-root <root>`: the spend file's
+9. **Spend.** Keep `ROUTINE_FIRES_LEDGER` and `WORKFLOWS_ROOT` exported from step 5, and build
+   with `--spend` (below) plus `--workflows-root "$WORKFLOWS_ROOT"`: the spend file's
    `loop_jobs` (the loop's automatic jobs' weekly meter use) needs both, and
    `scripts/allowance_guard.py` refuses every fire once it is missing or 3 days old. When the
    weeks or `loop_jobs` changed, push only
@@ -224,20 +228,28 @@ credential into a dump.
   runs, kept for reference and never shown: whole-point ticks of the whole account, never
   recorded for guidance eval runs), API-billed eval dollars (`api_usd`,
   from `results/` summaries whose `usage.reasons.meter` is the harness's "API-billed run"
-  text), project-thread spend (`build_usd`, `build_points`, `build_estimated`), the allowance
-  total (`total_points`, eval runs plus threads; API credit never joins it), loop
-  changes merged, real-work reach and owner messages. `verdicts` is the current
-  count of decided skill and guidance verdicts, on the latest week only.
-- `cost_benefit_summary`: allowance points and API credit dollars per decided verdict, decision
-  yield, real-work reach, the Dec 15 bar (`bar_changes`, `bar_build`, and `bar_verdict` from
-  Dec 16) and the two display rates (`eval_usd_per_point`, `thread_usd_per_point`).
+  text), scheduled-task points (`sched_points`, below), the allowance total (`total_points`,
+  eval runs plus scheduled tasks, null while `sched_points` is; API credit never joins it),
+  development (`dev_usd`, `dev_points`, `dev_estimated`: project threads, kept out of every
+  system figure), loop changes merged, real-work reach and owner messages. `verdicts` is the
+  current count of decided skill and guidance verdicts, on the latest week only.
+- `cost_benefit_summary`: what the system used per decided verdict (allowance points, API
+  credit dollars), scheduled tasks a week, decision yield, real-work reach, the Dec 15 bars
+  (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the display rates
+  (`eval_usd_per_point`, `sched_usd_per_point`, `thread_usd_per_point`). Each row has a
+  `group`: `system`, or `development` for `dev_points`, `bar_build` and
+  `thread_usd_per_point`, which the page shows in its own Development panel.
+- `routines` rows for scheduled tasks also carry `runs_per_week`, `points_per_run`,
+  `points_per_week`, `in_loop` and `lane` (`eval_cap` for the eval runner, whose spend is in eval
+  runs), most expensive first; a task with no recorded run on its current model reads null.
 
 With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 `spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
-`plan_meter_points`, `run_usd`, `api_usd` and `thread_spend_usd`, and one `total`
-(`since`, `usd`, `run_usd`, `thread_spend_usd`, `api_usd`, `verdicts`, `cost_per_verdict`:
-the three weekly dollar columns sum to it), at full precision, `rates` (the two display rates
-below) and `plan` when `site.json` names one.
+`plan_meter_points`, `run_usd`, `scheduled_usd`, `api_usd` and `thread_spend_usd`, and one
+`total` (`since`, `usd`, `run_usd`, `scheduled_usd`, `scheduled_since`, `api_usd`,
+`thread_spend_usd`, `verdicts`, `cost_per_verdict`: `usd` is the system's use, the eval run,
+scheduled-task and API columns summed, never development's `thread_spend_usd`), at full
+precision, `rates` (the display rates below) and `plan` when `site.json` names one.
 `loop_jobs` (`as_of`, `points_per_week`, `usd_per_week`) is the loop's own automatic jobs'
 weekly meter use from `scripts/automatic_spend.py`, over `inputs/triggers.json`, the
 `ROUTINE_FIRES_LEDGER` fires and `--workflows-root`; it is left out when either is unset (the
@@ -254,27 +266,43 @@ The Changes group's fixture requests come from `fixture_queue` in the `explorer`
 dataset (all issue and PR numbers are in skills-evals); no separate dataset
 carries them.
 
-Project-thread spend is attributed from `session_costs.jsonl`: the rise in a session's
-cumulative cost between two samples is spread evenly over the time between them, and cost
-before its first sample is spread from the session's creation, which marks the week
-estimated. It counts every thread in the project, not only the eval system's own work.
-It misses scheduled-task sessions (routines and watch passes), which `get_session` on
-threads does not see.
+### Scheduled tasks, and development apart
+
+Scheduled-task spend is the system's: `scripts/automatic_spend.py` over `inputs/triggers.json`,
+the fire ledger and `--workflows-root` gives each task's runs a week (its cron, or its firing
+workflow's) and its median run cost on its current model. A week's `sched_points` is the sum
+over the tasks with a measured cost (lane `meter`; the eval runner's spend is already in eval
+runs), at `scheduled_task_usd_per_point`, from the week of the ledger's first recorded run
+(earlier weeks read as no value) and for the current week's elapsed part only. It is an
+estimate at today's schedules, not a count of past runs: the ledger sees only each task's last
+run per refresh. Tasks not in `config/routines.json` are not read.
+
+Project threads are development (Adam building and refining the system, 2026-11-17): never in
+a system total, a per-verdict figure or the weekly system table. Their spend is attributed
+from `session_costs.jsonl`: the rise in a session's cumulative cost between two samples is
+spread evenly over the time between them, and cost before its first sample is spread from the
+session's creation, which marks the week estimated. A project-made scheduled task runs as a
+project thread; its session is left out of development when the fire ledger holds that
+session id, and a run the ledger missed stays in development.
 
 ### Points, not dollars, for allowance spend
 
-Both pages show spend drawn from the weekly Max allowance (eval runs fired by routines, and
-project threads) only as approximate points, marked "≈" with the rate in a tooltip; spend
-paid from the monthly API credit (API-billed eval runs) stays in dollars and never joins a
-points total. Two rates, because one cannot fit both kinds:
+Both pages show spend drawn from the weekly Max allowance (eval runs fired by routines,
+scheduled tasks, and development apart) only as approximate points, marked "≈" with the rate
+in a tooltip; spend paid from the monthly API credit (API-billed eval runs) stays in dollars
+and never joins a points total. The rates:
 
 - **Eval runs**: `eval_usd_per_point` in [`evals/points.yml`](../evals/points.yml), measured on
   quiet nights when eval runs were the only use. It is the only place a display rate is
   written; `build.py` exits with the reason when it is missing or not positive.
-- **Project threads**: derived on every refresh by `thread_usd_per_point`: each complete week's
-  account meter reading less that week's eval points, against the week's thread dollars,
-  summed over the weeks. The meter also counts use outside the project, so thread points are
-  an upper bound. With no reading yet there is no rate, and thread points read as no value.
+- **Scheduled tasks**: `scheduled_task_usd_per_point` in the same file. No direct measurement is
+  possible (whole-point meter ticks, and a ledger that misses runs), so it is the eval run rate,
+  the closest measured one; the page's tooltip says so.
+- **Development (project threads)**: derived on every refresh by `thread_usd_per_point`: each
+  complete week's account meter reading less that week's eval and scheduled-task points, against
+  the week's thread dollars,
+  summed over the weeks. The meter also counts use outside the project, so development points are
+  an upper bound. With no reading yet there is no rate, and development points read as no value.
 
 The rates travel in `spend/weekly.json` `rates` to the public document, where
 `explorer/src/core/points.js` converts every allowance figure. The allowance guard does not

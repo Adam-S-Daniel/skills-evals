@@ -31,7 +31,7 @@
   "title": "Scheduled check-ins"
  },
  "cost_benefit_summary": {
-  "description": "Allowance points and API credit per decided verdict, decision yield, real-work reach, the Dec 15 bar and the two dollars-per-point rates used. Built by Claude with the weekly rows.",
+  "description": "The system's use (eval runs and scheduled tasks in approximate points, API credit in dollars) per decided verdict, decision yield, real-work reach, the Dec 15 bars and the dollars-per-point rates; rows in group development cover project threads apart. Built by Claude with the weekly rows.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -42,7 +42,7 @@
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
-  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their approximate points, API-billed eval dollars (API credit), project-thread spend and its approximate points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
+  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their approximate points, scheduled-task points (estimated from each task's runs a week and median run cost, from the first fire-ledger week), their sum, API-billed eval dollars (API credit), development (project-thread) points apart, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, the fire ledger, your message times, merged loop PRs and the results branch. Development leaves out every session the fire ledger records as a scheduled-task run.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -188,7 +188,7 @@
   "title": "Models on the roster"
  },
  "routines": {
-  "description": "The project's automatic jobs and their last runs, read by Claude from the scheduled task list and project threads.",
+  "description": "The project's automatic jobs and their last runs, read by Claude from the scheduled task list and project threads, with each scheduled task's runs a week and approximate points a run and a week from the fire ledger.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",

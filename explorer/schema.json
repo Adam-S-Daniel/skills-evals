@@ -3268,6 +3268,7 @@
        "additionalProperties": false,
        "properties": {
         "eval_usd_per_point": { "type": "number", "exclusiveMinimum": 0 },
+        "scheduled_task_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] },
         "thread_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] }
        }
       },
@@ -3288,7 +3289,9 @@
     "verdicts": { "type": "integer", "minimum": 0 },
     "usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "run_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
-    "thread_spend_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "scheduled_usd": {"description": "scheduled-task runs (estimated), part of the system's use", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "scheduled_since": {"description": "the first week with a scheduled-task figure", "anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}$"},{"type":"null"}]},
+    "thread_spend_usd": {"description": "development (project threads), never part of usd", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "api_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "cost_per_verdict": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]}
    },
@@ -3318,6 +3321,7 @@
      "type": "object",
      "properties": {
       "eval_usd_per_point": { "type": "number", "exclusiveMinimum": 0 },
+      "scheduled_task_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] },
       "thread_usd_per_point": { "anyOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] }
      }
     },
@@ -3340,6 +3344,8 @@
       "verdicts": { "type": "integer", "minimum": 0 },
       "usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "run_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "scheduled_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "scheduled_since": { "anyOf": [{ "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }, { "type": "null" }] },
       "thread_spend_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "api_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "cost_per_verdict": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] }
@@ -3387,6 +3393,13 @@
        },
        "run_usd": {
         "description": "list-price dollars of the week's eval runs",
+        "anyOf": [
+         { "type": "number", "minimum": 0 },
+         { "type": "null" }
+        ]
+       },
+       "scheduled_usd": {
+        "description": "estimated dollars of the week's scheduled-task runs; null before the fire ledger",
         "anyOf": [
          { "type": "number", "minimum": 0 },
          { "type": "null" }
@@ -3463,6 +3476,7 @@
       }
      ]
     },
+    "scheduled_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
     "plan": {
      "anyOf": [
       {

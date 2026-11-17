@@ -110,12 +110,13 @@ SPEND_MAX_WEEKS = 1040
 #: allows more, and this gate does not, so a per-session or per-thread row can
 #: never reach the public results branch.
 SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks", "total", "loop_jobs", "rates"})
-SPEND_RATES_KEYS = frozenset({"eval_usd_per_point", "thread_usd_per_point"})
+SPEND_RATES_KEYS = frozenset({"eval_usd_per_point", "scheduled_task_usd_per_point", "thread_usd_per_point"})
 SPEND_LOOP_JOBS_KEYS = frozenset({"as_of", "points_per_week", "usd_per_week"})
 SPEND_WEEK_KEYS = frozenset({"week", "eval_runs", "plan_meter_points", "api_usd",
-                             "thread_spend_usd", "cost_per_verdict", "plan", "run_usd"})
+                             "thread_spend_usd", "cost_per_verdict", "plan", "run_usd",
+                             "scheduled_usd"})
 SPEND_TOTAL_KEYS = frozenset({"since", "verdicts", "usd", "run_usd", "thread_spend_usd",
-                              "api_usd", "cost_per_verdict"})
+                              "api_usd", "cost_per_verdict", "scheduled_usd", "scheduled_since"})
 #: Copies of explorer_public's FORBIDDEN_ID_RE and _PLAN_RE (that module
 #: needs PyYAML and the harness, which this job does not install); a test
 #: holds them equal.

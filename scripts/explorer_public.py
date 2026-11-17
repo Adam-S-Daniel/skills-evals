@@ -725,14 +725,17 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
 #: the dashboard refresh; explorer/schema.json `$defs.spend_file` documents
 #: it) may carry more; only these keys are copied.
 SPEND_WEEK_KEYS = ("week", "eval_runs", "plan_meter_points", "api_usd", "thread_spend_usd",
-                   "run_usd", "plan")
+                   "run_usd", "scheduled_usd", "plan")
 #: The one published shape of the since-the-start total (`total` in
 #: `spend/weekly.json`), the sentence "Since <date>: $X for N decided verdicts".
-SPEND_TOTAL_KEYS = ("since", "verdicts", "usd", "run_usd", "thread_spend_usd", "api_usd",
-                    "cost_per_verdict")
+#: `usd` is the system's use (eval runs, scheduled tasks, API credit);
+#: `thread_spend_usd` is development, never part of it.
+#: `scheduled_since` is the first week with a scheduled-task figure.
+SPEND_TOTAL_KEYS = ("since", "verdicts", "usd", "run_usd", "scheduled_usd", "thread_spend_usd", "api_usd",
+                    "cost_per_verdict", "scheduled_since")
 #: The one published shape of the display rates (`rates` in `spend/weekly.json`):
 #: dollars per point of the weekly allowance (dashboard/build.py cost_benefit).
-SPEND_RATES_KEYS = ("eval_usd_per_point", "thread_usd_per_point")
+SPEND_RATES_KEYS = ("eval_usd_per_point", "scheduled_task_usd_per_point", "thread_usd_per_point")
 _PLAN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,39}")
 
 
@@ -757,12 +760,12 @@ def build_spend(tree: Path, enabled: bool) -> dict | None:
             continue
         runs = row.get("eval_runs")
         numbers = [row.get(k) for k in ("plan_meter_points", "api_usd", "thread_spend_usd",
-                                        "run_usd")]
+                                        "run_usd", "scheduled_usd")]
         if not (runs is None or _count(runs)) or not all(v is None or _number(v) for v in numbers):
             continue
         weeks.append({"week": row["week"], "eval_runs": runs,
                       **dict(zip(("plan_meter_points", "api_usd", "thread_spend_usd",
-                                  "run_usd"), numbers)), "plan": plan})
+                                  "run_usd", "scheduled_usd"), numbers)), "plan": plan})
     weeks.sort(key=lambda w: w["week"], reverse=True)
     return {"generated_at": _stamp(doc.get("generated_at")), "weeks": weeks,
             "total": _spend_total(doc.get("total")), "rates": _spend_rates(doc.get("rates"))}
@@ -779,9 +782,9 @@ def _spend_rates(raw) -> dict | None:
     out = {k: raw.get(k) for k in SPEND_RATES_KEYS}
     if not (_number(out["eval_usd_per_point"]) and out["eval_usd_per_point"] > 0):
         return None
-    if out["thread_usd_per_point"] is not None and not (
-            _number(out["thread_usd_per_point"]) and out["thread_usd_per_point"] > 0):
-        out["thread_usd_per_point"] = None
+    for k in ("scheduled_task_usd_per_point", "thread_usd_per_point"):
+        if out[k] is not None and not (_number(out[k]) and out[k] > 0):
+            out[k] = None
     return out
 
 
@@ -791,7 +794,10 @@ def _spend_total(raw) -> dict | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("since"), str) \
             or not _DAY_RE.fullmatch(raw["since"]) or not _count(raw.get("verdicts")):
         return None
-    numbers = {k: raw.get(k) for k in SPEND_TOTAL_KEYS[2:]}
+    numbers = {k: raw.get(k) for k in SPEND_TOTAL_KEYS[2:-1]}
     if not all(v is None or _number(v) for v in numbers.values()):
         return None
-    return {"since": raw["since"], "verdicts": raw["verdicts"], **numbers}
+    first = raw.get("scheduled_since")
+    if first is not None and not (isinstance(first, str) and _DAY_RE.fullmatch(first)):
+        return None
+    return {"since": raw["since"], "verdicts": raw["verdicts"], **numbers, "scheduled_since": first}

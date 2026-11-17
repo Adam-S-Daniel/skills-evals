@@ -60,34 +60,36 @@ function checkUseView(doc) {
   ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
 }
 
-/* Eval runs plus project threads in approximate points; no value when a part
-   or a rate is missing. */
-function allowanceTotal(evalUsd, threadUsd) {
-  const a = toPoints(evalUsd, 'eval'), b = toPoints(threadUsd, 'thread');
+/* What the system uses of the allowance, eval runs plus scheduled tasks, in
+   approximate points; no value when a part or a rate is missing. Development
+   (project threads) never joins it. */
+function allowanceTotal(evalUsd, schedUsd) {
+  const a = toPoints(evalUsd, 'eval'), b = toPoints(schedUsd, 'scheduled');
   return a === null || b === null ? STRINGS.noValue : fmtPoints(a + b);
 }
 
-/* "Since Oct 19: ≈310.2 points (eval runs ≈150.1, threads ≈160.1) and $128.36
-   API credit for 12 decided verdicts, ≈25.9 points and $10.70 each", from
-   spend.total; null for a document without one. Allowance spend is in points,
-   the API credit in dollars, never summed. */
+/* "Since Oct 19: ≈310.2 points (eval runs ≈150.1, scheduled tasks ≈60.1 from
+   Nov 9) and $128.36 API credit for 12 decided verdicts, ≈25.9 points and
+   $10.70 each", from spend.total; null for a document without one. Allowance
+   spend is in points, the API credit in dollars, never summed. */
 export function spendTotalLine(s) {
   const t = s && s.total;
   if (!t || typeof t !== 'object' || typeof t.api_usd !== 'number') return null;
   const v = t.verdicts || 0;
-  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), allowanceTotal(t.run_usd, t.thread_spend_usd), spendText(t.run_usd, 'eval'),
-    spendText(t.thread_spend_usd, 'thread'), usd(t.api_usd), fmtCount(v), v ? allowanceTotal(t.run_usd / v, t.thread_spend_usd / v) : STRINGS.noValue,
-    v ? usd(t.api_usd / v) : STRINGS.noValue));
+  const sched = typeof t.scheduled_usd === 'number' ? t.scheduled_usd : null;
+  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), allowanceTotal(t.run_usd, sched), spendText(t.run_usd, 'eval'),
+    spendText(sched, 'scheduled'), t.scheduled_since ? fmtDayKey(t.scheduled_since, NaN) : '', usd(t.api_usd), fmtCount(v),
+    v && sched !== null ? allowanceTotal(t.run_usd / v, sched / v) : STRINGS.noValue, v ? usd(t.api_usd / v) : STRINGS.noValue));
 }
 
 /* The two newest weeks side by side, in dollars as the data holds them: eval
-   runs and project threads (allowance spend, shown as points) and the API
-   credit. A part a week does not carry reads as no value. */
+   runs and scheduled tasks (allowance spend, shown as points), the API credit,
+   and development apart. A part a week does not carry reads as no value. */
 export function spendWeeks(doc) {
   const s = doc.spend;
   const weeks = s && Array.isArray(s.weeks) ? s.weeks.filter((w) => w && typeof w.week === 'string').slice().sort((a, b) => (a.week < b.week ? 1 : -1)) : [];
   const part = (w, k) => (w && typeof w[k] === 'number' && isFinite(w[k]) ? w[k] : null);
-  return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: part(w, 'run_usd'), build: part(w, 'thread_spend_usd'), api: part(w, 'api_usd') }));
+  return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: part(w, 'run_usd'), sched: part(w, 'scheduled_usd'), api: part(w, 'api_usd'), dev: part(w, 'thread_spend_usd') }));
 }
 
 /* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
@@ -107,10 +109,11 @@ function spendView(doc, refMs) {
   if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
   const two = spendWeeks(doc);
   const share = noUseShare(doc, refMs);
-  const cell = (w, k) => (k === 'total' ? allowanceTotal(w.evals, w.build) : w[k] === null ? STRINGS.noValue
-    : k === 'evals' ? spendCell(w.evals, 'eval') : k === 'build' ? spendCell(w.build, 'thread') : usd(w[k]));
-  const rows = [{ label: STRINGS.spendTests, k: 'evals' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendTotal, k: 'total' }, { label: STRINGS.spendApi, k: 'api' }];
-  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs)) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
+  const cell = (w, k) => (k === 'total' ? allowanceTotal(w.evals, w.sched) : w[k] === null ? STRINGS.noValue
+    : k === 'evals' ? spendCell(w.evals, 'eval') : k === 'sched' ? spendCell(w.sched, 'scheduled') : usd(w[k]));
+  const rows = [{ label: STRINGS.spendTests, k: 'evals' }, { label: STRINGS.spendScheduled, k: 'sched' }, { label: STRINGS.spendTotal, k: 'total' }, { label: STRINGS.spendApi, k: 'api' }];
+  const which = (w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs));
+  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => which(w) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
     two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), fmtWeekStart(w.week, refMs)), num: true,
       cell: (r) => cell(w, r.k) }))), rows) : null,
     share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', spendText(share.noUse, 'eval'), spendText(share.total, 'eval'), share.top.map(([name, cost]) => name + ' (' + spendText(cost, 'eval') + ')').join(' and ')),
@@ -121,9 +124,11 @@ function spendView(doc, refMs) {
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => fmtWeekStart(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
         { label: STRINGS.colRunPoints, num: true, sort: (w) => w.run_usd, cell: (w) => spendCell(w.run_usd, 'eval') },
-        { label: STRINGS.colThreadPoints, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => spendCell(w.thread_spend_usd, 'thread') },
+        { label: STRINGS.colSchedPoints, num: true, sort: (w) => w.scheduled_usd, cell: (w) => spendCell(w.scheduled_usd, 'scheduled') },
         { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
-      ], s.weeks))];
+      ], s.weeks)),
+    two.length ? h('p', { class: 'note' }, STRINGS.spendDev(two.map((w) => which(w) + ' ' + spendText(w.dev, 'thread')).join(', '),
+      s.total && typeof s.total.thread_spend_usd === 'number' ? spendText(s.total.thread_spend_usd, 'thread') : '')) : null];
 }
 
 const KIND_ROUTE = { check: 'hooks', skill: 'skills', section: 'guidance' };
