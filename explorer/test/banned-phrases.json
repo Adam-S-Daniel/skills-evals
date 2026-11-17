@@ -1,0 +1,126 @@
+{
+  "phrases": [
+    {
+      "phrase": "test run",
+      "why": "Ambiguous: say what ran",
+      "use": "eval run"
+    },
+    {
+      "phrase": "tests passed",
+      "why": "Checks are scored, not tests",
+      "use": "N of M checks passed"
+    },
+    {
+      "phrase": "objective score",
+      "why": "Checks are called checks",
+      "use": "check results"
+    },
+    {
+      "phrase": "objective-decided",
+      "why": "Internal wording",
+      "use": "decided by checks"
+    },
+    {
+      "phrase": "assertions",
+      "why": "Checks are called checks",
+      "use": "checks"
+    },
+    {
+      "phrase": "pass rate",
+      "why": "Say what is counted",
+      "use": "N of M checks passed"
+    },
+    {
+      "phrase": "quality score",
+      "why": "The score is the judge score",
+      "use": "judge score (0 to 10)"
+    },
+    {
+      "phrase": "rating",
+      "why": "The score is the judge score",
+      "use": "judge score (0 to 10)"
+    },
+    {
+      "phrase": "grade",
+      "why": "The score is the judge score",
+      "use": "score"
+    },
+    {
+      "phrase": "meter points",
+      "why": "Points are the weekly allowance",
+      "use": "allowance points"
+    },
+    {
+      "phrase": "pts",
+      "why": "Points are reserved for the weekly allowance",
+      "use": "percentage points"
+    },
+    {
+      "phrase": "out of 10",
+      "why": "The judge scale is written 0 to 10",
+      "use": "(0 to 10)"
+    },
+    {
+      "phrase": "with_skill",
+      "why": "Internal arm name",
+      "use": "with the skill"
+    },
+    {
+      "phrase": "without_skill",
+      "why": "Internal arm name",
+      "use": "without it"
+    },
+    {
+      "phrase": "with_guidance_full",
+      "why": "Internal arm name",
+      "use": "with all the guidance"
+    },
+    {
+      "phrase": "bare model",
+      "why": "Internal arm name",
+      "use": "model alone"
+    },
+    {
+      "phrase": "next test",
+      "why": "An eval run is not a test",
+      "use": "Next eval run"
+    },
+    {
+      "phrase": "test allowance",
+      "why": "An eval is not a test",
+      "use": "Eval allowance"
+    },
+    {
+      "phrase": "not yet tested",
+      "why": "An eval is not a test",
+      "use": "Not yet evaluated"
+    },
+    {
+      "phrase": "subject",
+      "why": "The thing measured is a target",
+      "use": "target"
+    },
+    {
+      "phrase": "subjects",
+      "why": "The thing measured is a target",
+      "use": "targets"
+    },
+    {
+      "phrase": "list price",
+      "why": "Allowance spend is shown as approximate points, never list-price dollars (evals/points.yml).",
+      "use": "points, or API credit for API-billed eval runs"
+    }
+  ],
+  "allow": [
+    {
+      "file": "src/views/hooks.js",
+      "substring": "block subject",
+      "reason": "CSS class names, never shown to a reader"
+    },
+    {
+      "file": "src/views/subject.js",
+      "substring": "block subject",
+      "reason": "CSS class names, never shown to a reader"
+    }
+  ]
+}

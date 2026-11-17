@@ -86,12 +86,12 @@ def eval_rows(er, report_base):
     (scripts/eval_facts.py `scored_runs`), each list given one placeholder row when empty."""
     rows, bare = scored_runs(er, report_base)
     if not bare:
-        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No bare runs yet", "skill": None,
+        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No model-alone eval runs yet", "skill": None,
                  "model": None, "trials": None, "bare": None, "checks": None, "bare_share": None,
                  "cost_usd": None, "report_url": None, "paired_at": None, "with_share": None,
                  "without_share": None}]
     if not rows:
-        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored runs yet", "skill": None,
+        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored eval runs yet", "skill": None,
                  "model": None, "trials": None, "with_skill": None, "without_skill": None, "checks": None,
                  "gain": None, "with_judge": None, "without_judge": None, "judge": None, "with_share": None,
                  "without_share": None, "cost_usd": None, "meter_points": None, "account_week_after": None,
@@ -406,7 +406,7 @@ def run_stream(dump, now):
     keep = {id(r) for r in problems} | {id(r) for r in [r for r in rows if r["state"] not in PROBLEM_STATES][:STREAM_CAP]}
     rows = [r for r in rows if id(r) in keep]
     return rows or [{"key": PLACEHOLDER_ID, "at": None, "kind": None, "source": None,
-                     "name": "No runs in the last 7 days", "title": None, "state": None,
+                     "name": "No workflow runs in the last 7 days", "title": None, "state": None,
                      "duration_s": None, "link": None}]
 
 

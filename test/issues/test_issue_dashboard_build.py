@@ -901,6 +901,39 @@ class DashboardBuildTests(unittest.TestCase):
             for name in ("Waiting on Adam", "Adam's", "Adam "):
                 self.assertNotIn(name, text)
 
+    def test_build_py_prose_uses_no_banned_phrase(self):
+        """Reader-facing strings in build.py avoid the phrases explorer/test/banned-phrases.json retires.
+
+        Same list and matching as the explorer's test: case-insensitive on word
+        boundaries. Docstrings are not reader-facing and are skipped.
+        """
+        import ast
+        spec_ = json.loads((REPO / "explorer" / "test" / "banned-phrases.json").read_text())
+        phrases = spec_["phrases"] if isinstance(spec_, dict) else spec_
+        allow = spec_.get("allow", []) if isinstance(spec_, dict) else []
+        self.assertGreaterEqual(len(phrases), 20)
+        matchers = [(b["phrase"], re.compile(r"(?<![A-Za-z0-9_])" + re.escape(b["phrase"]) + r"(?![A-Za-z0-9_])", re.I))
+                    for b in phrases]
+        source = (DASH / "build.py").read_text()
+        tree = ast.parse(source)
+        docstrings = set()
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body and isinstance(n.body[0], ast.Expr) \
+                    and isinstance(n.body[0].value, ast.Constant) and isinstance(n.body[0].value.value, str):
+                docstrings.add(id(n.body[0].value))
+        # Every string constant, including the literal parts of an f-string (a
+        # tokenizer sees those as FSTRING_MIDDLE, not STRING, on Python 3.12).
+        found = []
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Constant) and isinstance(n.value, str)) or id(n) in docstrings or " " not in n.value:
+                continue
+            if any(a["file"] == "dashboard/build.py" and a["substring"] in n.value for a in allow):
+                continue
+            for phrase, rx in matchers:
+                if rx.search(n.value):
+                    found.append(f"build.py:{n.lineno}: {phrase!r} in {n.value[:80]}")
+        self.assertEqual(found, [])
+
 
 if __name__ == "__main__":
     unittest.main()
