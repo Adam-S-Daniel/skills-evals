@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261117T153831Z-bd3d29",
+ "mode": "guidance-improve",
+ "target": "subagent-delegation",
+ "exit_code": 1,
+ "outcome": "rejected",
+ "stage_reached": "candidate",
+ "trial_summaries": 48,
+ "agent_calls": 47,
+ "judge_calls": 46,
+ "agent_usd": 3.8089650000000006,
+ "judge_usd": 0.028623790000000003,
+ "guard_usd": 1.7433121000000005,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 24,
+   "usd": 2.783197600000001
+  },
+  "candidate": {
+   "trials": 24,
+   "usd": 2.7977032900000003
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.4710858,
+  "input_tokens": 2,
+  "output_tokens": 2753
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-2"
+ },
+ "busy_seconds": 1828.0,
+ "span_seconds": 1865.464,
+ "snapshots": 141,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-17T15:40:39.721000Z",
+  "utilization": 0.1,
+  "resets_at": 1795453200
+ },
+ "last": {
+  "at": "2026-11-17T16:11:45.185000Z",
+  "utilization": 0.11,
+  "resets_at": 1795453200
+ },
+ "delta": 0.009999999999999995,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-17T16:11:54.089423Z"
+}
