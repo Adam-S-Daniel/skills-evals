@@ -95,7 +95,7 @@
   "title": "Half-built and broken features, findings"
  },
  "half_built_summary": {
-  "description": "One row of counts for the Overview banner: findings open, how many are high severity or broken, and when the weekly check last ran. Built by Claude with the findings rows.",
+  "description": "One row on the check itself: when it last ran, whether its search hit a limit, and its status. The counts come from the findings rows. Built by Claude with the findings rows.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",

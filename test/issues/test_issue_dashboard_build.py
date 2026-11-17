@@ -707,7 +707,7 @@ class DashboardBuildTests(unittest.TestCase):
     def test_half_built_missing_dump_is_not_checked(self):
         issues, summary = build.half_built({}, self.HB_NOW)
         self.assertEqual([r["key"] for r in issues], ["none"])
-        self.assertEqual((summary[0]["status"], summary[0]["open"], summary[0]["checked_at"]), ("not-checked", 0, None))
+        self.assertEqual((summary[0]["status"], summary[0]["checked_at"]), ("not-checked", None))
         _, via_build = build.half_built(build.load(str(self.tmp / "absent.json"), {}), self.HB_NOW)
         self.assertEqual(via_build[0]["status"], "not-checked")
 
@@ -734,9 +734,8 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((issues[0]["opened"], issues[0]["age_days"], issues[0]["closed_at"]), ("2026-10-25", 9, None))
         self.assertEqual(issues[-1]["closed_at"], "2026-10-30T12:00:00Z")
         self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
-                         {"open": 4, "high": 2, "broken": 1, "partial": 1, "implied_only": 1, "idle": 1,
-                          "needs_owner": 0, "fixed_7d": 1,
-                          "checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
+                         # No counts: the page counts the issue rows, the one source.
+                         {"checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
 
     def test_half_built_puts_high_first_then_what_needs_the_owner(self):
         dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
@@ -747,7 +746,6 @@ class DashboardBuildTests(unittest.TestCase):
         issues, summary = build.half_built(dump, self.HB_NOW)
         self.assertEqual([r["number"] for r in issues], [3, 4, 2, 1])
         self.assertEqual([r["needs_owner"] for r in issues], ["", "needs you", "needs you", ""])
-        self.assertEqual(summary[0]["needs_owner"], 2)
 
     def test_half_built_unknown_kind_and_severity(self):
         dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
@@ -755,7 +753,7 @@ class DashboardBuildTests(unittest.TestCase):
         issues, summary = build.half_built(dump, self.HB_NOW)
         self.assertEqual([(r["number"], r["kind"], r["severity"]) for r in issues],
                          [(2, "partial", "low"), (1, "unknown", "unknown")])
-        self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
+        self.assertEqual(summary[0]["status"], "attention")
 
     def test_a_build_without_the_explorer_document_refuses(self):
         (self.results / "explorer" / "latest.json").unlink()
