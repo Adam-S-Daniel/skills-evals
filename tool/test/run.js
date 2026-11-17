@@ -341,7 +341,7 @@ test('the gain range chart draws one row per cell, each range on the axis scale'
   const marks = byClass(n, 'mark');
   eq(marks.length, 2);
   ok(marks.every((m) => m.attrs.tabindex === 0 && m.attrs['data-tip-pos'] === 'below'), 'focusable targets below');
-  eq(marks[0].attrs['data-tip'], 'Claude Sonnet 5.5, task fetch-retry: gain +22 points so far; likely between +4 and +70. 5 of 40 runs.');
+  eq(marks[0].attrs['data-tip'], 'Claude Sonnet 5.5, task fetch-retry: gain +22 points so far; likely between +4 and +70. 5 of 40 eval runs.');
 });
 test('the gain range chart marks 0 and the margin, labels the axis and colors by status', () => {
   const n = cv(withCells(twoCells));
@@ -382,23 +382,23 @@ test('the gain range chart explains itself with the policy levels', () => {
   const t = P.textOf(cv(withCells(twoCells), { benefit_confidence: 0.85, retire_confidence: 0.95, min_cli_versions: 3 }));
   ok(t.includes('Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.'), 'what');
   ok(t.includes('Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +15.'), 'rule');
-  ok(t.includes('The left end is held to 85% certainty shared across the skill\'s tasks and models, the right end to 95%; a decision also waits for runs on three Claude Code versions.'), 'levels');
+  ok(t.includes('The left end is held to 85% certainty shared across the skill\'s tasks and models, the right end to 95%; a decision also waits for eval runs on three Claude Code versions.'), 'levels');
   const g = P.textOf(P.confidenceView(withCells(twoCells), { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, min_cli_versions: 2 }, 'guidance'));
-  ok(g.includes('shared across the section\'s tasks and models, the right end to 90%; a decision also waits for runs on two Claude Code versions.'), 'section wording');
+  ok(g.includes('shared across the section\'s tasks and models, the right end to 90%; a decision also waits for eval runs on two Claude Code versions.'), 'section wording');
 });
 test('the confidence view estimates the runs still needed, or says it is past the cap', () => {
   const near = P.textOf(cv(withCells(twoCells)));
-  ok(near.includes('Keep: at this pace, about 14 more runs.'), 'keep estimate ' + near);
-  ok(near.includes('Removal: at this pace, about 24 more runs.'), 'removal estimate');
+  ok(near.includes('Keep: at this pace, about 14 more eval runs.'), 'keep estimate ' + near);
+  ok(near.includes('Removal: at this pace, about 24 more eval runs.'), 'removal estimate');
   ok(near.includes(P.STRINGS.confPace), 'pace note');
-  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 runs. If neither test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'runs');
+  ok(near.includes('Eval runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 eval runs. If neither test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'runs');
   const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
-  ok(far.includes('Keep: not before the 40-run cap at this pace.') && far.includes('Removal: not before the 40-run cap at this pace.'), 'past cap');
+  ok(far.includes('Keep: not before the 40-eval-run cap at this pace.') && far.includes('Removal: not before the 40-eval-run cap at this pace.'), 'past cap');
   ok(!far.includes('more run'), 'no estimate past the cap');
   const done = P.textOf(cv(withCells(twoCells, { helps: 0.85, no_help: 0 })));
   ok(done.includes('Keep: reached.') && done.includes('Removal: no movement yet.'), 'reached ' + done);
   ok(!done.includes(P.STRINGS.confPace), 'no pace note without a projection');
-  eq(P.STRINGS.confMore('Keep', 1), 'Keep: at this pace, about 1 more run.');
+  eq(P.STRINGS.confMore('Keep', 1), 'Keep: at this pace, about 1 more eval run.');
 });
 test('the confidence view names a subject with no room to show a gain', () => {
   const t = P.textOf(cv(withCells(twoCells, { no_help: null })));
@@ -453,7 +453,7 @@ test('the Skills table lists every tested skill once, best status first, then mo
   doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
   P.skillItems(doc).forEach((it, i) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: i % 2 ? 0 : i + 3 }; });
   const page = P.buildPage(doc, 'skills', {});
-  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Uses,Use by,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Uses,Use by,Next test,Official decision');
   const rows = tableRows(page);
   const items = P.skillItems(doc);
   eq(rows.length, items.length, 'one row per tested skill');
@@ -473,7 +473,7 @@ test('the Skills table lists every tested skill once, best status first, then mo
 });
 test('the Guidance table shows each section\'s size in words, not uses', () => {
   const page = P.buildPage(fixture, 'guidance', {});
-  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Size,Gain per 100 words,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Size,Gain per 100 words,Next test,Official decision');
   eq(tableRows(page).length, P.sectionItems(fixture).length);
   ok(!P.findAll(page, (n) => n.attrs && n.attrs.class === 'cards').length, 'no card grid');
   // Gain per 100 words: in-situ gain points divided by the words shown, times 100; sorts by the number.
@@ -1008,7 +1008,7 @@ test('regression alerts become one Trending toward removal row per subject, mode
   const t = sp(pagesText(trendDoc(), 'skills'));
   ok(t.includes(P.STRINGS.trendingHeading) && t.includes('Expected'), 'section and its one-line note');
   ok(t.includes('On fixture fx-one, the skill\'s lead over running without it (the share of checks passed with it minus without it) fell from 17 to 0 percentage points.'), t);
-  ok(t.includes('On fixture fx-two, judge score (out of 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), t);
+  ok(t.includes('On fixture fx-two, judge score (out of 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47).'), t);
   ok(!t.includes('Checks passed:'), 'no counts, no counts sentence');
   ok(!/\d\.\d{3,}/.test(t), 'every displayed number is rounded to 2 decimals');
   ok(!t.includes('Getting worse') && !t.includes('with minus without'), 'old wording gone');
@@ -1020,7 +1020,7 @@ test('an older regression alert that words itself still has its decimals rounded
   const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-gamma',
     text: 'example-skill-gamma regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
   const t = pagesText(d, 'skills');
-  ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), 'legacy text is read back into the same plain sentence');
+  ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47).'), 'legacy text is read back into the same plain sentence');
 });
 const win = (passed, total, judge, runs) => ({ runs: runs || 4, trials: 12, checks_passed: passed, checks_total: total, judge_mean: judge === undefined ? null : judge });
 const countsDoc = (alert) => Object.assign({}, fixture, { alerts: [Object.assign({ kind: 'regression', subject: 'skill', name: 'example-skill-gamma', model: 'example-large-2-0', verdict: 'regressed', text: 'x', url: null }, alert)] });
@@ -1028,12 +1028,12 @@ const trendText = (alert) => sp(P.textOf(P.buildPage(countsDoc(alert), 'skills',
 test('a judge row says from, to, the 0 to 10 scale and checks passed out of checks run per window', () => {
   const t = trendText({ measure: 'judge', previous: 7.0666666, current: 5.5666666, drop: 1.5, threshold: 1, noise: 0.472,
     counts: { with: { previous: win(40, 48, 7.0666666), current: win(38, 48, 5.5666666) }, without: null } });
-  ok(t.includes('Judge score (out of 10) fell from 7.07 to 5.57, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47). Checks passed: 40 of 48 in the earlier 4 runs, 38 of 48 in the latest 4.'), t);
+  ok(t.includes('Judge score (out of 10) fell from 7.07 to 5.57, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47). Checks passed: 40 of 48 in the earlier 4 eval runs, 38 of 48 in the latest 4.'), t);
 });
 test('an objective row gives the share and the checks behind it, plus the judge scores when present', () => {
   const t = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05,
     counts: { with: { previous: win(36, 48, 7.5), current: win(12, 48, 6) }, without: null } });
-  ok(t.includes('Checks passed fell from 75% (36 of 48) in the earlier 4 runs to 25% (12 of 48) in the latest 4. An alert needs a drop of at least 15 percentage points that is also bigger than the usual run-to-run variation (5 points). Judge score (out of 10): 7.50 earlier, 6.00 lately.'), t);
+  ok(t.includes('Checks passed fell from 75% (36 of 48) in the earlier 4 eval runs to 25% (12 of 48) in the latest 4. An alert needs a drop of at least 15 percentage points that is also bigger than the usual variation from one eval run to the next (5 points). Judge score (out of 10): 7.50 earlier, 6.00 lately.'), t);
   const bare = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 });
   ok(trendText({ fixture: 'fx-one', measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 }).includes('On fixture fx-one, checks passed fell from 75% to 25%.'), 'lowercase after a fixture');
   ok(bare.includes('Checks passed fell from 75% to 25%.') && !bare.includes('36 of 48'), bare);

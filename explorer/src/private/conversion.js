@@ -137,7 +137,7 @@ function dayChart(days, mode) {
       }
     }
     const tip = total ? P.conversionTip(fmtDayKey(d.date), fmtCount(total), SEGMENTS.filter((k) => d[k])
-      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : fmtDayKey(d.date) + ': 0 runs';
+      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : fmtDayKey(d.date) + ': 0 eval runs';
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0, 'data-tip': tip }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
       kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), fmtDayKey(d.date)));

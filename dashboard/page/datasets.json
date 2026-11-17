@@ -1,6 +1,6 @@
 {
  "budget": {
-  "description": "The weekly cap, per-run cap and stop line for automatic tests, copied from skills-evals evals/budget.yml on main. Saved as a file because the GitHub connector returns only a short status line to the page, not the file's text.",
+  "description": "The weekly cap, per-eval-run cap and stop line for automatic tests, copied from skills-evals evals/budget.yml on main. Saved as a file because the GitHub connector returns only a short status line to the page, not the file's text.",
   "request": {
    "args": {
     "owner": "Adam-S-Daniel",
@@ -64,7 +64,7 @@
   "title": "Test allowance snapshot"
  },
  "eval_ingests": {
-  "description": "The newest commits on skills-evals' results branch, one per finished test run. Reads the persistent/eval-results branch history.",
+  "description": "The newest commits on skills-evals' results branch, one per finished eval run. Reads the persistent/eval-results branch history.",
   "source": {
    "args": {
     "fields": [
@@ -81,7 +81,7 @@
    "kind": "query",
    "tool": "list_commits"
   },
-  "title": "Latest saved test runs"
+  "title": "Latest saved eval runs"
  },
  "half_built_issues": {
   "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
@@ -254,7 +254,7 @@
   "title": "Waiting on you"
  },
  "explorer": {
-  "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public skill, guidance section, git check, test run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
+  "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public skill, guidance section, git check, eval run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -265,7 +265,7 @@
   "title": "Evals document"
  },
  "explorer_private": {
-  "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and runs in with a Private badge; until it is uploaded the page shows public subjects only.",
+  "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and eval runs in with a Private badge; until it is uploaded the page shows public subjects only.",
   "schedule": "Rebuilt on every refresh, read from the private results branch",
   "source": {
    "kind": "file",
