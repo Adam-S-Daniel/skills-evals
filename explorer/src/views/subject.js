@@ -18,7 +18,7 @@ function newestOf(runs) {
 }
 import { verdictLine, nextLine, stakesLine, usageLine, useByLine, copiesLine, discardedLine } from './cards.js';
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
-import { trendChart } from './trend.js';
+import { weekPairsChart } from './wholecharts.js';
 import { confidenceView } from './range.js';
 import { utilityView, decisionsView, utilityTotals } from './utility.js';
 import { lessonItem, lessonIssue, lessonTitle, lessonStatus, lessonIssueTitle } from './lessons.js';
@@ -181,7 +181,7 @@ export function subjectPage(doc, kind, name, ctx) {
       h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
       guidance && hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null),
     fold(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
-      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs, subj))) : null]),
+      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, weekPairsChart(it.weekly, refMs, subj))) : null]),
     Array.isArray(raw.run_utility) && raw.run_utility.length
       ? fold(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
         decisionsView(raw.decisions, friendlyModel)]) : null,

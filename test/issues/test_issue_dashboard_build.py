@@ -849,7 +849,8 @@ class DashboardBuildTests(unittest.TestCase):
             self.assertRegex(page, r'["\']' + name + r'["\']', f"the page never reads {name}")
         for name, key in (("half_built_issues", "key"), ("usage_rows", "kind"),
                           ("cost_benefit_weeks", "week"), ("run_stream", "key"), ("waiting", "id")):
-            self.assertRegex(page, name + r':\s*"' + key + '"', f"{name} placeholder rows stay hidden")
+            # The build writes string literals in whichever quote stores smaller.
+            self.assertRegex(page, name + r':\s*["\']' + key + r'["\']', f"{name} placeholder rows stay hidden")
 
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()

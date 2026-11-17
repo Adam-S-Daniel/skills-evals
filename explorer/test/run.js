@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
 import vm from 'node:vm';
-import { bundle, bundleResult, buildPublicPage, buildPrivatePage, buildArtifactPage } from '../build.js';
+import { bundle, bundleResult, buildPublicPage, buildPrivatePage, buildArtifactPage, singleQuoted } from '../build.js';
 import { readDashboard, dashboardSource, DATASET_ID } from '../src/adapters/dashboard.js';
 import { DEFAULT_DATA_URL, DATA_URL_PREFIX, allowedDataUrl } from '../src/adapters/web.js';
 import * as artifactAdapter from '../src/adapters/artifact.js';
@@ -635,6 +635,14 @@ await test('the private page fits an ArtifactData document once JSON-serialized'
   const page = await buildPrivatePage();
   const size = Buffer.byteLength(JSON.stringify({ text: page }), 'utf8');
   ok(size < 262144, 'serialized private page is ' + size + ' bytes, over the 262,144 limit');
+});
+await test('the private page\'s string literals are requoted without changing a value', () => {
+  const src = 'module.exports=["plain","it\'s","say \\"hi\\"","back\\\\slash","line\\nbreak","\\u00e9",`tpl "kept"`,/"re"/.source,{"key-1":"v"}["key-1"]];';
+  const out = singleQuoted(src);
+  const run = (js) => { const sb = { module: { exports: null } }; vm.runInNewContext(js, sb); return JSON.stringify(sb.module.exports); };
+  eq(run(out), run(src), 'the same values');
+  ok(out.includes("'plain'") && out.includes('`tpl "kept"`') && out.includes('/"re"/'), 'only string literals are rewritten: ' + out);
+  ok(JSON.stringify(out).length < JSON.stringify(src).length, 'smaller once JSON-serialized');
 });
 // The shipped private page is minified (syntax, whitespace and identifiers); every
 // other test runs the readable bundle, so run the committed script itself too.

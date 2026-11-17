@@ -1,7 +1,7 @@
 /* View models: one item per card, sorted the way the page shows them. */
 import { STRINGS } from './strings.js';
 import { parseTime } from './format.js';
-import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainOf } from './stats.js';
+import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainOf, sectionSpread, weekPairs } from './stats.js';
 
 export function context(doc) {
   const refMs = parseTime(doc.generated_at);
@@ -62,7 +62,8 @@ export function skillItems(doc) {
       const pooled = poolRuns(s.runs, 'skills', c.refMs, c.order);
       return { name: String(s.name || ''), raw: s, pooled: pooled,
         chip: chipFor(pooled, { subject: 'skills', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'skill', s.name) }),
-        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
+        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs),
+        weekly: weekPairs([{ id: s.name, runs: s.runs }], c.refMs, 'skills') };
     }).sort((a, b) => byNext(a, b) || byFaring(SKILL_RANK)(a, b) || byName(a, b));
 }
 
@@ -82,7 +83,8 @@ export function sectionItems(doc) {
     const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
     return { id: String(s.id), name: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
       chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
-      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs) };
+      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
+      weekly: weekPairs([{ id: s.id, heading: s.heading, runs: s.runs }], c.refMs, 'guidance') };
   });
   items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
   return items;
@@ -95,5 +97,5 @@ export function wholeGuidance(doc) {
   secs.forEach((s) => (Array.isArray(s && s.runs) ? s.runs : []).forEach((r) => runs.push(r)));
   const pooled = poolRuns(runs, 'whole', c.refMs, c.order);
   return { pooled: pooled, chip: chipFor(pooled, { subject: 'whole' }), sentence: sentenceFor(pooled, 'whole', c.refMs),
-    trend: weeklyGains(runs, 'whole', c.refMs) };
+    spread: sectionSpread(secs, c.refMs), weekly: weekPairs(secs, c.refMs) };
 }
