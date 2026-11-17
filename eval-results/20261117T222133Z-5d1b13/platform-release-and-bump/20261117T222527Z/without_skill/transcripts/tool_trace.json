@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UHzSSzf1WgCiD3oQKiHAaH",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; grep -rn \"0\\.1\\.\\(10[0-9]\\|[0-9]\\{1,2\\}\\)\\b\" --include=* -I . --exclude-dir=.git --exclude-dir=node_modules -l | head -30",
+      "input_chars": 155,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UHzSSzf1WgCiD3oQKiHAaH",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.cms-platform\n.gh\n.gh-invocations.log\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nG...",
+      "output_chars": 2146,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011wT7t4F1AwqrF16JThG9cz",
+      "name": "Bash",
+      "input": "cat PLATFORM_REF platform.lock; grep -n \"cms-platform\" Gemfile Gemfile.lock; cat .gitmodules; sed -n 1,60p .github/workflows/platform-bump.yml; ls bin .cms-platform .cms-platform/scripts; git log --on...",
+      "input_chars": 215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011wT7t4F1AwqrF16JThG9cz",
+      "is_error": false,
+      "output": "tag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\nGemfile:2:gem \"cms-platform-theme\", git: \"https://github.com/Adam-S-Daniel/cms-platform\", tag: \"v0.1.103\"\nGemfile.lock:2:  remote: https://github.com/Adam-S-Daniel/cms-plat...",
+      "output_chars": 1296,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016Ufo3Ppm1QyWTdYrJbqfUN",
+      "name": "Bash",
+      "input": "sed -n 1,60p .cms-platform/scripts/check-platform-pin-consistency.js; grep -rn \"v0\\.1\\.10[0-9]\" . -I --exclude-dir=.git --exclude-dir=.cms-platform 2><path> | grep -v Permission | head -60; cat README...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016Ufo3Ppm1QyWTdYrJbqfUN",
+      "is_error": false,
+      "output": "#!<path> node\n// Platform-owned ANTI-SKEW guard (issue #29).\n//\n// WHAT\n// A consuming repo references the cms-platform version in many places that can\n// drift out of lockstep \u2014 not from Dependabot (it now `ignore`s every\n// cms-platform ref in both ecosystems, #242 + #244) but from a hand-edit, a\n...",
+      "output_chars": 6963,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017Aj55Zs5uRERNnehX1BjFX",
+      "name": "Bash",
+      "input": "cat .gh/replay/release-view-v0.1.104.json | head -30; cat .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/ref/tags/v0.1.104.json; git ls-files | grep -c cms-platform/; git ls-files PLATFORM_REF .c...",
+      "input_chars": 323,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PJg4UhWKYedEdr48ygCbPz",
+      "name": "Bash",
+      "input": "sed -n 60,140p .cms-platform/scripts/check-platform-pin-consistency.js | grep -in \"PLATFORM_REF\\|require-canonical\" | head; cat .github/workflows/platform-pin-consistency.yml | sed -n 1,40p",
+      "input_chars": 189,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017Aj55Zs5uRERNnehX1BjFX",
+      "is_error": false,
+      "output": "{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\n{\n  \"ref\": \"refs/tags/v0.1.104\",\n  \"object\": {\n    \"type\": \"commit\",\n    \"sha\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n  }\n}\n93\n.cms-platform/e2e/node_modules...",
+      "output_chars": 1313,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PJg4UhWKYedEdr48ygCbPz",
+      "is_error": false,
+      "output": "8:// now QUALIFIES itself when parity was skipped, and `--require-canonical` turns\n58:// `--require-canonical`: fail loudly instead of degrading. Any lane that is\n64:  process.argv.includes(\"--require-canonical\") || process.env.PIN_REQUIRE_CANONICAL === \"1\";\n77:        `read from platform.lock 'plat...",
+      "output_chars": 1700,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W7YcMfjeAZX2W4odUgRPMz",
+      "name": "Bash",
+      "input": "cat Gemfile.lock | head -12",
+      "input_chars": 27,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W7YcMfjeAZX2W4odUgRPMz",
+      "is_error": false,
+      "output": "GIT\n  remote: https://github.com/Adam-S-Daniel/cms-platform\n  revision: 1111111111111111111111111111111111111111\n  tag: v0.1.103\n  specs:\n    cms-platform-theme (0.1.103)\n\nDEPENDENCIES\n  cms-platform-theme!",
+      "output_chars": 206,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L9QoRqaerM9YCHUgnJDbxE",
+      "name": "Bash",
+      "input": "files=$(grep -rlE \"v?0\\.1\\.103\" Gemfile Gemfile.lock platform.lock .github) && sed -i -E '<path>' $files && sed -i 's/cms-platform-theme (0.1.103)/cms-platform-theme (0.1.104)/; s/^  revision: .*/  re...",
+      "input_chars": 470,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L9QoRqaerM9YCHUgnJDbxE",
+      "is_error": false,
+      "output": ".github/workflows/platform-bump.yml:13:      # The push credential, and the ONLY one since v0.1.103: the CMS automation\n Gemfile.lock                                     | 6 +++---\n platform.lock                                    | 2 +-\n 16 files changed, 29 insertions(+), 29 deletions(-)\n      det...",
+      "output_chars": 1144,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0115abYiEAGxPrgWAXu7FGQb",
+      "name": "Bash",
+      "input": "node .cms-platform/scripts/check-platform-pin-consistency.js 2>&1 | grep -E \"^(FAIL|[A-Za-z].*violation)|found:|^  \\.|^\\S\" | head -30; git stash -q; node .cms-platform/scripts/check-platform-pin-consi...",
+      "input_chars": 250,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0115abYiEAGxPrgWAXu7FGQb",
+      "is_error": false,
+      "output": "platform-pin-consistency: FAIL \u2014 2 consistency check(s) failed against the canonical platform_ref v0.1.104 (from platform.lock).\n  .github/workflows/cms-delete-published-preview.yml\n      found:    absent\n  .github/workflows/old-preview-cleanup.yml\n      found:    present\nFix: bring every platform-v...",
+      "output_chars": 720,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
