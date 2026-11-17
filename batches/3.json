@@ -1,0 +1,192 @@
+{
+  "due_at": "2026-12-01T08:23:23Z",
+  "fit": {
+    "budget": 0.18141424544,
+    "floor": false,
+    "pair_costs": {
+      "claude-opus-5-5": 0.0025851755972287156,
+      "claude-sonnet-5-5": 0.0009070891066954305
+    },
+    "pairs_per_cell": 15.0,
+    "priced": true,
+    "total": 0.1571519116765866
+  },
+  "members": [
+    {
+      "cost": 0.052383970558862195,
+      "joined": 3,
+      "kind": "skill",
+      "subject": "platform-release-and-bump"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "joined": 3,
+      "kind": "guidance",
+      "subject": "pinning-github-actions"
+    }
+  ],
+  "multiplier": 3.0,
+  "number": 3,
+  "previous": {
+    "members": [
+      {
+        "kind": "skill",
+        "status": "gone",
+        "subject": "skills-doctor"
+      },
+      {
+        "kind": "skill",
+        "status": "decided",
+        "subject": "cms-stuck-pr-triage"
+      },
+      {
+        "kind": "guidance",
+        "status": "decided",
+        "subject": "data-exposure-in-ci"
+      }
+    ],
+    "number": 2
+  },
+  "rate_basis": {
+    "guidance": {
+      "added": 5,
+      "rate": 1.25,
+      "since": "2026-10-20T08:23:23Z",
+      "source": "measured",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 4,
+      "rate": 1.289761747715269,
+      "since": "2026-10-26T11:21:48Z",
+      "source": "measured",
+      "weeks": 3.1013479870105822
+    }
+  },
+  "rates": {
+    "guidance": 1.25,
+    "skill": 1.289761747715269
+  },
+  "schema_version": 1,
+  "sizes": {
+    "guidance": 4,
+    "skill": 4
+  },
+  "started_at": "2026-11-17T08:23:23Z",
+  "waiting": [
+    {
+      "cost": 0.26191985279431096,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "vendor-release-impact-issues"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "security"
+    },
+    {
+      "cost": 0.052383970558862195,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "rename-pdfs"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "name-becomes-scanner-data"
+    },
+    {
+      "cost": 0.20953588223544875,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "workflow-path-audit"
+    },
+    {
+      "cost": 0.052383970558862195,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "git-practices"
+    },
+    {
+      "cost": 0.030387201505764308,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "post-failure-comment"
+    },
+    {
+      "cost": 0.20953588223544875,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "turn-lessons-into-checks"
+    },
+    {
+      "cost": 0.15715191167658657,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-github-connectors"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "dependency-updates"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "working-in-these-repos"
+    },
+    {
+      "cost": 0.26191985279431096,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "anything-you-name-gets-its-link"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-setup-gaps"
+    },
+    {
+      "cost": 0.15715191167658657,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "watch-finished-is-not-ci-passed"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "subagent-delegation"
+    },
+    {
+      "cost": 0.20953588223544875,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "automation-vs-branch-protection"
+    },
+    {
+      "cost": 0.20953588223544875,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "fleet-spans-two-owners"
+    },
+    {
+      "cost": 0.052383970558862195,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "finding-your-unknowns"
+    },
+    {
+      "cost": 0.10476794111772439,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "github-404-means-not-authorized"
+    }
+  ]
+}
