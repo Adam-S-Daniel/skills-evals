@@ -15,7 +15,7 @@ export const PAIR_CAP = 6;
 export const TOP_TASK_SHARE = 1 / 3;
 
 /* Arm labels by kind of comparison: the first is the solid dot, the second the open square. */
-const ARMS = { whole: [STRINGS.barWholeFull, STRINGS.barWholeNone], skills: [STRINGS.barWith, STRINGS.barWithout], guidance: [STRINGS.barAll, STRINGS.barAblated] };
+const armsOf = (kind) => (kind === 'skills' ? [STRINGS.barWith, STRINGS.barWithout] : kind === 'guidance' ? [STRINGS.barAll, STRINGS.barAblated] : [STRINGS.barWholeFull, STRINGS.barWholeNone]);
 
 const pct = (x) => Math.round(x * 100) + '%';
 const weekDay = (w, refMs) => fmtDay(w.start + 1000, refMs);
@@ -57,7 +57,7 @@ export function sectionSpreadChart(rows, refMs) {
 
 function pairPanel(p, refMs, kind) {
   const kd = STRINGS.pairKinds[kind] || {};
-  const [labWith, labWithout] = ARMS[kind] || ARMS.whole;
+  const [labWith, labWithout] = armsOf(kind);
   const from = weekDay(p.from, refMs), to = weekDay(p.to, refMs);
   const head = h('p', { class: 'pair-head' }, STRINGS.pairHead(from, to));
   const mix = h('p', { class: 'sub' }, STRINGS.pairMix(p.shared, p.dropped, p.added));

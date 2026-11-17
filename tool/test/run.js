@@ -593,7 +593,7 @@ test('the whole-guidance panel draws the same-task panels and names a week one t
   const doc = mixDoc();
   const t = P.textOf(P.renderRoute(doc, { name: 'guidance', id: null }, {})).replace(/\s+/g, ' ');
   ok(t.includes(P.STRINGS.pairTitle) && t.includes(P.STRINGS.spreadTitle), 'both charts are titled');
-  ok(!t.includes(P.STRINGS.trendCaption) && !t.includes('Weekly gain'), 'no pooled weekly gain line');
+  ok(!t.includes('Week by week') && !t.includes('Weekly gain'), 'no pooled weekly gain line');
   ok(t.includes('The guidance added 60 percentage points in the earlier week and added 60 percentage points in the later one.'), t);
   ok(t.includes('One task tested in both weeks. 1 not tested again, 1 new.'), 'the change of mix is stated');
   ok(t.includes('8 of the 9 were one task (Swamped: task-new)'), 'the dominated week is called out');
