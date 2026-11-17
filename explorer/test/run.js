@@ -967,7 +967,7 @@ const SNAP_OK = () => okData([{ measure: 'eval_spend_since_reset', points: 10, p
 const routine = (name, health) => ({ name, health, last_run: '2026-11-12T10:00:00Z', link: null });
 const needsDash = (extra) => fakeDash(Object.assign({ eval_allowance: SNAP_OK(), budget: BUDGET, waiting: okData([{ id: 'none', item: 'Nothing waiting on you' }]),
   routines: okData([routine('R1', 'OK'), routine('R2', 'OK')]),
-  half_built_summary: okData([{ open: 0, high: 0, broken: 0, needs_owner: 0, fixed_7d: 2, checked_at: '2026-11-12T10:00:00Z' }]) }, extra || {}));
+  half_built_summary: okData([{ checked_at: '2026-11-12T10:00:00Z', incomplete: false, status: 'clear' }]) }, extra || {}));
 const needsPage = (dash, d) => renderRoute(d || doc({ newest_run: '2026-11-12T15:00:00Z', generated_at: '2026-11-12T19:00:00Z' }), { name: 'needs', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
 const flat = (node) => textOf(node).replace(/\s+/g, ' ');
 
@@ -989,7 +989,7 @@ await test('R3 recommendation 3: with nothing waiting and every routine on time,
   ok(t.includes('Loop healthy: last test Nov 12, 2026, 10:00 AM ET'), t);
   ok(t.includes('2 of 2 routines on time') && t.includes('data read Nov 12, 2026, 2:00 PM ET'), t);
   ok(t.includes('Show 2 healthy routines'), 'the healthy routines fold');
-  ok(!t.includes(STRINGS.trendingHeading) && !t.includes('Half-built and broken features'), 'no trending table, and no half-built banner at zero');
+  ok(!t.includes(STRINGS.trendingHeading) && !t.includes('Half-built and broken features'), 'no trending table, and no half-built line at zero');
   const at = (x) => t.indexOf(x);
   ok(at('Waiting on you') < at('Loop health') && at('Loop health') < at('Needs attention') && at('Needs attention') < at("This week's test allowance") && at("This week's test allowance") < at('Routine health'), 'the order');
   const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
@@ -1000,12 +1000,12 @@ await test('R3 recommendation 3: with nothing waiting and every routine on time,
 await test('R3 recommendation 3: a late routine reads as a problem outside the fold, and a waiting item shows why', () => {
   const dash = needsDash({ routines: okData([routine('Good', 'OK'), routine('Bad', 'Late')]),
     waiting: okData([{ id: 'w', item: 'Review the thing', why: 'Ready for your review', where: 'Thread', link: 'https://claude.ai/code/x', since: '2026-11-12T12:00:00Z' }]),
-    half_built_summary: okData([{ open: 3, high: 1, broken: 0, needs_owner: 1, fixed_7d: 0, checked_at: '2026-11-12T10:00:00Z' }]) });
+    half_built_issues: okData([{ key: 'k1', state: 'open', kind: 'partial', severity: 'high', title: 'One', url: null }]) });
   const node = needsPage(dash);
   const t = flat(node);
   ok(t.includes('Loop needs a look: last test') && t.includes('1 of 2 routines late, failing or to check'), t);
   ok(t.includes('Ready for your review') && t.includes('Review the thing') && !t.includes('Nothing is waiting on you.'), t);
-  ok(t.includes('Half-built and broken features'), 'the banner shows when its count is above 0');
+  ok(t.includes('Half-built and broken features: 1 open'), 'the half-built line shows when an issue is open');
   ok(findAll(node, (n) => n.tag === 'details').every((d) => !textOf(d).includes('Bad')), 'a problem is never inside a fold');
   ok(t.includes('Show 1 healthy routine') && !t.includes('Show 1 healthy routines'), 'singular');
   const unknown = flat(needsPage(needsDash({ routines: { status: 'loading' } })));
@@ -1169,6 +1169,30 @@ await test('PR 984: every folded kind on Needs you says who acts', () => {
   // No inner scroll box: the note and the fold are not cut off.
   const node = needsPage(dash, doc({ alerts: alerts(4) }));
   ok(findAll(node, (n) => n.tag === 'div' && String(n.attrs && n.attrs.class || '').split(' ').includes('tall')).length === 0, 'no tall scroller on the attention table');
+});
+// Owner report 2026-11-17: a folded row showed its worst severity as if all
+// six rows had it, and a second section repeated the list with other counts.
+await test('Needs attention: half-built counts come from the listed rows, a folded row counts each severity, and nothing repeats the list', () => {
+  const issue = (i, kind, severity, extra) => Object.assign({ key: 'h' + i, state: 'open', kind, severity, title: 'T' + i, url: 'https://github.com/example-owner/r/issues/' + i, repo: 'example-owner/r', age_days: 1, needs_owner: '' }, extra || {});
+  const hb = [issue(1, 'broken', 'low'), issue(2, 'broken', 'high'), issue(3, 'broken', 'high'), issue(4, 'broken', 'high'), issue(5, 'broken', 'low', { needs_owner: 'needs you' }), issue(6, 'broken', 'low'),
+    issue(7, 'idle', 'medium'), issue(8, 'idle', 'medium'), issue(9, 'broken', 'high', { state: 'closed' }), issue(10, 'idle', 'low', { state: 'closed' })];
+  const dash = needsDash({ half_built_issues: okData(hb) });
+  const d = doc({ generated_at: '2026-11-12T19:00:00Z' });
+  const groups = attentionGroups(attentionRows(dash, d));
+  const g = groups.find((x) => x.children);
+  eq(JSON.stringify(g.severities), JSON.stringify([{ severity: 'high', count: 3 }, { severity: 'low', count: 3 }]));
+  eq(g.children.map((c) => c.severity).join(','), 'high,high,high,low,low,low', 'the fold lists worst first');
+  const node = needsPage(dash, d);
+  const t = flat(node);
+  ok(t.includes('Half-built and broken features: 8 open, of which 3 high severity and 1 needs you; 2 fixed in the last 7 days. Last checked'), t);
+  ok(t.includes('3 high') && t.includes('3 low'), 'the folded row counts each severity: ' + t);
+  eq(t.split('Half-built and broken features').length - 1, 1, 'named once: no second section');
+  eq(findAll(node, (n) => n.tag === 'section' && /banner/.test(n.attrs && n.attrs.class || '') && textOf(n).includes('Half-built')).length, 0, 'no banner section');
+  // The line's open count is the number of half-built rows the table holds.
+  eq(attentionRows(dash, d).filter((r) => r.family === 'half-built').length, 8);
+  // One severity across a fold stays one plain pill.
+  const same = attentionGroups(attentionRows(needsDash({ half_built_issues: okData([2, 3, 4, 9].map((i) => issue(i, 'broken', 'high'))) }), d)).find((x) => x.children);
+  eq(same.severities.length, 1);
 });
 await test('PR 984: the changes list and the loop filter share one table of kinds; a branch decides when the document has one', () => {
   eq(LOOP_KINDS.map((k) => k.kind).join(','), 'editSkill,editGuidance,newSkill,removeSkill,removeSection');

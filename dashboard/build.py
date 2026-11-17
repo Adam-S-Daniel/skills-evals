@@ -723,7 +723,7 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
 
 
 def half_built(dump, now):
-    """(issue rows, summary rows) for the Overview banner: open half-built or broken findings, plus those fixed in 7 days."""
+    """(issue rows, one check-status row) for Needs attention: open half-built or broken findings, plus those fixed in 7 days."""
     dump = dump if isinstance(dump, dict) else {}
     checked = parse(dump.get("checked_at"))
     order = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
@@ -744,13 +744,10 @@ def half_built(dump, now):
     # High severity first, then what needs Adam, then the rest by severity; oldest first within each.
     rows.sort(key=lambda r: (r["state"] != "open", r["severity"] != "high", not r["needs_owner"],
                              order.get(r["severity"], 3), -(r["age_days"] or 0)))
-    opened_ = [r for r in rows if r["state"] == "open"]
-    count = lambda field, v: sum(1 for r in opened_ if r[field] == v)
-    status = "not-checked" if checked is None else "attention" if opened_ else "clear"
-    summary = [{"key": "all", "open": len(opened_), "high": count("severity", "high"), "broken": count("kind", "broken"),
-                "partial": count("kind", "partial"), "implied_only": count("kind", "implied-only"),
-                "idle": count("kind", "idle"), "needs_owner": count("needs_owner", "needs you"), "fixed_7d": len(rows) - len(opened_),
-                "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")), "status": status}]
+    status = "not-checked" if checked is None else "attention" if any(r["state"] == "open" for r in rows) else "clear"
+    # No counts here: the page counts the issue rows themselves, so its line and its table cannot disagree.
+    summary = [{"key": "all", "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")),
+                "status": status}]
     return rows or [{"key": PLACEHOLDER_ID, "repo": None, "number": None, "url": None, "title": None, "state": None,
                      "kind": None, "severity": None, "finding_id": None, "needs_owner": "", "opened": None, "age_days": None,
                      "closed_at": None}], summary
