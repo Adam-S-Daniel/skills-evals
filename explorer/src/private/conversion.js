@@ -4,7 +4,8 @@
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
-import { fmtCount, fmtUsd, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { fmtCount, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { spendText } from '../core/points.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';
@@ -104,7 +105,8 @@ export function conversionTotals(doc) {
   };
 }
 
-const usd = (x) => fmtUsd(x);
+/* Eval run spend is allowance spend: approximate points (core/points.js). */
+const usd = (x) => spendText(x, 'eval');
 const money = (t) => usd(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : '');
 const pct = (p, t) => Math.round((p / t) * 100) + '%';
 

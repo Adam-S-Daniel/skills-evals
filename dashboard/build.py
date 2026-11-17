@@ -86,12 +86,12 @@ def eval_rows(er, report_base):
     (scripts/eval_facts.py `scored_runs`), each list given one placeholder row when empty."""
     rows, bare = scored_runs(er, report_base)
     if not bare:
-        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No bare runs yet", "skill": None,
+        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No model-alone eval runs yet", "skill": None,
                  "model": None, "trials": None, "bare": None, "checks": None, "bare_share": None,
                  "cost_usd": None, "report_url": None, "paired_at": None, "with_share": None,
                  "without_share": None}]
     if not rows:
-        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored runs yet", "skill": None,
+        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored eval runs yet", "skill": None,
                  "model": None, "trials": None, "with_skill": None, "without_skill": None, "checks": None,
                  "gain": None, "with_judge": None, "without_judge": None, "judge": None, "with_share": None,
                  "without_share": None, "cost_usd": None, "meter_points": None, "account_week_after": None,
@@ -406,7 +406,7 @@ def run_stream(dump, now):
     keep = {id(r) for r in problems} | {id(r) for r in [r for r in rows if r["state"] not in PROBLEM_STATES][:STREAM_CAP]}
     rows = [r for r in rows if id(r) in keep]
     return rows or [{"key": PLACEHOLDER_ID, "at": None, "kind": None, "source": None,
-                     "name": "No runs in the last 7 days", "title": None, "state": None,
+                     "name": "No workflow runs in the last 7 days", "title": None, "state": None,
                      "duration_s": None, "link": None}]
 
 
@@ -469,7 +469,8 @@ def waiting(snap, needs_owner, reviews, open_heads, thread_dump, link_states, si
 # A cost week starts Monday 17:00 UTC (the account's weekly reset) and is labeled by that date.
 COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
 WEEK = timedelta(days=7)
-DEFAULT_POINTS_PER_USD = 0.07
+#: The display rates' one home (evals/points.yml); no default exists anywhere else.
+POINTS_CONFIG = REPO / "evals" / "points.yml"
 BAR_DUE = "2026-12-15"
 BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
 BAR_MIN_CHANGES = 3
@@ -555,12 +556,29 @@ def session_spend(samples, starts):
     return usd, estimated
 
 
-def points_per_usd(rows, build_usd, starts, now):
-    """(points per dollar, basis, weeks used): the account meter's reading over all API-equivalent spend.
+def eval_usd_per_point(path=None):
+    """Dollars of routine eval runs per point, from evals/points.yml `eval_usd_per_point`. Exits with what is
+    wrong when the file or the value is missing or not a positive number: the pages never guess a rate."""
+    import yaml
+    path = Path(path or POINTS_CONFIG)
+    try:
+        doc = yaml.safe_load(path.read_text())
+    except OSError as e:
+        sys.exit(f"{path}: cannot read the points display config ({e.strerror}); it must set eval_usd_per_point, "
+                 "the dollars of routine eval runs per point of the weekly allowance")
+    rate = doc.get("eval_usd_per_point") if isinstance(doc, dict) else None
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0 or rate == float("inf"):
+        sys.exit(f"{path}: eval_usd_per_point must be a positive number of dollars per point, got {rate!r}")
+    return float(rate)
+
+
+def thread_usd_per_point(rows, build_usd, starts, now, eval_rate):
+    """(project-thread dollars per point or None, basis, weeks used), derived from the account meter.
 
     For each complete cost week with an account reading (the largest `account_week_after`, a percent, so
-    points, among plan runs fired in it): reading divided by that week's thread spend plus plan-run dollars,
-    summed over the weeks. Without such a week, the default."""
+    points, among the eval runs fired in it): the reading less that week's eval points (eval dollars over
+    `eval_rate`) is what the threads used. Thread dollars over those points, summed over the weeks. None,
+    with the reason, when no week has a reading or the readings leave no points for the threads."""
     points = usd = weeks = 0
     for i, s in enumerate(starts):
         if s + WEEK > now:
@@ -569,13 +587,16 @@ def points_per_usd(rows, build_usd, starts, now):
         seen = [r["account_week_after"] for r in mine if r.get("account_week_after") is not None]
         if not seen:
             continue
-        points += max(seen)
-        usd += build_usd.get(i, 0) + sum(r["cost_usd"] or 0 for r in mine)
+        points += max(seen) - sum(r["cost_usd"] or 0 for r in mine) / eval_rate
+        usd += build_usd.get(i, 0)
         weeks += 1
-    if not weeks or usd <= 0:
-        return DEFAULT_POINTS_PER_USD, f"default {DEFAULT_POINTS_PER_USD}: no complete week with an account reading yet", 0
-    return points / usd, (f"account meter \u00f7 all API-equivalent spend over {weeks} complete weeks; assumes nearly "
-                          "all account use is this project, so it is an upper bound on points per dollar"), weeks
+    if not weeks:
+        return None, "no complete week has an account meter reading yet", 0
+    if points <= 0 or usd <= 0:
+        return None, f"the account meter readings of {weeks} complete weeks leave no points for project threads", weeks
+    return usd / points, (f"thread dollars over the account meter's weekly reading less eval points, {weeks} complete "
+                          "weeks; the meter also counts use outside this project, so thread points are an upper "
+                          "bound"), weeks
 
 
 def api_billed_usd(er, starts):
@@ -636,15 +657,32 @@ def r2(v):
     return None if v is None else round(v, 2)
 
 
+def approx(value, unit):
+    """'≈12.3 points' for allowance spend (approximate: dollars at a rate); '$4.50' for API credit."""
+    if value is None:
+        return "no value"
+    return f"\u2248{value:,.1f} points" if unit == "points" else f"${value:,.2f}"
+
+
 def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
-                 raw=None):
+                 raw=None, eval_rate=None):
     """(weeks rows, summary rows) for the Spend and use group's cost panel. `raw`, a
-    dict, receives the week rows and the cost per verdict before rounding."""
+    dict, receives the week rows, the totals and the rates before rounding.
+
+    Spend from the weekly Max allowance is shown as approximate points: eval runs at `eval_rate`
+    (evals/points.yml, dollars per point), project threads at the rate thread_usd_per_point derives from the
+    account meter. API-billed eval runs are paid from the monthly API credit, so they stay in dollars and
+    never join a points total. `run_meter_points`, the meter's movement during skill eval runs, stays in the
+    data for reference only: whole-point ticks, never recorded for guidance eval runs, and the whole
+    account's, so it is not eval spend."""
+    eval_rate = eval_usd_per_point() if eval_rate is None else eval_rate
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
     starts = week_starts(start, now)
     build_usd, build_est = session_spend(samples, starts)
-    ppu, basis, _ = points_per_usd(plan, build_usd, starts, now)
+    thread_rate, basis, _ = thread_usd_per_point(plan, build_usd, starts, now, eval_rate)
+    # No thread dollars is no thread points at any rate; any other amount needs the derived rate.
+    to_thread_points = lambda usd: 0.0 if not usd else None if thread_rate is None else usd / thread_rate
     api = api_billed_usd(er, starts)
     changes = [c for c in loop_changes(prs) if week_of(c["merged_at"], starts) is not None]
     verdicts = decided_count(explorer)
@@ -657,47 +695,61 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
         week_run_usd = sum(r["cost_usd"] or 0 for r in mine)
         run_usd += week_run_usd
         week_run_usds.append(week_run_usd)
-        run_points_est = week_run_usd * ppu
-        build_points = build_usd.get(i, 0) * ppu
-        api_usd = api.get(i, 0)
+        run_points_est = week_run_usd / eval_rate
+        build_points = to_thread_points(build_usd.get(i, 0))
         weeks.append({
-            "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points, "api_usd": api_usd,
-            "build_usd": build_usd.get(i, 0), "build_points": build_points, "build_estimated": i in build_est,
-            "total_points": run_points_est + build_points + api_usd * ppu,
+            "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points,
+            "api_usd": api.get(i, 0), "build_usd": build_usd.get(i, 0), "build_points": build_points,
+            "build_estimated": i in build_est,
+            "total_points": None if build_points is None else run_points_est + build_points,
             "changes": sum(1 for c in changes if week_of(c["merged_at"], starts) == i),
             "real_work_reach": sum(week_uses(c, label, usage_rows) for c in changes if c["merged_at"] < end),
             "owner_messages": sum(1 for m in msgs.values() if week_of(parse(m["sent_at"]), starts) == i),
             "verdicts": verdicts if i == len(starts) - 1 else None})
     complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
     last = complete[-1] if complete else None
-    total_usd = run_usd + sum(build_usd.values()) + sum(api.values())
+    thread_usd, api_usd = sum(build_usd.values()), sum(api.values())
+    run_points, thread_points = run_usd / eval_rate, to_thread_points(thread_usd)
+    points = None if thread_points is None else run_points + thread_points
     reached = 0
     for c in changes:
         if any(week_uses(c, s.date().isoformat(), usage_rows) for s in starts if c["merged_at"] < s + WEEK):
             reached += 1
     bar_changes = reached >= BAR_MIN_CHANGES
-    bar_build = last is not None and last["build_points"] < BAR_MAX_BUILD_POINTS
+    build_known = last is not None and last["build_points"] is not None
+    bar_build = build_known and last["build_points"] < BAR_MAX_BUILD_POINTS
     due = f"Due {day_text(BAR_DUE)}"
     status = lambda ok: "Met" if ok else "Not met"
+    since = day_text(start.date())
     summary = [
-        {"key": "cost_per_verdict", "label": "Cost per decided verdict", "value": total_usd / verdicts if verdicts else None,
-         "target": None, "status": None,
-         "note": f"API-equivalent dollars since {day_text(start.date())}: ${total_usd:,.2f} over {verdicts} decided verdicts"},
+        {"key": "points_per_verdict", "label": "Allowance per decided verdict",
+         "value": points / verdicts if verdicts and points is not None else None, "target": None, "status": None,
+         "note": f"Approximate. Weekly Max allowance since {since}: {approx(points, 'points')} (eval runs "
+                 f"{approx(run_points, 'points')}, project threads {approx(thread_points, 'points')}) over {verdicts} "
+                 "decided verdicts"},
+        {"key": "api_usd_per_verdict", "label": "API credit per decided verdict",
+         "value": api_usd / verdicts if verdicts else None, "target": None, "status": None,
+         "note": f"API-billed eval runs, paid from the monthly API credit, not the allowance: {approx(api_usd, 'usd')} "
+                 f"since {since} over {verdicts} decided verdicts"},
         {"key": "decision_yield", "label": "Decision yield", "value": f"{len(changes)} of {verdicts}",
          "target": None, "status": None,
-         "note": "Loop changes merged since " + day_text(start.date()) + " out of decided verdicts"
+         "note": "Loop changes merged since " + since + " out of decided verdicts"
                  + ("" if verdicts else " (no decided verdicts yet)")},
         {"key": "real_work_reach", "label": "Real-work reach, latest complete week",
          "value": last["real_work_reach"] if last else None, "target": None, "status": None,
          "note": "Uses of changed skills and guidance in the " + week_text(last["week"]) if last else "No complete week yet"},
         {"key": "bar_changes", "label": "Changes used in real work", "value": reached,
          "target": f"at least {BAR_MIN_CHANGES}", "status": status(bar_changes),
-         "note": f"{due}. Merged loop changes whose subject was used at least once after the merge"},
-        {"key": "bar_build", "label": "Build cost, latest complete week", "value": r2(last["build_points"]) if last else None,
-         "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build),
-         "note": f"{due}. " + ("Build spend in the " + week_text(last["week"]) if last else "No complete week yet")},
-        {"key": "points_per_usd", "label": "Points per dollar", "value": round(ppu, 4), "target": None,
-         "status": None, "note": basis},
+         "note": f"{due}. Merged loop changes whose target was used at least once after the merge"},
+        {"key": "bar_build", "label": "Project-thread spend, latest complete week",
+         "value": last["build_points"] if last else None,
+         "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build) if build_known else None,
+         "note": f"{due}. " + (("Approximate points of project-thread spend in the " + week_text(last["week"])
+                               if build_known else "No project-thread rate yet: " + basis) if last else "No complete week yet")},
+        {"key": "eval_usd_per_point", "label": "Eval run dollars per point", "value": eval_rate, "target": None,
+         "status": None, "note": "The measured rate in evals/points.yml (quiet overnight windows, Nov 10 to 12)"},
+        {"key": "thread_usd_per_point", "label": "Project-thread dollars per point", "value": thread_rate,
+         "target": None, "status": None, "note": "Derived: " + basis},
     ]
     if now >= BAR_JUDGED_AT:
         summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None,
@@ -705,10 +757,10 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
                         else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {day_text(BAR_DUE)}"})
     if raw is not None:
         raw["weeks"] = [{**w, "run_usd": u} for w, u in zip(weeks, week_run_usds)]
-        raw["cost_per_verdict"] = summary[0]["value"]
-        raw["total"] = {"since": start.date().isoformat(), "usd": total_usd, "run_usd": run_usd,
-                        "thread_spend_usd": sum(build_usd.values()), "api_usd": sum(api.values()),
-                        "verdicts": verdicts, "cost_per_verdict": summary[0]["value"]}
+        raw["rates"] = {"eval_usd_per_point": eval_rate, "thread_usd_per_point": thread_rate}
+        raw["total"] = {"since": start.date().isoformat(), "usd": run_usd + thread_usd + api_usd, "run_usd": run_usd,
+                        "thread_spend_usd": thread_usd, "api_usd": api_usd, "verdicts": verdicts,
+                        "cost_per_verdict": (run_usd + thread_usd + api_usd) / verdicts if verdicts else None}
     if not weeks:
         weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
                   "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
@@ -718,7 +770,7 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
             w[k] = r2(w[k])
     for row in summary:
         if isinstance(row["value"], float):
-            row["value"] = r2(row["value"]) if row["key"] != "points_per_usd" else row["value"]
+            row["value"] = r2(row["value"])
     return weeks, summary
 
 
@@ -758,13 +810,16 @@ def spend_file(raw, now, plan=None):
     `spend_file`), from cost_benefit's unrounded weeks: totals only, never a
     session or thread row. Each week carries its three dollar parts (`run_usd`,
     `thread_spend_usd`, `api_usd`); cost per verdict is a total over all weeks,
-    so it lives once in `total`, never on a week."""
+    so it lives once in `total`, never on a week. `rates` carries the dollars
+    per point the pages convert allowance spend with (cost_benefit)."""
     out = [{"week": w["week"], "eval_runs": w["run_count"], "plan_meter_points": w["run_meter_points"],
             "run_usd": w.get("run_usd"), "api_usd": w["api_usd"], "thread_spend_usd": w["build_usd"]}
            for w in raw.get("weeks") or []]
     doc = {"schema": 1, "generated_at": iso(now), "weeks": out}
     if raw.get("total"):
         doc["total"] = raw["total"]
+    if raw.get("rates"):
+        doc["rates"] = raw["rates"]
     if plan:
         doc["plan"] = plan
     return doc

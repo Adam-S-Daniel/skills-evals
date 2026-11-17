@@ -219,26 +219,31 @@ credential into a dump.
 17:00 UTC to the next Monday and is labeled by its start date; the first is set by
 `COST_START`.
 
-- `cost_benefit_weeks`: per week, plan eval runs (`run_count`, `run_meter_points` from the
-  account meter, `run_points_est` from their dollars), API-billed eval dollars (`api_usd`,
+- `cost_benefit_weeks`: per week, plan eval runs (`run_count`, `run_points_est` from their
+  dollars at the eval rate, and `run_meter_points`, the meter's own movement during skill eval
+  runs, kept for reference and never shown: whole-point ticks of the whole account, never
+  recorded for guidance eval runs), API-billed eval dollars (`api_usd`,
   from `results/` summaries whose `usage.reasons.meter` is the harness's "API-billed run"
-  text), project-thread spend (`build_usd`, `build_points`, `build_estimated`), loop
+  text), project-thread spend (`build_usd`, `build_points`, `build_estimated`), the allowance
+  total (`total_points`, eval runs plus threads; API credit never joins it), loop
   changes merged, real-work reach and owner messages. `verdicts` is the current
   count of decided skill and guidance verdicts, on the latest week only.
-- `cost_benefit_summary`: cost per verdict, decision yield, real-work reach, the Dec 15 bar
-  (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the points-per-dollar rate.
+- `cost_benefit_summary`: allowance points and API credit dollars per decided verdict, decision
+  yield, real-work reach, the Dec 15 bar (`bar_changes`, `bar_build`, and `bar_verdict` from
+  Dec 16) and the two display rates (`eval_usd_per_point`, `thread_usd_per_point`).
 
 With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 `spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
 `plan_meter_points`, `run_usd`, `api_usd` and `thread_spend_usd`, and one `total`
 (`since`, `usd`, `run_usd`, `thread_spend_usd`, `api_usd`, `verdicts`, `cost_per_verdict`:
-the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one.
+the three weekly dollar columns sum to it), at full precision, `rates` (the two display rates
+below) and `plan` when `site.json` names one.
 `loop_jobs` (`as_of`, `points_per_week`, `usd_per_week`) is the loop's own automatic jobs'
 weekly meter use from `scripts/automatic_spend.py`, over `inputs/triggers.json`, the
 `ROUTINE_FIRES_LEDGER` fires and `--workflows-root`; it is left out when either is unset (the
 allowance guard then refuses evals rather than guess), or when an in-loop task's rate cannot be read.
 An in-loop task with no fire on its current model yet is priced at its dearest recorded fire, a
-task never costed at all at the dearest in-loop fire; BOXY tasks are not counted; and
+task never costed at all at the dearest in-loop fire; tasks scheduled on the owner's local machine are not counted; and
 `scripts/explorer_public.py` never copies it. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
@@ -254,9 +259,26 @@ cumulative cost between two samples is spread evenly over the time between them,
 before its first sample is spread from the session's creation, which marks the week
 estimated. It counts every thread in the project, not only the eval system's own work.
 It misses scheduled-task sessions (routines and watch passes), which `get_session` on
-threads does not see. Points per dollar is the account meter's reading divided by all
-API-equivalent spend over complete weeks, so it is an upper bound; with no such week it
-falls back to `DEFAULT_POINTS_PER_USD`.
+threads does not see.
+
+### Points, not dollars, for allowance spend
+
+Both pages show spend drawn from the weekly Max allowance (eval runs fired by routines, and
+project threads) only as approximate points, marked "≈" with the rate in a tooltip; spend
+paid from the monthly API credit (API-billed eval runs) stays in dollars and never joins a
+points total. Two rates, because one cannot fit both kinds:
+
+- **Eval runs**: `eval_usd_per_point` in [`evals/points.yml`](../evals/points.yml), measured on
+  quiet nights when eval runs were the only use. It is the only place a display rate is
+  written; `build.py` exits with the reason when it is missing or not positive.
+- **Project threads**: derived on every refresh by `thread_usd_per_point`: each complete week's
+  account meter reading less that week's eval points, against the week's thread dollars,
+  summed over the weeks. The meter also counts use outside the project, so thread points are
+  an upper bound. With no reading yet there is no rate, and thread points read as no value.
+
+The rates travel in `spend/weekly.json` `rates` to the public document, where
+`explorer/src/core/points.js` converts every allowance figure. The allowance guard does not
+read `evals/points.yml`: it charges eval runs at `evals/budget.yml` `points_per_usd`.
 
 ## What stays hand-maintained, and why
 

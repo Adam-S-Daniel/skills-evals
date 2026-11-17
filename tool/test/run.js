@@ -222,11 +222,11 @@ test('cards sort by next test first, then by how well they are faring', () => {
   sec.guidance.sections.find((x) => x.id === 'git-practices').next_test = { position: 1, band: 'missing', due: null, scheduled: true };
   eq(P.sectionItems(sec, 'next')[0].id, 'git-practices');
   const text = pagesText(doc, 'skills');
-  ok(text.includes('Next test: 1st skill in line for the next round of tests.'), 'queued line');
-  ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
+  ok(text.includes('Next eval run: 1st skill in line for the next round of eval runs.'), 'queued line');
+  ok(text.includes('Next eval run: a re-check due Dec 1.'), 're-check line, in Eastern time');
   ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
 });
-test('a subject being removed has no Next test line and says where its removal stands', () => {
+test('a subject being removed has no Next eval run line and says where its removal stands', () => {
   const PR = 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/7';
   const ISSUE = 'https://github.com/Adam-S-Daniel/skills-evals/issues/9';
   const states = {
@@ -250,7 +250,7 @@ test('a subject being removed has no Next test line and says where its removal s
       const t = P.textOf(page).replace(/\s+/g, ' ');
       // A declined, owner-held or blocked removal is not in motion: the planner re-checks it, so its next test shows.
       const rechecked = ['declined', 'owner', 'blocked'].includes(state);
-      eq(t.includes('Next test'), rechecked, state + ': the Next test line shows only while the subject is re-checked');
+      eq(t.includes('Next eval run'), rechecked, state + ': the Next eval run line shows only while the subject is re-checked');
       ok(!t.includes('re-check due'), state + ': no re-check due here');
       ok(t.includes(state === 'removed' ? text : text.replace('Official decision: remove it.', P.STRINGS.verdict[verdict])), state + ' text: ' + text);
       const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
@@ -269,12 +269,12 @@ test('a subject being removed has no Next test line and says where its removal s
   const whileQueued = being();
   hs.removal = { state: 'declined', url: ISSUE };
   eq(being(), whileQueued - 1, 'declined: the list shows the next test, a queued removal does not');
-  // Without a removal object (an older document) the plain decision line stays, and no Next test line.
+  // Without a removal object (an older document) the plain decision line stays, and no Next eval run line.
   const doc = JSON.parse(JSON.stringify(fixture));
   const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
   s.verdict = 'retire'; s.next_test = { position: null, band: null, due: '2026-12-06T03:47:32Z', scheduled: true };
   const t = P.textOf(P.subjectPage(doc, 'skills', 'example-skill-alpha', {}));
-  ok(t.includes('Official decision: remove it.') && !t.includes('Next test') && !t.includes('Dec 5'), 'plain line, no due');
+  ok(t.includes('Official decision: remove it.') && !t.includes('Next eval run') && !t.includes('Dec 5'), 'plain line, no due');
   // A retire subject's list cell says it is being removed; a kept one still shows its re-check.
   s.removal = { state: 'queued' };
   const k = doc.skills.find((x) => x.name === 'example-skill-delta');
@@ -299,9 +299,9 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   doc.skills[1].stakes = { level: 'none', reason: 'a hook refuses it', covered_by: 'Adam-S-Daniel/example:hooks/check.sh' };
   doc.skills[2].stakes = { level: 'normal' };
   const text = pagesText(doc, 'skills');
-  ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked sooner than other subjects.'), 'high line');
-  ok(text.includes('No test needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
-  eq(text.split('High stakes:').length + text.split('No test needed:').length, 4);
+  ok(text.includes('High stakes: a wrong pin runs third-party code. It is evaluated first and re-checked sooner than other targets.'), 'high line');
+  ok(text.includes('No eval needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
+  eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
 });
 const cv = (c, policy) => P.confidenceView(c, { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, max_runs_per_cell: 40, ...policy }, 'skills');
 const svgs = (n) => P.findAll(n, (x) => x.tag === 'svg');
@@ -391,7 +391,7 @@ test('the confidence view estimates the runs still needed, or says it is past th
   ok(near.includes('Keep: at this pace, about 14 more eval runs.'), 'keep estimate ' + near);
   ok(near.includes('Removal: at this pace, about 24 more eval runs.'), 'removal estimate');
   ok(near.includes(P.STRINGS.confPace), 'pace note');
-  ok(near.includes('Eval runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 eval runs. If neither test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'runs');
+  ok(near.includes('Eval runs that count toward a decision, busiest task and model: 10 of 40. Evaluation stops at 40 eval runs. If neither statistical test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'runs');
   const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
   ok(far.includes('Keep: not before the 40-eval-run cap at this pace.') && far.includes('Removal: not before the 40-eval-run cap at this pace.'), 'past cap');
   ok(!far.includes('more run'), 'no estimate past the cap');
@@ -402,14 +402,14 @@ test('the confidence view estimates the runs still needed, or says it is past th
 });
 test('the confidence view names a subject with no room to show a gain', () => {
   const t = P.textOf(cv(withCells(twoCells, { no_help: null })));
-  ok(t.includes('Removal: no task leaves room for a 15-point gain (Claude already passes without it), so this needs a harder test.'), 'no room');
+  ok(t.includes('Removal: no task leaves room for a 15-point gain (Claude already passes without it), so this needs a harder eval.'), 'no room');
   ok(!/\b(85|95)% confiden/.test(P.STRINGS.chipRules.helps + P.STRINGS.chipRules.none), 'no fixed levels in the chip rules');
 });
 test('the confidence view without cells (older data) shows the sentences only', () => {
   const n = cv({ helps: 0.5, no_help: 0.25 });
   eq(svgs(n).length, 0);
   const t = P.textOf(n);
-  ok(t.includes('Testing a task and model stops at 40 comparison runs. If neither test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'cap');
+  ok(t.includes('Evaluating a task and model stops at 40 comparison runs. If neither statistical test has crossed by then, on enough Claude Code versions, the task and model count as showing no clear effect, which counts toward removing it.'), 'cap');
   ok(!t.includes('more run') && !t.includes(P.STRINGS.confPace) && !t.includes(P.STRINGS.rangeWhat), 'no estimates, no chart notes');
   eq(svgs(cv({ helps: 0.5, no_help: 0.25, cells: [] })).length, 0);
 });
@@ -453,11 +453,11 @@ test('the Skills table lists every tested skill once, best status first, then mo
   doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
   P.skillItems(doc).forEach((it, i) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: i % 2 ? 0 : i + 3 }; });
   const page = P.buildPage(doc, 'skills', {});
-  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Uses,Use by,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Uses,Use by,Next eval run,Official decision');
   const rows = tableRows(page);
   const items = P.skillItems(doc);
   eq(rows.length, items.length, 'one row per tested skill');
-  const rank = ['Helps', 'Helps only on its own', 'Early sign: helps', 'Trending toward removal', 'No measurable difference', 'Test cannot tell', 'Not enough data'];
+  const rank = ['Helps', 'Helps only on its own', 'Early sign: helps', 'Trending toward removal', 'No measurable difference', 'Eval cannot tell', 'Not enough data'];
   rows.forEach((r, i) => {
     if (i === 0) return;
     const at = (c) => rank.findIndex((x) => c.endsWith(' ' + x));
@@ -468,12 +468,12 @@ test('the Skills table lists every tested skill once, best status first, then mo
   const hrefs = P.findAll(page, (n) => n.tag === 'tbody')[0] && P.findAll(P.findAll(page, (n) => n.tag === 'tbody')[0], (n) => n.tag === 'a').map((n) => n.attrs.href);
   ok(items.every((it) => hrefs.includes('#/skills/' + encodeURIComponent(it.name))), 'every name opens its page');
   const unused = items.filter((it) => doc.skills.find((x) => x.name === it.name).usage.invocations === 0).length;
-  ok(P.textOf(page).includes(unused + ' of ' + items.length + ' tested skills were not used in the owner\'s real work from Sep 7 to Oct 31 (cloud sessions are not counted yet).'), 'the unused count');
-  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('tested skills were not used'), 'no census, no line');
+  ok(P.textOf(page).includes(unused + ' of ' + items.length + ' evaluated skills were not used in the owner\'s real work from Sep 7 to Oct 31 (cloud sessions are not counted yet).'), 'the unused count');
+  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('evaluated skills were not used'), 'no census, no line');
 });
 test('the Guidance table shows each section\'s size in words, not uses', () => {
   const page = P.buildPage(fixture, 'guidance', {});
-  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Size,Gain per 100 words,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Eval runs,Size,Gain per 100 words,Next eval run,Official decision');
   eq(tableRows(page).length, P.sectionItems(fixture).length);
   ok(!P.findAll(page, (n) => n.attrs && n.attrs.class === 'cards').length, 'no card grid');
   // Gain per 100 words: in-situ gain points divided by the words shown, times 100; sorts by the number.
@@ -595,7 +595,7 @@ test('the whole-guidance panel draws the same-task panels and names a week one t
   ok(t.includes(P.STRINGS.pairTitle) && t.includes(P.STRINGS.spreadTitle), 'both charts are titled');
   ok(!t.includes('Week by week') && !t.includes('Weekly gain'), 'no pooled weekly gain line');
   ok(t.includes('The guidance added 60 percentage points in the earlier week and added 60 percentage points in the later one.'), t);
-  ok(t.includes('One task tested in both weeks. 1 not tested again, 1 new.'), 'the change of mix is stated');
+  ok(t.includes('One task evaluated in both weeks. 1 not evaluated again, 1 new.'), 'the change of mix is stated');
   ok(t.includes('8 of the 9 were one task (Swamped: task-new)'), 'the dominated week is called out');
   ok(t.includes('90% of checks passed, averaged over the one shared task (9 of 10 checks in 1 eval run)'), 'a point names its rate, its checks and its eval runs');
   eq(P.STRINGS.pairGap(-5, 1), 'The guidance cost 5 percentage points in the earlier week and added 1 percentage point in the later one.');
@@ -785,12 +785,12 @@ test('each mode renders its own views', () => {
 });
 
 test('a not-schedulable alert gets its plain label, not the raw kind', () => {
-  eq(P.STRINGS.alertKinds['not-schedulable'], 'Not being tested');
+  eq(P.STRINGS.alertKinds['not-schedulable'], 'Not being evaluated');
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'not-schedulable', subject: 'skill',
     name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'evals/example-skill-alpha/x',
     reason: 'no context', text: 'The task evals/example-skill-alpha/x is not scheduled: no context.', url: null }] });
   const t = pagesText(doc, 'skills');
-  ok(sp(t).includes('Not being tested: example-skill-alpha'), 'label shown');
+  ok(sp(t).includes('Not being evaluated: example-skill-alpha'), 'label shown');
   ok(!t.includes('not-schedulable'), 'raw kind not shown');
 });
 
@@ -920,7 +920,7 @@ test('the skills view lists new-skill and skill items with kind, source, seen, d
   eq(rows.length, 6, 'three miner rows, then three issue rows');
   eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
   eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | The daily drafter takes the eligible proposal with the most evidence; some are skipped for good (sent to a git hook check, already covered, or rejected).');
-  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Queued for the loop: raises this skill\'s priority for an improvement run');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Queued for the loop: raises this skill\'s priority for an eval run');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
   ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 2, 'the open table scrolls inside .tablewrap, the closed one sits in its fold');
@@ -932,13 +932,13 @@ test('the guidance view lists guidance items by their heading', () => {
   eq(rows[0][0], 'Security');
   eq(rows[0][1], 'Change to the guidance');
   eq(rows[1][0], 'example-unknown-section');
-  eq(rows[1][1], 'Idea for a test');
+  eq(rows[1][1], 'Idea for an eval');
   eq(rows[1][2], 'Session transcripts (another computer) a correction the owner made ×1');
 });
 
 test('the left-out note counts memory notes, git checks and private subjects, omitting zero parts', () => {
   const t = P.textOf(lessonsSection(fixture, 'skills'));
-  ok(t.includes('Left out on purpose: 2 personal memory notes, 1 proposed git check and 4 about private skills or repos. No session text is published.'), t);
+  ok(t.includes('Left out on purpose: 2 personal memory notes, 1 proposed git hook check and 4 about private skills or repos. No session text is published.'), t);
   const one = P.textOf(lessonsSection({ lessons: { date: '2026-10-30', items: [], left_out: { memory_note: 0, agent_check: 0, private: 1, other: 3 } } }, 'skills'));
   ok(one.includes('Left out on purpose: 1 about private skills or repos. No session text is published.'), one);
   ok(one.includes(P.STRINGS.lessonsEmptySkills), one);
@@ -997,7 +997,7 @@ test('lesson proposals render once, on the Loop page, not under the subject list
   ok(loop.includes(P.STRINGS.lessonsHeading), 'on Loop');
   for (const m of ['skills', 'guidance']) ok(!pagesText(fixture, m).includes(P.STRINGS.lessonsHeading), m);
   const method = P.textOf(P.renderRoute(fixture, { name: 'method', id: null }, {}));
-  ok(method.includes(P.STRINGS.rosterHeading), 'the roster is on How the tests work');
+  ok(method.includes(P.STRINGS.rosterHeading), 'the roster is on How the evals work');
 });
 
 // --- privacy ----------------------------------------------------------------------
@@ -1047,8 +1047,8 @@ test('regression alerts become one Trending toward removal row per subject, mode
   eq(rows[0].urls.length, 1, 'one issue link');
   const t = sp(pagesText(trendDoc(), 'skills'));
   ok(t.includes(P.STRINGS.trendingHeading) && t.includes('Expected'), 'section and its one-line note');
-  ok(t.includes('On fixture fx-one, the skill\'s lead over running without it (the share of checks passed with it minus without it) fell from 17 to 0 percentage points.'), t);
-  ok(t.includes('On fixture fx-two, judge score (out of 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47).'), t);
+  ok(t.includes('On eval fx-one, the skill\'s lead over running without it (the share of checks passed with it minus without it) fell from 17 to 0 percentage points.'), t);
+  ok(t.includes('On eval fx-two, judge score (0 to 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 on the 0 to 10 judge score scale that is also bigger than the usual variation from one eval run to the next (0.47).'), t);
   ok(!t.includes('Checks passed:'), 'no counts, no counts sentence');
   ok(!/\d\.\d{3,}/.test(t), 'every displayed number is rounded to 2 decimals');
   ok(!t.includes('Getting worse') && !t.includes('with minus without'), 'old wording gone');
@@ -1060,7 +1060,7 @@ test('an older regression alert that words itself still has its decimals rounded
   const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-gamma',
     text: 'example-skill-gamma regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
   const t = pagesText(d, 'skills');
-  ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47).'), 'legacy text is read back into the same plain sentence');
+  ok(sp(t).includes('Judge score (0 to 10) fell by 1.50. An alert needs a drop of at least 1.00 on the 0 to 10 judge score scale that is also bigger than the usual variation from one eval run to the next (0.47).'), 'legacy text is read back into the same plain sentence');
 });
 const win = (passed, total, judge, runs) => ({ runs: runs || 4, trials: 12, checks_passed: passed, checks_total: total, judge_mean: judge === undefined ? null : judge });
 const countsDoc = (alert) => Object.assign({}, fixture, { alerts: [Object.assign({ kind: 'regression', subject: 'skill', name: 'example-skill-gamma', model: 'example-large-2-0', verdict: 'regressed', text: 'x', url: null }, alert)] });
@@ -1068,20 +1068,20 @@ const trendText = (alert) => sp(P.textOf(P.buildPage(countsDoc(alert), 'skills',
 test('a judge row says from, to, the 0 to 10 scale and checks passed out of checks run per window', () => {
   const t = trendText({ measure: 'judge', previous: 7.0666666, current: 5.5666666, drop: 1.5, threshold: 1, noise: 0.472,
     counts: { with: { previous: win(40, 48, 7.0666666), current: win(38, 48, 5.5666666) }, without: null } });
-  ok(t.includes('Judge score (out of 10) fell from 7.07 to 5.57, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual variation from one eval run to the next (0.47). Checks passed: 40 of 48 in the earlier 4 eval runs, 38 of 48 in the latest 4.'), t);
+  ok(t.includes('Judge score (0 to 10) fell from 7.07 to 5.57, a drop of 1.50. An alert needs a drop of at least 1.00 on the 0 to 10 judge score scale that is also bigger than the usual variation from one eval run to the next (0.47). Checks passed: 40 of 48 in the earlier 4 eval runs, 38 of 48 in the latest 4.'), t);
 });
 test('an objective row gives the share and the checks behind it, plus the judge scores when present', () => {
   const t = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05,
     counts: { with: { previous: win(36, 48, 7.5), current: win(12, 48, 6) }, without: null } });
-  ok(t.includes('Checks passed fell from 75% (36 of 48) in the earlier 4 eval runs to 25% (12 of 48) in the latest 4. An alert needs a drop of at least 15 percentage points that is also bigger than the usual variation from one eval run to the next (5 points). Judge score (out of 10): 7.50 earlier, 6.00 lately.'), t);
+  ok(t.includes('Checks passed fell from 75% (36 of 48) in the earlier 4 eval runs to 25% (12 of 48) in the latest 4. An alert needs a drop of at least 15 percentage points that is also bigger than the usual variation from one eval run to the next (5 points). Judge score (0 to 10): 7.50 earlier, 6.00 lately.'), t);
   const bare = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 });
-  ok(trendText({ fixture: 'fx-one', measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 }).includes('On fixture fx-one, checks passed fell from 75% to 25%.'), 'lowercase after a fixture');
+  ok(trendText({ fixture: 'fx-one', measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 }).includes('On eval fx-one, checks passed fell from 75% to 25%.'), 'lowercase after a fixture');
   ok(bare.includes('Checks passed fell from 75% to 25%.') && !bare.includes('36 of 48'), bare);
 });
 test('an advantage row gives checks passed with and without the subject and the lead in percentage points', () => {
   const t = trendText({ verdict: 'lost-delta', measure: 'advantage', previous: 1 / 6, current: 0,
     counts: { with: { previous: win(30, 36, 8, 3), current: win(24, 36, 7, 3) }, without: { previous: win(24, 36, null, 3), current: win(24, 36, null, 3) } } });
-  ok(t.includes('With the skill, 30 of 36 checks passed (83%) earlier and 24 of 36 (67%) lately; without it, 24 of 36 (67%) and 24 of 36 (67%). The skill\'s lead fell from 17 to 0 percentage points. Judge score (out of 10) with the skill: 8.00 earlier, 7.00 lately.'), t);
+  ok(t.includes('With the skill, 30 of 36 checks passed (83%) earlier and 24 of 36 (67%) lately; without it, 24 of 36 (67%) and 24 of 36 (67%). The skill\'s lead fell from 17 to 0 percentage points. Judge score (0 to 10) with the skill: 8.00 earlier, 7.00 lately.'), t);
 });
 test('the trending terms are tappable definitions', () => {
   const kids = [];
@@ -1147,7 +1147,7 @@ test('the hooks tile leads with the last full week and shows the week in progres
   const page = P.renderRoute(d, { name: 'summary', id: null }, {});
   const tile = P.findAll(page, (n) => n.attrs && n.attrs.class && /\btile\b/.test(n.attrs.class) && P.textOf(n).includes(P.STRINGS.tileHooks))[0];
   const text = sp(P.textOf(tile));
-  ok(text.includes('6 commits and pushes stopped the week of Nov 2: 4 on'), 'headline is the last full week: ' + text);
+  ok(text.includes('6 commits and pushes blocked the week of Nov 2: 4 on'), 'headline is the last full week: ' + text);
   ok(text.includes('This week so far (4 days): 1.'), text);
   ok(text.includes(P.STRINGS.hooksCloudNot), 'says cloud is not counted');
   const cloud = Object.assign({}, d, { hooks: Object.assign({}, d.hooks, { cloud_from: '2026-11-09', totals: Object.assign({}, d.hooks.totals, { cloud: [{ week: '2026-11-09', blocked: 2, invocations: 3 }] }) }) });
@@ -1184,14 +1184,14 @@ function hooksDoc() {
 }
 test('the git hook table never shows a run count below its block count, and says what is not counted', () => {
   const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));
-  ok(t.includes('Runs outside CI, 8 weeks'), 'the header names the window and says once that CI runs are not counted: ' + t);
+  ok(t.includes('Hook runs, not CI, 8 weeks'), 'the header names the window and says once that CI runs are not counted: ' + t);
   ok(!t.includes('local, CI not counted'), 'never said per row: ' + t);
   ok(/mixed-ci\s*Fleet\s*25\b/.test(t), 'a check with a red CI run shows its counted runs plainly: ' + t);
   ok(/agents-md-size\s*Fleet\s*0\b/.test(t), 'zero counted runs is 0, not "not counted": ' + t);
-  ok(t.includes('4 of 30 runs'), 'blocked of runs where runs are counted: ' + t);
+  ok(t.includes('4 of 30 hook runs'), 'blocked of runs where runs are counted: ' + t);
   ok(t.includes('not counted'), 'unknown runs are said to be not counted');
   ok(!/pr-tldr\s*Fleet template\s*0\b/.test(t), 'pr-tldr is not shown with 0 runs');
-  ok(t.includes('no check\'s CI runs are counted'), 'the note says CI runs are never counted, for any check');
+  ok(t.includes('no check\'s CI hook runs are counted'), 'the note says CI runs are never counted, for any check');
   const imp = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'spend', id: null }, {})));
   ok(/mixed-ci\s*25\b/.test(imp), 'the impact page shows the same counted runs as the hooks table: ' + imp);
 });
@@ -1210,7 +1210,7 @@ test('the Skills list stays short: lists fold, the unused line is a normal line,
   P.skillItems(doc).forEach((it) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: 0 }; });
   doc.skills.find((x) => x.name === 'example-skill-alpha').private = true;
   const page = P.buildPage(doc, 'skills', {});
-  const unused = P.findAll(page, (n) => n.tag === 'p' && P.textOf(n).includes('tested skills were not used'))[0];
+  const unused = P.findAll(page, (n) => n.tag === 'p' && P.textOf(n).includes('evaluated skills were not used'))[0];
   ok(unused && unused.attrs.class === null || unused.attrs.class === undefined, 'a plain paragraph, not the big headline');
   const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => P.textOf(n.children[0]).trim());
   ok(folds.includes(P.STRINGS.coverageLists), 'the coverage lists sit under a fold: ' + folds);
@@ -1271,7 +1271,7 @@ test('the fixture findings name what they are and link each one, and say who cle
   const d = Object.assign({}, fixture, { fixture_queue: { requests: [], fixtures: [], totals: {}, findings: [f('a'), f('b')] } });
   const page = route(d, 'changes');
   const t = flat(page);
-  ok(t.includes('2 fixtures were added but never ran. The loop files an issue for each one and closes it when the finding clears.'), t);
+  ok(t.includes('2 evals were added but never ran. The loop files an issue for each one and closes it when the finding clears.'), t);
   ok(!t.includes('need a look') && !t.includes('high severity'), 'the old wording is gone');
   const hrefs = new Set(P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href));
   ok(hrefs.has('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.has('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
@@ -1301,26 +1301,28 @@ test('Made by agents uses plain words, pluralizes, adds Unknown when above 0, su
   for (const raw of ['insufficient', 'never-blocked', 'never-ran', 'earning', 'retire']) ok(!new RegExp('(^|[ ,;])' + raw + '( \\d|;|,|$)').test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'raw key shown: ' + raw);
   ok(t.includes('1 use') && !t.includes('1 uses'), 'singular');
   ok(heads(P.findAll(page, (n) => n.tag === 'section' && flat(n).startsWith('Made by agents'))[0]).includes('Unknown'), 'Unknown column');
-  ok(t.includes('Older items (1)'), 'older folded');
+  ok(t.includes('Older targets (1)'), 'older folded');
   ok(t.includes('Decided: remove 1') && !t.includes('No measurable difference 1'), 'a retire verdict reads as a decision, not as done');
   ok(!/Removed/.test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'nothing in the fixture is retired yet, so nothing says Removed');
   eq(P.STRINGS.agentVerdicts['retire-pending'], 'Removal pending');
   eq(P.STRINGS.agentVerdicts.retired, 'Removed');
   ok(t.includes('Never blocked 1') && t.includes('Not enough data 1'), 'plain labels with counts');
 });
-test('a skill page leads with what its tests cost, folds the long tables, and has no Checks or Report columns', () => {
+test('a skill page leads with the allowance its eval runs used, folds the long tables, and has no Checks or Report columns', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
   s.run_utility = [{ date: '2026-10-30', class: 'decisive', runs: 2, cost_usd: 1.25 }];
+  doc.spend = { generated_at: '2026-11-12T01:00:00Z', weeks: [], total: null, rates: { eval_usd_per_point: 0.5, thread_usd_per_point: 10 } };
+  P.renderRoute(doc, { name: 'summary' }, {}); // a render reads the document's display rates
   const page = P.subjectPage(doc, 'skills', 'example-skill-alpha', {});
-  ok(flat(page).includes('Its tests cost $1.25 in the last 30 days, at list price.'), 'cost line');
+  ok(flat(page).includes('Its eval runs used \u22482.5 points of the weekly allowance in the last 30 days.'), 'cost line: ' + flat(page).slice(0, 400));
   const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => flat(n.children[0]).trim());
   ok(folds.includes(P.STRINGS.runsHeading) && folds.includes(P.STRINGS.fixturesHeading), 'folds: ' + folds);
   const runsFold = P.findAll(page, (n) => n.tag === 'details')[0];
   const hs = heads(runsFold);
   ok(!hs.includes('Checks') && !hs.includes('Report'), hs.join(','));
   const noCost = JSON.parse(JSON.stringify(fixture));
-  ok(!flat(P.subjectPage(noCost, 'skills', 'example-skill-alpha', {})).includes('Its tests cost'), 'nothing without usefulness rows');
+  ok(!flat(P.subjectPage(noCost, 'skills', 'example-skill-alpha', {})).includes('Its eval runs used'), 'nothing without usefulness rows');
 });
 
 // --- size -----------------------------------------------------------------------------

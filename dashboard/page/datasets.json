@@ -1,6 +1,6 @@
 {
  "budget": {
-  "description": "The weekly cap, per-eval-run cap and stop line for automatic tests, copied from skills-evals evals/budget.yml on main. Saved as a file because the GitHub connector returns only a short status line to the page, not the file's text.",
+  "description": "The weekly cap, per-eval-run cap and stop line for automatic evals, copied from skills-evals evals/budget.yml on main. Saved as a file because the GitHub connector returns only a short status line to the page, not the file's text.",
   "request": {
    "args": {
     "owner": "Adam-S-Daniel",
@@ -17,7 +17,7 @@
    "url": "/_blob/<uploaded id>"
   },
   "staleAfterHours": 50,
-  "title": "Test budget settings"
+  "title": "Eval budget settings"
  },
  "checkins": {
   "description": "One-time reminders Claude set in this project, from the scheduled task list.",
@@ -31,7 +31,7 @@
   "title": "Scheduled check-ins"
  },
  "cost_benefit_summary": {
-  "description": "Cost per decided verdict, decision yield, real-work reach, the Dec 15 bar and the points-per-dollar rate used. Built by Claude with the weekly rows.",
+  "description": "Allowance points and API credit per decided verdict, decision yield, real-work reach, the Dec 15 bar and the two dollars-per-point rates used. Built by Claude with the weekly rows.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -42,7 +42,7 @@
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
-  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
+  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their approximate points, API-billed eval dollars (API credit), project-thread spend and its approximate points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -53,7 +53,7 @@
   "title": "Cost and benefit, by week"
  },
  "eval_allowance": {
-  "description": "Test use over the last 7 days and the latest account meter reading, worked out with skills-evals' own allowance guard code from the results branch. It does not count fires still running.",
+  "description": "Eval use over the last 7 days and the latest account meter reading, worked out with skills-evals' own allowance guard code from the results branch. It does not count fires still running.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -61,7 +61,7 @@
    "url": "/_blob/<uploaded id>"
   },
   "staleAfterHours": 50,
-  "title": "Test allowance snapshot"
+  "title": "Eval allowance snapshot"
  },
  "eval_ingests": {
   "description": "The newest commits on skills-evals' results branch, one per finished eval run. Reads the persistent/eval-results branch history.",
@@ -177,7 +177,7 @@
   "title": "Open PRs"
  },
  "roster": {
-  "description": "Which models the skill tests run on, judge with and quick-check with, read by Claude from skills-evals evals/roster.yml on main, plus models dropped in the last change.",
+  "description": "Which models the evals run on, judge with and quick-check with, read by Claude from skills-evals evals/roster.yml on main, plus models dropped in the last change.",
   "schedule": "Rebuilt on every refresh, read from evals/roster.yml",
   "source": {
    "kind": "file",
@@ -185,7 +185,7 @@
    "url": "/_blob/<uploaded id>"
   },
   "staleAfterHours": 50,
-  "title": "Models in the tests"
+  "title": "Models on the roster"
  },
  "routines": {
   "description": "The project's automatic jobs and their last runs, read by Claude from the scheduled task list and project threads.",
@@ -254,7 +254,7 @@
   "title": "Waiting on you"
  },
  "explorer": {
-  "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public skill, guidance section, git check, eval run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
+  "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public git hook check, skill, guidance section, eval run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",
@@ -265,7 +265,7 @@
   "title": "Evals document"
  },
  "explorer_private": {
-  "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and eval runs in with a Private badge; until it is uploaded the page shows public subjects only.",
+  "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and eval runs in with a Private badge; until it is uploaded the page shows public targets only.",
   "schedule": "Rebuilt on every refresh, read from the private results branch",
   "source": {
    "kind": "file",

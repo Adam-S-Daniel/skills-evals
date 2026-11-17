@@ -5,7 +5,7 @@ import { parseTime } from './format.js';
 import { DATA_REPO } from '../config.js';
 
 const EVALS_URL = 'https://github.com/' + DATA_REPO;
-export const FQ_KINDS = { 'needs-fixtures': 'new fixtures', 'needs-harder-fixtures': 'harder fixtures', 'needs-trigger-set': 'trigger set' };
+export const FQ_KINDS = { 'needs-fixtures': 'new evals', 'needs-harder-fixtures': 'harder evals', 'needs-trigger-set': 'trigger set' };
 
 /* The issue number a fixture's `request` names: an integer, bare digits, or
    this repository's own issue URL (https://github.com/<DATA_REPO>/issues/735).

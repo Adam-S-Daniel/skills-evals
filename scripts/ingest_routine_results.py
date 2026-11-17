@@ -109,7 +109,8 @@ SPEND_MAX_WEEKS = 1040
 #: The only keys a spend file may carry: explorer/schema.json `$defs.spend_file`
 #: allows more, and this gate does not, so a per-session or per-thread row can
 #: never reach the public results branch.
-SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks", "total", "loop_jobs"})
+SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks", "total", "loop_jobs", "rates"})
+SPEND_RATES_KEYS = frozenset({"eval_usd_per_point", "thread_usd_per_point"})
 SPEND_LOOP_JOBS_KEYS = frozenset({"as_of", "points_per_week", "usd_per_week"})
 SPEND_WEEK_KEYS = frozenset({"week", "eval_runs", "plan_meter_points", "api_usd",
                              "thread_spend_usd", "cost_per_verdict", "plan", "run_usd"})
@@ -1748,6 +1749,8 @@ def check_spend(doc: dict, text: str, where: str) -> None:
         raise Rejected(f"{where}: the total carries a field that is not a weekly total")
     if isinstance(doc.get("loop_jobs"), dict) and set(doc["loop_jobs"]) - SPEND_LOOP_JOBS_KEYS:
         raise Rejected(f"{where}: loop_jobs carries a field that is not a weekly total")
+    if "rates" in doc and (not isinstance(doc["rates"], dict) or set(doc["rates"]) - SPEND_RATES_KEYS):
+        raise Rejected(f"{where}: rates carries a field that is not a display rate")
     plans = [doc.get("plan")]
     seen = set()
     for i, week in enumerate(doc["weeks"]):
