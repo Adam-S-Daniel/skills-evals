@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VoJonbYEb73gx7yKZefFtQ",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -3; grep -rIn \"0\\.1\\.[0-9]*\" --include=* . --exclude-dir=.git -l | head -30",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VoJonbYEb73gx7yKZefFtQ",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nc8fb2cb initial commit\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep:...",
+      "output_chars": 1930,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0179r8JR9fcEBRpbeER1Efev",
+      "name": "Bash",
+      "input": "cat platform.lock PLATFORM_REF; grep -n \"cms-platform\" Gemfile Gemfile.lock | head; sed -n 1,60p .github/workflows/platform-bump.yml; ls .cms-platform/scripts; grep -n \"0\\.1\\.\" README.md | head",
+      "input_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0179r8JR9fcEBRpbeER1Efev",
+      "is_error": false,
+      "output": "platform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\ntag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nGemfile:2:gem \"cms-platform-theme\", git: \"https://github.com/Adam-S-Daniel/cms-platform\", tag: \"v0.1.103\"\nGemfile.lock:2:  remote: https://github.com/Adam-S-Daniel/cms-plat...",
+      "output_chars": 1242,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012kNXJCocMCeCSqTPtWxN9g",
+      "name": "Bash",
+      "input": "for f in platform.lock PLATFORM_REF; do echo \"== $f\"; cat -A $f; done; cat README.md | head -30; sed -n 1,60p .cms-platform/scripts/verify-consumer-pins.sh; grep -rn \"v0\\.1\\.103\" . --exclude-dir=.git ...",
+      "input_chars": 266,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012kNXJCocMCeCSqTPtWxN9g",
+      "is_error": false,
+      "output": "== platform.lock\nplatform_repo: Adam-S-Daniel/cms-platform$\nplatform_ref: v0.1.103$\n== PLATFORM_REF\ntag: v0.1.104$\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b$\nExample site checkout. The deployment workflow uses the shared platform release.\nA changelog entry for v0.1.99 is historical context, n...",
+      "output_chars": 6854,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EcPqsKGesmhG78Tn1t91yN",
+      "name": "Bash",
+      "input": "sed -i 's/v0\\.1\\.103/v0.1.104/g' platform.lock Gemfile Gemfile.lock .github/actions/local/action.yml $(ls .github/workflows/*.yml | grep -v platform-bump.yml) && sed -i '11s/v0\\.1\\.103/v0.1.104/' .git...",
+      "input_chars": 418,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EcPqsKGesmhG78Tn1t91yN",
+      "is_error": false,
+      "output": "GIT\n  remote: https://github.com/Adam-S-Daniel/cms-platform\n  revision: 1111111111111111111111111111111111111111\n  tag: v0.1.104\n  specs:\n    cms-platform-theme (0.1.104)\n\nDEPENDENCIES\n  cms-platform-theme!\nok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok...",
+      "output_chars": 1714,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q4rhGF8d7iVmhWy3MaKEWd",
+      "name": "Bash",
+      "input": "ls .cms-platform/examples/site/.github/workflows/; cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml; echo ====; cat .github/workflows/old-preview-cleanup.yml; git -C ...",
+      "input_chars": 262,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q4rhGF8d7iVmhWy3MaKEWd",
+      "is_error": true,
+      "output": "Exit code 1\ncms-delete-published-preview.yml\ncms-editorial-workflow.yml\ncms-media-roundtrip.yml\ncms-preview-loops.yml\ncms-publish-loop-host.yml\ncms-publish-loop-preview.yml\ncms-publish-loop-prod.yml\ncms-scheduled-publish-loop.yml\ndeploy-preview.yml\ndeploy-production.yml\nplatform-bump.yml\nplatform-pi...",
+      "output_chars": 3724,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DLwkBVrbia8bJGwWZAwkYA",
+      "name": "Bash",
+      "input": "grep -n \"apex\" .github/workflows/*.yml | head -5; diff <(sed 's/example\\.com/X/' .cms-platform/examples/site/.github/workflows/cms-preview-loops.yml) <(sed 's/example\\.com/X/' .github/workflows/cms-pr...",
+      "input_chars": 223,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DLwkBVrbia8bJGwWZAwkYA",
+      "is_error": false,
+      "output": ".github/workflows/cms-preview-loops.yml:27:      apex: example.com\n.github/workflows/cms-publish-loop-preview.yml:28:      apex: example.com\n.github/workflows/deploy-preview.yml:42:      apex_domain: example.com\n.github/workflows/deploy-production.yml:42:      apex_domain: example.com",
+      "output_chars": 285,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vk9oGbKjVf1nvdxanhVxGj",
+      "name": "Bash",
+      "input": "cp .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml .github/workflows/ && git rm -q -f .github/workflows/old-preview-cleanup.yml && sed -i 's/revision: 111111111111111111...",
+      "input_chars": 358,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vk9oGbKjVf1nvdxanhVxGj",
+      "is_error": false,
+      "output": "ok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok: no stale platform ref in platform.lock / Gemfile* / .github/workflows (canonical v0.1.104)\nok: all 12 workflow file(s) parse as YAML\nplatform-pin-consistency: OK \u2014 all 39 platform-consistency check(s) in ....",
+      "output_chars": 489,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
