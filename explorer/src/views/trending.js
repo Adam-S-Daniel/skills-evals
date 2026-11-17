@@ -56,7 +56,7 @@ function windowOf(counts, arm, when) {
 }
 const judgeOf = (counts, when) => { const w = counts && counts.with && counts.with[when]; return w && isNum(w.judge_mean) ? w.judge_mean : null; };
 const of = (w) => STRINGS.trendOf(fmtCount(w.checks_passed), fmtCount(w.checks_total));
-const earlierRuns = (w) => ['the earlier ', fmtCount(w.runs), ' ', defn('run', w.runs === 1 ? 'run' : 'runs')];
+const earlierRuns = (w) => ['the earlier ', fmtCount(w.runs), ' ', defn('run', w.runs === 1 ? 'eval run' : 'eval runs')];
 const latestRuns = (w) => ['the latest ', fmtCount(w.runs)];
 
 /* The sentence for one measure, with "judge score", "check", "run" and

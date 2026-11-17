@@ -530,7 +530,7 @@ export function makeExt(dash, opts) {
     opsBottom() {
       return [
         panel(P.ingestsHeading, ok('eval_ingests') ? [h('p', { class: 'note' }, P.ingestsNote), table([
-          { label: P.colRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
+          { label: P.colEvalRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
           { label: P.colSaved, sort: (r) => r.ingested_at, cell: (r) => at(r.ingested_at) }], some(dash, 'eval_ingests'), { tall: true })] : null),
         panel(P.threadsHeading, ok('threads') ? threadTables(some(dash, 'threads')) : null)];
     },
