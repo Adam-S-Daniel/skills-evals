@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-17T05:28:51Z",
+  "fetched_at": "2026-11-17T05:33:21Z",
   "issues": [
    {
     "created_at": "2026-11-17T02:10:06Z",
@@ -7820,6 +7820,18 @@
   ],
   "runs": [
    {
+    "conclusion": "failure",
+    "created_at": "2026-11-17T05:31:37Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44024723271,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-17T05:32:01Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44024723271",
+    "workflow": "Site freshness"
+   },
+   {
     "conclusion": "success",
     "created_at": "2026-11-17T05:27:41Z",
     "event": "workflow_run",
@@ -8898,18 +8910,6 @@
     "updated_at": "2026-11-17T03:28:12Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44010256291",
     "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T03:26:45Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44010256320,
-    "state": "completed",
-    "title": "Arm queued guidance improvements in the merge window",
-    "updated_at": "2026-11-17T03:26:57Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44010256320",
-    "workflow": "Arm queued guidance improvements in the merge window"
    },
    {
     "conclusion": "success",
@@ -28244,7 +28244,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-11-03T05:28:51Z"
+  "since": "2026-11-03T05:33:21Z"
  },
  "agent_made": {
   "items": [
@@ -28950,7 +28950,7 @@
     "created": "2026-07-16T17:09:27Z",
     "id": "data-exposure-in-ci",
     "impact": {
-     "current_text_runs": 151,
+     "current_text_runs": 153,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -31425,6 +31425,28 @@
   ],
   "latest": [
    {
+    "checks": 6,
+    "fired_at": "2026-11-17T05:23:56Z",
+    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
+    "model": "claude-opus-5-5",
+    "run_id": "20261117T052356Z-0d5cc2",
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_share": 0.8333333333333334,
+    "without_skill": 5
+   },
+   {
+    "checks": 6,
+    "fired_at": "2026-11-17T05:23:56Z",
+    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261117T052356Z-0d5cc2",
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_share": 0.6666666666666666,
+    "without_skill": 4
+   },
+   {
     "checks": 5,
     "fired_at": "2026-11-17T05:20:12Z",
     "fixture": "guidance/data-exposure-in-ci/backup-config-secrets",
@@ -31467,28 +31489,6 @@
     "with_skill": 3,
     "without_share": 0.6666666666666666,
     "without_skill": 2
-   },
-   {
-    "checks": 6,
-    "fired_at": "2026-11-17T04:42:33Z",
-    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261117T044233Z-33962f",
-    "with_share": 0.8333333333333334,
-    "with_skill": 5,
-    "without_share": 0.6666666666666666,
-    "without_skill": 4
-   },
-   {
-    "checks": 6,
-    "fired_at": "2026-11-17T04:42:33Z",
-    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
-    "model": "claude-opus-5-5",
-    "run_id": "20261117T044233Z-33962f",
-    "with_share": 0.8333333333333334,
-    "with_skill": 5,
-    "without_share": 0.8333333333333334,
-    "without_skill": 5
    },
    {
     "checks": 5,
@@ -33401,6 +33401,50 @@
    "tied": 53
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 6,
+    "cli": "2.1.326",
+    "cost_usd": 0.42128519999999997,
+    "fired_at": "2026-11-17T05:23:56Z",
+    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T052356Z-0d5cc2/guidance/data-exposure-in-ci/20261117T052440Z/report.md",
+    "run_id": "20261117T052356Z-0d5cc2",
+    "skill": "guidance/data-exposure-in-ci",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_judge": null,
+    "without_share": 0.8333333333333334,
+    "without_skill": 5
+   },
+   {
+    "account_week_after": null,
+    "checks": 6,
+    "cli": "2.1.326",
+    "cost_usd": 0.1467545,
+    "fired_at": "2026-11-17T05:23:56Z",
+    "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
+    "gain": 1,
+    "judge": "skipped: checks decided",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T052356Z-0d5cc2/guidance/data-exposure-in-ci/20261117T052622Z/report.md",
+    "run_id": "20261117T052356Z-0d5cc2",
+    "skill": "guidance/data-exposure-in-ci",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_judge": null,
+    "without_share": 0.6666666666666666,
+    "without_skill": 4
+   },
    {
     "account_week_after": null,
     "checks": 5,
@@ -63133,7 +63177,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-17T05:28:00Z",
+  "generated_at": "2026-11-17T05:32:34Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -63227,7 +63271,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-17T05:26:48Z",
+ "generated_at": "2026-11-17T05:31:26Z",
  "guidance": {
   "removed": [
    {
@@ -72380,11 +72424,11 @@
        "votes": true
       },
       {
-       "gain": 11.1,
-       "high": 30.8,
-       "low": -31.2,
+       "gain": 10.3,
+       "high": 28.6,
+       "low": -29.0,
        "model": "claude-opus-5-5",
-       "pairs": 12,
+       "pairs": 13,
        "status": "open",
        "task": "dispatch-email-input",
        "votes": true
@@ -72410,11 +72454,11 @@
        "votes": true
       },
       {
-       "gain": 15.3,
-       "high": 33.6,
-       "low": -28.9,
+       "gain": 15.4,
+       "high": 32.4,
+       "low": -25.9,
        "model": "claude-sonnet-5-5",
-       "pairs": 12,
+       "pairs": 13,
        "status": "open",
        "task": "dispatch-email-input",
        "votes": true
@@ -72437,7 +72481,7 @@
      "no_help": 0.0,
      "no_help_pairs": 12
     },
-    "current_text_runs": 151,
+    "current_text_runs": 153,
     "decisions": [
      {
       "class": "insufficient",
@@ -72963,23 +73007,69 @@
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 10.902676,
+      "cost_usd": 11.3239612,
       "date": "2026-11-17",
       "model": "claude-opus-5-5",
       "reason": null,
-      "runs": 42
+      "runs": 44
      },
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 4.0067547,
+      "cost_usd": 4.1535092,
       "date": "2026-11-17",
       "model": "claude-sonnet-5-5",
       "reason": null,
-      "runs": 44
+      "runs": 46
      }
     ],
     "runs": [
+     {
+      "at": "2026-11-17T05:26:22Z",
+      "cli_version": "2.1.326",
+      "fixture": "dispatch-email-input",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.0785194,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.06823509999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T052356Z-0d5cc2/guidance/data-exposure-in-ci/20261117T052622Z/report.md"
+     },
+     {
+      "at": "2026-11-17T05:24:40Z",
+      "cli_version": "2.1.326",
+      "fixture": "dispatch-email-input",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.2019354,
+        "judge_mean": 5.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.21934979999999998,
+        "judge_mean": 7.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T052356Z-0d5cc2/guidance/data-exposure-in-ci/20261117T052440Z/report.md"
+     },
      {
       "at": "2026-11-17T05:22:04Z",
       "cli_version": "2.1.326",
@@ -98230,7 +98320,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-17T05:22:04Z",
+ "newest_run": "2026-11-17T05:26:22Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -126746,7 +126836,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
-  "results_commit": "40f3de6d071f11aca8765d361d500424fd3188fe"
+  "results_commit": "979afdd6d74a12d59b34eedd81d6b9df16212366"
  },
  "spend": {
   "generated_at": "2026-11-16T12:39:48Z",
