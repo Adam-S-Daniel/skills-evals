@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261117T183407Z-68ebce",
+ "mode": "improve",
+ "target": "writing-adrs",
+ "exit_code": 0,
+ "outcome": "accepted",
+ "stage_reached": "candidate",
+ "trial_summaries": 30,
+ "agent_calls": 30,
+ "judge_calls": 0,
+ "agent_usd": 1.9195761,
+ "judge_usd": 0,
+ "guard_usd": 0,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 15,
+   "usd": 0.9528307
+  },
+  "candidate": {
+   "trials": 15,
+   "usd": 0.9667454000000001
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.1686358,
+  "input_tokens": 2,
+  "output_tokens": 2435
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-2"
+ },
+ "busy_seconds": 593.0,
+ "span_seconds": 569.449,
+ "snapshots": 30,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-17T18:37:00.957000Z",
+  "utilization": 0.12,
+  "resets_at": 1795453200
+ },
+ "last": {
+  "at": "2026-11-17T18:46:30.406000Z",
+  "utilization": 0.13,
+  "resets_at": 1795453200
+ },
+ "delta": 0.010000000000000009,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-17T18:47:03.664242Z"
+}
