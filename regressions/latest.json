@@ -1,5 +1,5 @@
 {
-  "as_of": "20261116T174827Z",
+  "as_of": "20261117T001402Z",
   "policy": {
     "guidance": {
       "judge_drop": 1.0,
@@ -5246,91 +5246,157 @@
     },
     {
       "boundary": {
-        "after": "20261107T141847Z",
-        "before": "20261109T202052Z"
+        "after": "20261116T214347Z",
+        "before": "20261116T222438Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "09e95b70fad429d98f1e45698785efbda458aba3",
-          "skills_evals_commit_last": "93a382b24e874d4f3365f57545cdd3c8ffd81e48"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "e297f853ea6a7c427f05ec0251b85a92b6216965",
-          "skills_evals_commit_last": "e297f853ea6a7c427f05ec0251b85a92b6216965"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "backup-config-secrets",
       "id": "data-exposure-in-ci",
       "model": "claude-opus-5-5",
       "numbers": {
-        "counts": null,
-        "delta": null,
+        "counts": {
+          "with": {
+            "current": {
+              "checks_passed": 15,
+              "checks_total": 15,
+              "judge_mean": null,
+              "runs": 3,
+              "trials": 3
+            },
+            "previous": {
+              "checks_passed": 15,
+              "checks_total": 15,
+              "judge_mean": null,
+              "runs": 3,
+              "trials": 3
+            }
+          },
+          "without": {
+            "current": {
+              "checks_passed": 10,
+              "checks_total": 15,
+              "judge_mean": null,
+              "runs": 3,
+              "trials": 3
+            },
+            "previous": {
+              "checks_passed": 9,
+              "checks_total": 15,
+              "judge_mean": null,
+              "runs": 3,
+              "trials": 3
+            }
+          }
+        },
+        "delta": {
+          "current": 0.33333333333333337,
+          "previous": 0.4
+        },
         "judge": null,
-        "objective": null
+        "objective": {
+          "change": 0.0,
+          "current": 1.0,
+          "noise": 0.0,
+          "previous": 1.0
+        }
       },
       "pair": "in_situ",
-      "reason": "fewer than 2 runs in a window (previous 1, current 3)",
+      "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
       "suspects": [
-        "CLI version changed",
-        "arm context changed"
+        "CLI version changed"
       ],
-      "verdict": "insufficient",
+      "verdict": "stable",
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T202052Z",
+            "path": "routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222438Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T202052Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T202052Z/report.md"
+              "path": "routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222438Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222438Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T202052Z"
+            "timestamp": "20261116T222438Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T202629Z",
+            "path": "routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232235Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T202629Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T202629Z/report.md"
+              "path": "routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232235Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232235Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T202629Z"
+            "timestamp": "20261116T232235Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T222948Z",
+            "path": "routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000302Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T222948Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T222948Z/report.md"
+              "path": "routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000302Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000302Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T222948Z"
+            "timestamp": "20261117T000302Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T141847Z",
+            "path": "routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200521Z",
             "report": {
-              "path": "routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T141847Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T141847Z/report.md"
+              "path": "routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200521Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200521Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261107T141847Z"
+            "timestamp": "20261116T200521Z"
+          },
+          {
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
+            "cli_versions": [
+              "2.1.325 (Claude Code)"
+            ],
+            "path": "routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204543Z",
+            "report": {
+              "path": "routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204543Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204543Z/report.md"
+            },
+            "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
+            "timestamp": "20261116T204543Z"
+          },
+          {
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
+            "cli_versions": [
+              "2.1.325 (Claude Code)"
+            ],
+            "path": "routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214347Z",
+            "report": {
+              "path": "routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214347Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214347Z/report.md"
+            },
+            "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
+            "timestamp": "20261116T214347Z"
           }
         ]
       }
@@ -5495,17 +5561,17 @@
     },
     {
       "boundary": {
-        "after": "20261109T183356Z",
-        "before": "20261109T205136Z"
+        "after": "20261116T214454Z",
+        "before": "20261116T222552Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "ee2bf84465faaf280509497acca8c6d038c114e0",
-          "skills_evals_commit_last": "4ebb62af6b5a4946be032981f18060f9c3e9cb07"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "e297f853ea6a7c427f05ec0251b85a92b6216965",
-          "skills_evals_commit_last": "41da41b1613dfb5e9268adc0a24785eac8dbb53d"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "backup-config-secrets",
@@ -5517,14 +5583,14 @@
             "current": {
               "checks_passed": 13,
               "checks_total": 15,
-              "judge_mean": 5.0,
+              "judge_mean": 5.3,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 11,
+              "checks_passed": 13,
               "checks_total": 15,
-              "judge_mean": 5.15,
+              "judge_mean": 5.7,
               "runs": 3,
               "trials": 3
             }
@@ -5533,14 +5599,14 @@
             "current": {
               "checks_passed": 9,
               "checks_total": 15,
-              "judge_mean": 4.5,
+              "judge_mean": 5.7,
               "runs": 3,
               "trials": 3
             },
             "previous": {
               "checks_passed": 9,
               "checks_total": 15,
-              "judge_mean": 4.15,
+              "judge_mean": 6.0,
               "runs": 3,
               "trials": 3
             }
@@ -5548,106 +5614,104 @@
         },
         "delta": {
           "current": 0.2666666666666667,
-          "previous": 0.13333333333333341
+          "previous": 0.2666666666666667
         },
         "judge": null,
         "objective": {
-          "change": 0.1333333333333333,
+          "change": 0.0,
           "current": 0.8666666666666667,
           "noise": 0.23094010767585033,
-          "previous": 0.7333333333333334
+          "previous": 0.8666666666666667
         }
       },
       "pair": "in_situ",
       "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
       "suspects": [
-        "CLI version changed",
-        "judge model changed",
-        "arm context changed"
+        "CLI version changed"
       ],
       "verdict": "stable",
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T205136Z",
+            "path": "routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222552Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T205136Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T205136Z/report.md"
+              "path": "routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222552Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222352Z-8b624b/guidance/data-exposure-in-ci/20261116T222552Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T205136Z"
+            "timestamp": "20261116T222552Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T225527Z",
+            "path": "routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232345Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T225527Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T225527Z/report.md"
+              "path": "routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232345Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T232148Z-a914fb/guidance/data-exposure-in-ci/20261116T232345Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T225527Z"
+            "timestamp": "20261116T232345Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T103829Z-2481e6/guidance/data-exposure-in-ci/20261111T103926Z",
+            "path": "routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000405Z",
             "report": {
-              "path": "routine-results/20261111T103829Z-2481e6/guidance/data-exposure-in-ci/20261111T103926Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T103829Z-2481e6/guidance/data-exposure-in-ci/20261111T103926Z/report.md"
+              "path": "routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000405Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T000217Z-c162e1/guidance/data-exposure-in-ci/20261117T000405Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T103926Z"
+            "timestamp": "20261117T000405Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T142011Z",
+            "path": "routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200629Z",
             "report": {
-              "path": "routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T142011Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T141735Z-465558/guidance/data-exposure-in-ci/20261107T142011Z/report.md"
+              "path": "routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200629Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200427Z-09d1f0/guidance/data-exposure-in-ci/20261116T200629Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261107T142011Z"
+            "timestamp": "20261116T200629Z"
           },
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261108T174338Z-ddd66d/guidance/data-exposure-in-ci/20261108T174448Z",
+            "path": "routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204653Z",
             "report": {
-              "path": "routine-results/20261108T174338Z-ddd66d/guidance/data-exposure-in-ci/20261108T174448Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T174338Z-ddd66d/guidance/data-exposure-in-ci/20261108T174448Z/report.md"
+              "path": "routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204653Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204453Z-9e33e7/guidance/data-exposure-in-ci/20261116T204653Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261108T174448Z"
+            "timestamp": "20261116T204653Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T183356Z",
+            "path": "routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214454Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T183356Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T183356Z/report.md"
+              "path": "routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214454Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T214303Z-44137a/guidance/data-exposure-in-ci/20261116T214454Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T183356Z"
+            "timestamp": "20261116T214454Z"
           }
         ]
       }
@@ -5745,17 +5809,17 @@
     },
     {
       "boundary": {
-        "after": "20261109T202626Z",
-        "before": "20261109T222946Z"
+        "after": "20261116T214730Z",
+        "before": "20261116T222805Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "93a382b24e874d4f3365f57545cdd3c8ffd81e48",
-          "skills_evals_commit_last": "4ebb62af6b5a4946be032981f18060f9c3e9cb07"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "e297f853ea6a7c427f05ec0251b85a92b6216965",
-          "skills_evals_commit_last": "09e95b70fad429d98f1e45698785efbda458aba3"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "dispatch-email-input",
@@ -5767,37 +5831,37 @@
             "current": {
               "checks_passed": 15,
               "checks_total": 18,
-              "judge_mean": 8.3,
+              "judge_mean": null,
               "runs": 3,
               "trials": 3
             },
             "previous": {
               "checks_passed": 15,
               "checks_total": 18,
-              "judge_mean": 8.7,
+              "judge_mean": 7.7,
               "runs": 3,
               "trials": 3
             }
           },
           "without": {
             "current": {
-              "checks_passed": 13,
+              "checks_passed": 12,
               "checks_total": 18,
-              "judge_mean": 6.5,
+              "judge_mean": null,
               "runs": 3,
               "trials": 3
             },
             "previous": {
               "checks_passed": 13,
               "checks_total": 18,
-              "judge_mean": 8.3,
+              "judge_mean": 7.0,
               "runs": 3,
               "trials": 3
             }
           }
         },
         "delta": {
-          "current": 0.11111111111111116,
+          "current": 0.16666666666666674,
           "previous": 0.11111111111111116
         },
         "judge": null,
@@ -5812,91 +5876,90 @@
       "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
       "suspects": [
-        "CLI version changed",
-        "arm context changed"
+        "CLI version changed"
       ],
       "verdict": "stable",
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T222946Z",
+            "path": "routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222805Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T222946Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T222946Z/report.md"
+              "path": "routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222805Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222805Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T222946Z"
+            "timestamp": "20261116T222805Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063718Z",
+            "path": "routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232627Z",
             "report": {
-              "path": "routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063718Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063718Z/report.md"
+              "path": "routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232627Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232627Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T063718Z"
+            "timestamp": "20261116T232627Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103223Z",
+            "path": "routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000627Z",
             "report": {
-              "path": "routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103223Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103223Z/report.md"
+              "path": "routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000627Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000627Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T103223Z"
+            "timestamp": "20261117T000627Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261107T142111Z-80070f/guidance/data-exposure-in-ci/20261107T142213Z",
+            "path": "routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T200845Z",
             "report": {
-              "path": "routine-results/20261107T142111Z-80070f/guidance/data-exposure-in-ci/20261107T142213Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T142111Z-80070f/guidance/data-exposure-in-ci/20261107T142213Z/report.md"
+              "path": "routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T200845Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T200845Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261107T142213Z"
+            "timestamp": "20261116T200845Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T202101Z",
+            "path": "routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T204919Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T202101Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T202101Z/report.md"
+              "path": "routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T204919Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T204919Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T202101Z"
+            "timestamp": "20261116T204919Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T202626Z",
+            "path": "routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214730Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T202626Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T202626Z/report.md"
+              "path": "routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214730Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214730Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T202626Z"
+            "timestamp": "20261116T214730Z"
           }
         ]
       }
@@ -6061,17 +6124,17 @@
     },
     {
       "boundary": {
-        "after": "20261109T205134Z",
-        "before": "20261109T225524Z"
+        "after": "20261116T214850Z",
+        "before": "20261116T222914Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "93a382b24e874d4f3365f57545cdd3c8ffd81e48",
-          "skills_evals_commit_last": "4ebb62af6b5a4946be032981f18060f9c3e9cb07"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "a99787445fe708aca1141d1ef841aa4c69c7d1a3",
-          "skills_evals_commit_last": "ee2bf84465faaf280509497acca8c6d038c114e0"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "dispatch-email-input",
@@ -6081,9 +6144,9 @@
         "counts": {
           "with": {
             "current": {
-              "checks_passed": 15,
+              "checks_passed": 14,
               "checks_total": 18,
-              "judge_mean": null,
+              "judge_mean": 7.7,
               "runs": 3,
               "trials": 3
             },
@@ -6099,7 +6162,7 @@
             "current": {
               "checks_passed": 12,
               "checks_total": 18,
-              "judge_mean": null,
+              "judge_mean": 7.3,
               "runs": 3,
               "trials": 3
             },
@@ -6113,14 +6176,14 @@
           }
         },
         "delta": {
-          "current": 0.16666666666666674,
+          "current": 0.11111111111111116,
           "previous": 0.16666666666666674
         },
         "judge": null,
         "objective": {
-          "change": 0.0,
-          "current": 0.8333333333333334,
-          "noise": 0.0,
+          "change": -0.05555555555555558,
+          "current": 0.7777777777777778,
+          "noise": 0.0680413817439772,
           "previous": 0.8333333333333334
         }
       },
@@ -6128,91 +6191,90 @@
       "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
       "suspects": [
-        "CLI version changed",
-        "arm context changed"
+        "CLI version changed"
       ],
       "verdict": "stable",
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T225524Z",
+            "path": "routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222914Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T225524Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T225524Z/report.md"
+              "path": "routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222914Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222717Z-095e43/guidance/data-exposure-in-ci/20261116T222914Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T225524Z"
+            "timestamp": "20261116T222914Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063922Z",
+            "path": "routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232746Z",
             "report": {
-              "path": "routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063922Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T063624Z-30a381/guidance/data-exposure-in-ci/20261111T063922Z/report.md"
+              "path": "routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232746Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T232539Z-2570b9/guidance/data-exposure-in-ci/20261116T232746Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T063922Z"
+            "timestamp": "20261116T232746Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103341Z",
+            "path": "routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000746Z",
             "report": {
-              "path": "routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103341Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T103122Z-d51d91/guidance/data-exposure-in-ci/20261111T103341Z/report.md"
+              "path": "routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000746Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T000545Z-97aa34/guidance/data-exposure-in-ci/20261117T000746Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T103341Z"
+            "timestamp": "20261117T000746Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261108T172956Z-94f80d/guidance/data-exposure-in-ci/20261108T173104Z",
+            "path": "routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T201033Z",
             "report": {
-              "path": "routine-results/20261108T172956Z-94f80d/guidance/data-exposure-in-ci/20261108T173104Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T172956Z-94f80d/guidance/data-exposure-in-ci/20261108T173104Z/report.md"
+              "path": "routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T201033Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200757Z-099095/guidance/data-exposure-in-ci/20261116T201033Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261108T173104Z"
+            "timestamp": "20261116T201033Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T183345Z",
+            "path": "routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T205037Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T183345Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T183345Z/report.md"
+              "path": "routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T205037Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204831Z-8a709b/guidance/data-exposure-in-ci/20261116T205037Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T183345Z"
+            "timestamp": "20261116T205037Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T205134Z",
+            "path": "routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214850Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T205134Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T205134Z/report.md"
+              "path": "routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214850Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T214645Z-e5f633/guidance/data-exposure-in-ci/20261116T214850Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T205134Z"
+            "timestamp": "20261116T214850Z"
           }
         ]
       }
@@ -6835,17 +6897,17 @@
     },
     {
       "boundary": {
-        "after": "20261109T180639Z",
-        "before": "20261109T202901Z"
+        "after": "20261116T214013Z",
+        "before": "20261116T222058Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "09e95b70fad429d98f1e45698785efbda458aba3",
-          "skills_evals_commit_last": "4ebb62af6b5a4946be032981f18060f9c3e9cb07"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "4270eca9ca5222595a6d854ff0e8dc9448914355",
-          "skills_evals_commit_last": "41da41b1613dfb5e9268adc0a24785eac8dbb53d"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "realistic-contact-fixtures",
@@ -6857,124 +6919,140 @@
             "current": {
               "checks_passed": 7,
               "checks_total": 9,
-              "judge_mean": 8.15,
+              "judge_mean": 8.0,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 4,
-              "checks_total": 6,
-              "judge_mean": 9.3,
-              "runs": 2,
-              "trials": 2
+              "checks_passed": 7,
+              "checks_total": 9,
+              "judge_mean": 8.3,
+              "runs": 3,
+              "trials": 3
             }
           },
           "without": {
             "current": {
               "checks_passed": 6,
               "checks_total": 9,
-              "judge_mean": 6.15,
+              "judge_mean": 6.2,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 4,
-              "checks_total": 6,
-              "judge_mean": 7.0,
-              "runs": 2,
-              "trials": 2
+              "checks_passed": 6,
+              "checks_total": 9,
+              "judge_mean": 7.35,
+              "runs": 3,
+              "trials": 3
             }
           }
         },
         "delta": {
           "current": 0.11111111111111105,
-          "previous": 0.0
+          "previous": 0.11111111111111105
         },
-        "judge": null,
+        "judge": {
+          "change": -0.3000000000000007,
+          "current": 8.0,
+          "noise": 0.0,
+          "previous": 8.3
+        },
         "objective": {
-          "change": 0.11111111111111105,
+          "change": 0.0,
           "current": 0.7777777777777777,
-          "noise": 0.3142696805273545,
-          "previous": 0.6666666666666666
+          "noise": 0.1924500897298753,
+          "previous": 0.7777777777777777
         }
       },
       "pair": "in_situ",
-      "reason": "with minus without went from 0 to 0.11",
+      "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
       "suspects": [
-        "CLI version changed",
-        "judge model changed",
-        "arm context changed"
+        "CLI version changed"
       ],
-      "verdict": "improved",
+      "verdict": "stable",
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T202901Z",
+            "path": "routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222058Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T202901Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T202901Z/report.md"
+              "path": "routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222058Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222058Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T202901Z"
+            "timestamp": "20261116T222058Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T223219Z",
+            "path": "routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T231904Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T223219Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T223219Z/report.md"
+              "path": "routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T231904Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T231904Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T223219Z"
+            "timestamp": "20261116T231904Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063346Z",
+            "path": "routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261116T235919Z",
             "report": {
-              "path": "routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063346Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063346Z/report.md"
+              "path": "routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261116T235919Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261116T235919Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T063346Z"
+            "timestamp": "20261116T235919Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "808dc93de4e0f17313cc2fb95fe0b2f97d62c98f0e759503b9d7135e9c0ae616",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261107T165144Z-85685f/guidance/data-exposure-in-ci/20261107T165247Z",
+            "path": "routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200329Z",
             "report": {
-              "path": "routine-results/20261107T165144Z-85685f/guidance/data-exposure-in-ci/20261107T165247Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T165144Z-85685f/guidance/data-exposure-in-ci/20261107T165247Z/report.md"
+              "path": "routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200329Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200329Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261107T165247Z"
+            "timestamp": "20261116T200329Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T180639Z",
+            "path": "routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204147Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T180639Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T180639Z/report.md"
+              "path": "routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204147Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204147Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T180639Z"
+            "timestamp": "20261116T204147Z"
+          },
+          {
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
+            "cli_versions": [
+              "2.1.325 (Claude Code)"
+            ],
+            "path": "routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214013Z",
+            "report": {
+              "path": "routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214013Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214013Z/report.md"
+            },
+            "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
+            "timestamp": "20261116T214013Z"
           }
         ]
       }
@@ -7139,17 +7217,17 @@
     },
     {
       "boundary": {
-        "after": "20261109T225724Z",
-        "before": "20261111T053442Z"
+        "after": "20261116T214339Z",
+        "before": "20261116T222359Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "4ebb62af6b5a4946be032981f18060f9c3e9cb07",
-          "skills_evals_commit_last": "4ebb62af6b5a4946be032981f18060f9c3e9cb07"
+          "skills_evals_commit_first": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8",
+          "skills_evals_commit_last": "680af7d3d7ee7b937a624f2131c0a22bdecdd8b8"
         },
         "previous": {
-          "skills_evals_commit_first": "41da41b1613dfb5e9268adc0a24785eac8dbb53d",
-          "skills_evals_commit_last": "93a382b24e874d4f3365f57545cdd3c8ffd81e48"
+          "skills_evals_commit_first": "249ab65633e81f5f70fe505605ff855899ea4b41",
+          "skills_evals_commit_last": "00a09f88050aeb49f4bbc8645aec4af96f43dcb3"
         }
       },
       "fixture": "realistic-contact-fixtures",
@@ -7159,9 +7237,9 @@
         "counts": {
           "with": {
             "current": {
-              "checks_passed": 8,
+              "checks_passed": 9,
               "checks_total": 9,
-              "judge_mean": 7.7,
+              "judge_mean": null,
               "runs": 3,
               "trials": 3
             },
@@ -7177,7 +7255,7 @@
             "current": {
               "checks_passed": 6,
               "checks_total": 9,
-              "judge_mean": 5.0,
+              "judge_mean": null,
               "runs": 3,
               "trials": 3
             },
@@ -7191,14 +7269,14 @@
           }
         },
         "delta": {
-          "current": 0.2222222222222222,
+          "current": 0.33333333333333337,
           "previous": 0.33333333333333337
         },
         "judge": null,
         "objective": {
-          "change": -0.11111111111111116,
-          "current": 0.8888888888888888,
-          "noise": 0.13608276348795437,
+          "change": 0.0,
+          "current": 1.0,
+          "noise": 0.0,
           "previous": 1.0
         }
       },
@@ -7212,84 +7290,84 @@
       "windows": {
         "current": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "routine-results/20261111T053348Z-0b3db1/guidance/data-exposure-in-ci/20261111T053442Z",
+            "path": "routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222359Z",
             "report": {
-              "path": "routine-results/20261111T053348Z-0b3db1/guidance/data-exposure-in-ci/20261111T053442Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T053348Z-0b3db1/guidance/data-exposure-in-ci/20261111T053442Z/report.md"
+              "path": "routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222359Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T222008Z-54db08/guidance/data-exposure-in-ci/20261116T222359Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T053442Z"
+            "timestamp": "20261116T222359Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T055523Z-4b98b2/guidance/data-exposure-in-ci/20261111T055616Z",
+            "path": "routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T232159Z",
             "report": {
-              "path": "routine-results/20261111T055523Z-4b98b2/guidance/data-exposure-in-ci/20261111T055616Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T055523Z-4b98b2/guidance/data-exposure-in-ci/20261111T055616Z/report.md"
+              "path": "routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T232159Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T231813Z-20337f/guidance/data-exposure-in-ci/20261116T232159Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T055616Z"
+            "timestamp": "20261116T232159Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.322 (Claude Code)"
+              "2.1.326 (Claude Code)"
             ],
-            "path": "routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063648Z",
+            "path": "routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261117T000244Z",
             "report": {
-              "path": "routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063648Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261111T063252Z-5e267c/guidance/data-exposure-in-ci/20261111T063648Z/report.md"
+              "path": "routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261117T000244Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T235836Z-1573e1/guidance/data-exposure-in-ci/20261117T000244Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261111T063648Z"
+            "timestamp": "20261117T000244Z"
           }
         ],
         "previous": [
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.319 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T183538Z",
+            "path": "routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200730Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T183538Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T183538Z/report.md"
+              "path": "routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200730Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T200104Z-482fe0/guidance/data-exposure-in-ci/20261116T200730Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T183538Z"
+            "timestamp": "20261116T200730Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T205317Z",
+            "path": "routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204502Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T205317Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T205317Z/report.md"
+              "path": "routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204502Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T204101Z-9d366c/guidance/data-exposure-in-ci/20261116T204502Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T205317Z"
+            "timestamp": "20261116T204502Z"
           },
           {
-            "arm_context_digest": "1f22f01f06ed8cba2fd10f5eddb3d5d622171bc27601d4ab4ed783ebefbb402d",
+            "arm_context_digest": "75d1f7e305be6a11843af8fe9b7f878e7f17767cd978dc772f75b2a48325459c",
             "cli_versions": [
-              "2.1.321 (Claude Code)"
+              "2.1.325 (Claude Code)"
             ],
-            "path": "results/guidance/data-exposure-in-ci/20261109T225724Z",
+            "path": "routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214339Z",
             "report": {
-              "path": "results/guidance/data-exposure-in-ci/20261109T225724Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261109T225724Z/report.md"
+              "path": "routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214339Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261116T213927Z-ce1041/guidance/data-exposure-in-ci/20261116T214339Z/report.md"
             },
             "tested_digest": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
-            "timestamp": "20261109T225724Z"
+            "timestamp": "20261116T214339Z"
           }
         ]
       }
