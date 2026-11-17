@@ -81,6 +81,30 @@ class RefreshHelpers(unittest.TestCase):
         r = run_sh("refresh.sh", self.home)
         self.assertIn(f"MISSED: the last refresh logged was 2020-01-01T00:00Z, over {every + 1} hours ago", r.stdout)
 
+    def test_refresh_stops_before_the_build_without_the_fire_ledger_or_workflows(self):
+        """Scheduled-task cost needs the fire ledger and the fleet worker's firing workflow; without
+        either, every figure would read as no value, so refresh.sh stops before build.py, and passes
+        --workflows-root to it. The guard runs as its own script here: the steps before it call gh."""
+        text = (REFRESH / "refresh.sh").read_text()
+        guard = text[text.index("# Scheduled-task cost"):text.index("S=${REFRESH_WORK")]
+        self.assertLess(text.index("# Scheduled-task cost"), text.index("dashboard/build.py --results"))
+        self.assertIn('--workflows-root "$WORKFLOWS_ROOT"', text)
+        ledger = self.home / "fires.jsonl"
+        roots = self.home / "roots"
+        wf = roots / "_agent-guidance" / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        def run(env):
+            return subprocess.run(["bash", "-c", "set -e\n" + guard + "echo GUARD-PASSED"], env={**_env(self.home), **env},
+                                  capture_output=True, text=True, timeout=60)
+        r = run({})
+        self.assertIn("STOP: ROUTINE_FIRES_LEDGER is unset", r.stdout)
+        ledger.write_text("")
+        r = run({"ROUTINE_FIRES_LEDGER": str(ledger), "WORKFLOWS_ROOT": str(roots)})
+        self.assertIn("STOP: WORKFLOWS_ROOT", r.stdout)
+        (wf / "fleet-worker-fire.yml").write_text("on: {}\n")
+        r = run({"ROUTINE_FIRES_LEDGER": str(ledger), "WORKFLOWS_ROOT": str(roots)})
+        self.assertIn("GUARD-PASSED", r.stdout, r.stdout + r.stderr)
+
     def test_routine_fire_ledger_appends_once_per_session(self):
         items = [
             {"trigger_id": "trig_a", "name": "Worker", "fired_at": "2026-01-05T10:00:00Z",

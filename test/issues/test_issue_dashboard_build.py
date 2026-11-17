@@ -669,27 +669,92 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertIn(build.API_BILLED, (REPO / "harness" / "run_eval.py").read_text())
         explorer = {"skills": [{"verdict": "keep"}, {"verdict": "insufficient"}, {"verdict": None}],
                     "guidance": {"sections": [{"verdict": "retire"}]}}
-        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=10, points=2)]
-        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10)]
+        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=12, points=2)]
+        # A project-made scheduled task's run is a thread session too; its id in the fire ledger keeps it
+        # out of development.
+        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10),
+                   dict(self.sample("2026-10-25T17:00:00Z", 0), session_id="cse_fired"),
+                   dict(self.sample("2026-10-26T17:00:00Z", 30), session_id="cse_fired")]
+        sched = {"usd_per_week": 4.0, "since": datetime(2026, 10, 20, tzinfo=timezone.utc), "unmeasured": []}
         raw = {}
         weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer,
-                                      raw=raw, eval_rate=2.0)
+                                      raw=raw, eval_rate=2.0, sched=sched, sched_rate=4.0,
+                                      fire_sessions={"cse_fired"})
         w = weeks[0]
-        # Reading 10 less the eval run's 5 points ($10 at $2 a point) leaves 5 points for $10 of threads.
-        thread_rate = 10 / 5
-        self.assertEqual((w["api_usd"], w["build_usd"], w["build_estimated"]), (1.0, 10.0, False))
+        # Reading 12 less the eval run's 5 points ($10 at $2) and the scheduled tasks' 1 ($4 at $4) leaves
+        # 6 points for $10 of development.
+        thread_rate = 10 / 6
+        self.assertEqual((w["api_usd"], w["dev_usd"], w["dev_estimated"]), (1.0, 10.0, False))
         self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 5.0))
-        # The allowance total is eval runs plus threads; the API credit's dollars never join it.
-        self.assertEqual((w["build_points"], w["total_points"]), (5.0, 10.0))
+        # The allowance total is eval runs plus scheduled tasks; development and API credit never join it.
+        self.assertEqual((w["sched_points"], w["total_points"], w["dev_points"]), (1.0, 6.0, 6.0))
+        # The current week counts its scheduled tasks for the elapsed part only (Nov 2 17:00 to Nov 5 13:00).
+        self.assertAlmostEqual(weeks[2]["sched_points"], round(68 / 168, 2))
         self.assertEqual([x["verdicts"] for x in weeks], [None, None, 2])
         sm = {r["key"]: r for r in summary_rows}
-        self.assertEqual((sm["eval_usd_per_point"]["value"], sm["thread_usd_per_point"]["value"]), (2.0, thread_rate))
-        self.assertEqual(sm["points_per_verdict"]["value"], round((5 + 5) / 2, 2))
+        self.assertEqual((sm["eval_usd_per_point"]["value"], sm["sched_usd_per_point"]["value"],
+                          sm["thread_usd_per_point"]["value"]), (2.0, 4.0, round(thread_rate, 2)))
+        system = 5 + 1 + 1 + 68 / 168
+        self.assertEqual(sm["points_per_verdict"]["value"], round(system / 2, 2))
         self.assertEqual(sm["api_usd_per_verdict"]["value"], round(1.0 / 2, 2))
-        self.assertIn("\u224810.0 points", sm["points_per_verdict"]["note"])
+        self.assertIn("Development is not included", sm["points_per_verdict"]["note"])
         self.assertIn("$1.00", sm["api_usd_per_verdict"]["note"])
         self.assertNotIn("cost_per_verdict", sm)
-        self.assertEqual(raw["rates"], {"eval_usd_per_point": 2.0, "thread_usd_per_point": thread_rate})
+        self.assertEqual({r["key"] for r in summary_rows if r["group"] == "development"},
+                         {"dev_points", "bar_build", "thread_usd_per_point"})
+        self.assertEqual(sm["dev_points"]["value"], 6.0)
+        self.assertEqual(sm["sched_points_per_week"]["value"], 1.0)
+        self.assertEqual(raw["rates"], {"eval_usd_per_point": 2.0, "scheduled_task_usd_per_point": 4.0,
+                                        "thread_usd_per_point": thread_rate})
+        self.assertEqual(raw["total"]["usd"], 10 + 4 + 4 + 4 * 68 / 168 + 1.0)
+        self.assertEqual((raw["total"]["thread_spend_usd"], raw["total"]["scheduled_since"]), (10.0, "2026-10-19"))
+
+    def test_scheduled_tasks_before_the_fire_ledger_read_as_no_value(self):
+        sched = {"usd_per_week": 7.0, "since": datetime(2026, 10, 28, tzinfo=timezone.utc), "unmeasured": ["New"]}
+        weeks, rows = self.cb(sched=sched, sched_rate=7.0)
+        self.assertEqual([w["sched_points"] for w in weeks], [None, 1.0, round(68 / 168, 2)])
+        self.assertEqual([w["total_points"] for w in weeks][0], None)
+        sm = {r["key"]: r for r in rows}
+        self.assertIn("1 unmeasured", sm["sched_points_per_week"]["note"])
+        self.assertIn("from Oct 26", sm["points_per_verdict"]["note"])
+        # Without the fire ledger there is no scheduled-task figure and no system total.
+        weeks, rows = self.cb()
+        self.assertEqual({w["sched_points"] for w in weeks} | {w["total_points"] for w in weeks}, {None})
+        self.assertIsNone({r["key"]: r for r in rows}["sched_points_per_week"]["value"])
+
+    def test_the_scheduled_task_rate_comes_only_from_the_points_config(self):
+        self.assertEqual(build.scheduled_usd_per_point(), 6.67)
+        path = self.tmp / "points.yml"
+        path.write_text("eval_usd_per_point: 6.67\n")
+        with self.assertRaises(SystemExit) as caught:
+            build.scheduled_usd_per_point(path)
+        self.assertIn("scheduled_task_usd_per_point must be a positive number", str(caught.exception))
+
+    def test_each_scheduled_task_row_carries_its_cost_in_points_most_expensive_first(self):
+        jobs = [{"kind": "scheduled task", "id": "t1", "name": "Worker", "lane": "meter", "in_loop": True, "fires_per_week": 28,
+                 "usd_per_fire": 2.0, "usd_per_week": 56.0},
+                {"kind": "scheduled task", "id": "t2", "name": "Runner", "lane": "eval_cap", "in_loop": True, "fires_per_week": 7,
+                 "usd_per_fire": 0.4, "usd_per_week": 2.8},
+                {"kind": "scheduled task", "id": "t3", "name": "Unmeasured", "lane": "meter", "in_loop": False, "fires_per_week": 7,
+                 "usd_per_fire": None, "usd_per_week": None},
+                {"kind": "workflow", "id": "w.yml", "lane": "actions_only", "usd_per_week": 0.0}]
+        rows = [{"name": n, "id": i} for n, i in (("Unmeasured", "t3"), ("Workflow", "w.yml"), ("Runner", "t2"),
+                                                  ("Worker", "t1"))]
+        got = build.task_costs(rows, ({"jobs": jobs}, []), 4.0)
+        self.assertEqual([r["name"] for r in got][:2], ["Worker", "Runner"])
+        by = {r["name"]: r for r in got}
+        self.assertEqual((by["Worker"]["runs_per_week"], by["Worker"]["points_per_run"], by["Worker"]["points_per_week"]),
+                         (28, 0.5, 14.0))
+        self.assertEqual((by["Runner"]["lane"], by["Worker"]["in_loop"], by["Unmeasured"]["in_loop"]), ("eval_cap", True, False))
+        # Unmeasured is no value, never a guess; a workflow uses no allowance and carries no cost.
+        self.assertEqual((by["Unmeasured"]["runs_per_week"], by["Unmeasured"]["points_per_week"]), (7, None))
+        self.assertNotIn("points_per_week", by["Workflow"])
+        sched = build.scheduled_tasks(({"jobs": jobs}, [{"fired_at": "2026-11-13T06:56:00Z", "session_id": "cse_a"},
+                                                        {"fired_at": "2026-11-10T02:06:00Z"}]))
+        # The eval runner is inside eval runs: only meter-lane tasks count.
+        self.assertEqual((sched["usd_per_week"], sched["unmeasured"], sched["sessions"]), (56.0, ["Unmeasured"], {"cse_a"}))
+        self.assertEqual(sched["since"], datetime(2026, 11, 10, 2, 6, tzinfo=timezone.utc))
+        self.assertIsNone(build.scheduled_tasks(None))
 
     def test_the_bars_follow_the_week_and_the_date(self):
         def bars(now, **kw):
@@ -711,6 +776,7 @@ class DashboardBuildTests(unittest.TestCase):
                self.sample("2026-10-21T00:00:00Z", 100, created="2026-10-20T00:00:00Z")] + hot
         ppu_rows = [self.plan_row("2026-10-20T10:00:00Z", 1, after=50)]
         sm = bars(late, prs=prs, usage_rows=usage, samples=hot, plan_rows=ppu_rows)
+        self.assertEqual(sm["bar_build"]["group"], "development")
         self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
                          ("Not met", "Missed: cut back to guidance-only evals"))
 
@@ -812,13 +878,15 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((doc["schema"], doc["generated_at"]), (1, "2026-10-30T12:00:00Z"))
         self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
         for w in doc["weeks"]:
-            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "api_usd", "thread_spend_usd"})
+            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "scheduled_usd", "api_usd",
+                                      "thread_spend_usd"})
             self.assertIsInstance(w["eval_runs"], int)
         total = doc["total"]
         self.assertEqual(total["since"], "2026-10-19")
         for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd")):
             self.assertAlmostEqual(sum(w[part] for w in doc["weeks"]), total[key], msg=key)
-        self.assertAlmostEqual(total["usd"], total["run_usd"] + total["thread_spend_usd"] + total["api_usd"])
+        # The total is the system's use; development (thread_spend_usd) is never in it.
+        self.assertAlmostEqual(total["usd"], total["run_usd"] + (total["scheduled_usd"] or 0) + total["api_usd"])
         sys.path.insert(0, str(REPO / "scripts"))
         import explorer_public
         tree = self.tmp / "tree"
@@ -857,12 +925,12 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_spend_file_keeps_full_precision(self):
         raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,
-                          "build_usd": 2.0000001, "run_usd": 0.1234567}],
+                          "dev_usd": 2.0000001, "run_usd": 0.1234567, "scheduled_usd": 0.7654321}],
                "total": {"usd": 1 / 3, "cost_per_verdict": 1 / 3}}
         doc = build.spend_file(raw, NOW, "Example plan")
         w = doc["weeks"][0]
-        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"]),
-                         (1.23456, 0.333333, 2.0000001, 0.1234567))
+        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"], w["scheduled_usd"]),
+                         (1.23456, 0.333333, 2.0000001, 0.1234567, 0.7654321))
         self.assertNotIn("cost_per_verdict", w)
         self.assertEqual(doc["total"]["cost_per_verdict"], 1 / 3)
         self.assertEqual(doc["plan"], "Example plan")

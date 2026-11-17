@@ -109,6 +109,11 @@
       "phrase": "list price",
       "why": "Allowance spend is shown as approximate points, never list-price dollars (evals/points.yml).",
       "use": "points, or API credit for API-billed eval runs"
+    },
+    {
+      "phrase": "Thread points",
+      "why": "Project threads are development, never a column beside the system's spend",
+      "use": "Development (its own panel)"
     }
   ],
   "allow": [

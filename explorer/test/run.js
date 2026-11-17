@@ -15,7 +15,7 @@ import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
-import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, etSchedule, byLine } from '../src/private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, etSchedule, byLine, taskCostLine } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
@@ -71,7 +71,7 @@ function fakeDash(table) {
 }
 const doc = (extra) => Object.assign({ schema_version: SCHEMA_VERSION, generated_at: '2026-10-31T21:00:00Z', skills: [], guidance: { sections: [] } }, extra);
 /* Display rates (spend.rates): $0.50 of eval runs and $10 of threads per point, so points read off by eye. */
-const RATES = { eval_usd_per_point: 0.5, thread_usd_per_point: 10 };
+const RATES = { eval_usd_per_point: 0.5, scheduled_task_usd_per_point: 2, thread_usd_per_point: 10 };
 const SPEND_RATES = { generated_at: '2026-11-12T01:00:00Z', weeks: [], total: null, rates: RATES };
 
 /* Every string a script holds as data: string literals and template text. */
@@ -532,13 +532,16 @@ await test('money is printed with thousands separators everywhere', () => {
   eq(bad.join(','), '', 'format dollars with fmtUsd');
 });
 await test('C5: allowance spend reads as approximate points, the API credit stays in dollars, and the two never add up', () => {
-  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14, thread_spend_usd: 400, run_usd: 100, cost_per_verdict: 99 },
-    { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 3600, run_usd: 900, cost_per_verdict: null }];
-  const total = { since: '2026-10-19', usd: 5214, run_usd: 1000, thread_spend_usd: 4000, api_usd: 214, verdicts: 10, cost_per_verdict: 521.4 };
+  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14, thread_spend_usd: 400, run_usd: 100, scheduled_usd: 20, cost_per_verdict: 99 },
+    { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 3600, run_usd: 900, scheduled_usd: 60, cost_per_verdict: null }];
+  const total = { since: '2026-10-19', usd: 1294, run_usd: 1000, scheduled_usd: 80, scheduled_since: '2026-11-02', thread_spend_usd: 4000, api_usd: 214, verdicts: 10, cost_per_verdict: 129.4 };
   const t = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total, rates: RATES } }), { name: 'spend', id: null }, {})).replace(/\s+/g, ' ');
-  // $1,000 of eval runs at $0.50 a point and $4,000 of threads at $10 a point: 2,000 + 400 points.
-  ok(t.includes('Since Oct 19: \u22482400.0 points (eval runs \u22482000.0 points, threads \u2248400.0 points) and $214.00 API credit for 10 decided verdicts, \u2248240.0 points and $21.40 each.'), t);
-  ok(t.includes(STRINGS.colRunPoints) && t.includes(STRINGS.colThreadPoints) && t.includes(STRINGS.colApi), 'points columns and the API credit column');
+  // $1,000 of eval runs at $0.50 a point and $80 of scheduled tasks at $2 a point: 2,000 + 40 points. Development
+  // ($4,000 of threads at $10 a point) is never in it.
+  ok(t.includes('Since Oct 19: \u22482040.0 points (eval runs \u22482000.0 points, scheduled tasks \u224840.0 points from Nov 2) and $214.00 API credit for 10 decided verdicts, \u2248204.0 points and $21.40 each.'), t);
+  ok(t.includes(STRINGS.colRunPoints) && t.includes(STRINGS.colSchedPoints) && t.includes(STRINGS.colApi), 'points columns and the API credit column');
+  ok(!t.includes('Thread points') && !t.includes('2440.0') && !t.includes('\u2248240.0 points'), 'no development in a system column or total');
+  ok(t.includes('Development (project threads building the system), apart from all of the above') && t.includes('\u2248400.0 points in all'), 'development is reported apart: ' + t);
   ok(!t.includes('$5,214') && !t.includes('$1,000.00') && !t.includes('$4,000.00'), 'no allowance spend in dollars, and no grand total mixing the two');
   ok(!t.includes('Meter points'), 'the meter column is gone');
   const none = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total } }), { name: 'spend', id: null }, {}));
@@ -1224,17 +1227,30 @@ await test('PR 984: the changes list and the loop filter share one table of kind
 await test('PR 984: private Spend shows the weekly money once, the cost table folded, and explains approximate points once', () => {
   const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 335.49, run_usd: 91.75 }];
   const dash = fakeDash({ cost_benefit_summary: okData([{ key: 'k', label: 'Summary measure', value: 1, target: null, status: null, note: '' }]),
-    cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0 }]) });
+    cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, sched_points: 1, total_points: 2, api_usd: 1, dev_usd: 1, dev_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0 }]) });
   const node = renderRoute(doc({ generated_at: '2026-11-12T17:00:00Z', spend: { generated_at: '2026-11-12T01:00:00Z', weeks, rates: RATES } }), { name: 'spend', id: null }, { ext: makeExt(dash) });
   const t = flat(node);
   eq(t.split('approximate points').length - 1, 1, 'approximate points explained once: ' + t.slice(0, 300));
   ok(t.includes('Summary measure'), 'the summary measures stay');
   const folds = findAll(node, (n) => n.tag === 'details').filter((d) => flat(d).includes('Cost by week'));
   eq(folds.length, 1, 'the weekly cost table sits under a fold');
+  const panels = findAll(node, (n) => n.tag === 'section');
+  ok(panels.some((p) => /^Development/.test(flat(p).trim())), 'development has its own panel');
+});
+await test('the routines table shows each scheduled task\'s cost in points, with the total and the loop split', () => {
+  const R = (name, lane, inLoop, run, week, runs) => ({ name, what: 'w', schedule: 's', last_run: null, health: 'OK', note: '', id: name, link: null, lane, in_loop: inLoop, points_per_run: run, points_per_week: week, runs_per_week: runs });
+  const rows = [R('Worker', 'meter', true, 0.3, 8.4, 28), R('Brief', 'meter', false, 0.2, 1.4, 7), R('Runner', 'eval_cap', true, 0.06, 0.4, 7), R('New', 'meter', true, null, null, 7),
+    { name: 'Sweep', what: 'w', schedule: 's', last_run: null, health: 'OK', note: '', id: 'sweep.yml', link: null }];
+  eq(flat(taskCostLine(rows)).trim(), 'Scheduled tasks: \u22489.8 points a week (\u22488.4 points in the loop, \u22481.4 points outside); eval runner \u22480.40 points, in eval runs; 1 unmeasured.');
+  eq(taskCostLine([rows[4]]), null, 'no cost data, no line');
+  const ext = makeExt(fakeDash({ routines: okData(rows) }));
+  const t = ext.opsTop().map(flat).join(' ');
+  ok(t.includes('Points a week') && t.includes('\u22488.4 points') && t.includes('\u22480.30 points'), t.slice(0, 400));
+  ok(t.includes(STRINGS.noValue), 'an unmeasured task reads as no value, never a guess');
 });
 await test('R11: no Decisions column, cleanup list or decisions panel is built, and no string for them is left', () => {
   const dash = fakeDash({ cost_benefit_summary: okData([{ key: 'k', label: 'L', value: 1, target: null, status: null, note: '' }]),
-    cost_benefit_weeks: okData([{ week: '2026-11-02', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0, decisions: 4 }]),
+    cost_benefit_weeks: okData([{ week: '2026-11-02', run_count: 1, run_points_est: 1, api_usd: 1, dev_usd: 1, dev_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0, decisions: 4 }]),
     cleanup: okData([{ id: 'C1', item: 'Cleanup item text', done_when: 'x', status: 'Done' }]), decisions: okData([{ date: '2026-11-01', decision: 'A decision text', link: null }]) });
   const ext = makeExt(dash);
   const cost = flat(renderRoute(doc(), { name: 'spend', id: null }, { ext }));
@@ -1275,11 +1291,11 @@ await test('R3: the dashboard runtime keeps no loop_* dataset, gate, cleanup or 
 });
 await test('recommendation 6: spend shows this week and last week side by side in dollars, with week starts in Eastern time and the share that bought nothing', () => {
   const weeks = [{ week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 4000, run_usd: 900 },
-    { week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 340, run_usd: 90 },
+    { week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 340, run_usd: 90, scheduled_usd: 68 },
     { week: '2026-10-26', eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1, run_usd: 1 }];
   const two = spendWeeks(doc({ spend: { weeks } }));
   eq(two.map((w) => w.week).join(','), '2026-11-09,2026-11-02', 'the two newest, newest first');
-  eq([two[0].evals, two[0].build, two[0].api].join(','), '90,340,14.41', 'the parts in dollars, as the data holds them');
+  eq([two[0].evals, two[0].sched, two[0].api, two[0].dev].join(','), '90,68,14.41,340', 'the parts in dollars, as the data holds them');
   const utility = [U('2026-11-10', 'decisive', 10, 59), U('2026-11-10', 'discarded', 4, 25, 'fixture_changed'), U('2026-11-10', 'discarded', 3, 15, 'fixture_off_main'), U('2026-11-10', 'stranded', 1, 1, 'subject_changed')];
   const d = doc({ generated_at: '2026-11-12T17:00:00Z', skills: [{ name: 'a', run_utility: utility }], spend: { generated_at: '2026-11-12T01:00:00Z', weeks, rates: RATES } });
   const share = noUseShare(d, Date.parse(d.generated_at));
@@ -1288,8 +1304,9 @@ await test('recommendation 6: spend shows this week and last week side by side i
   const t = flat(renderRoute(d, { name: 'spend', id: null }, {}));
   ok(t.includes('this week from Nov 9, 2026, 12:00 PM ET, last week from Nov 2, 2026, 12:00 PM ET'), 'week starts in ET, in a note: ' + t.slice(0, 600));
   ok(!t.includes('This week (from'), 'the starts are not in the column headers');
-  // $90 of eval runs at $0.50 a point, $340 of threads at $10 a point; the API credit apart, in dollars.
+  // $90 of eval runs at $0.50 a point, $68 of scheduled tasks at $2 a point; the API credit apart, in dollars.
   ok(t.includes('\u2248180.0 points') && t.includes('\u224834.0 points') && t.includes('\u2248214.0 points') && t.includes('$14.41'), 'this week\'s parts and allowance total');
+  ok(t.includes('this week \u224834.0 points, last week \u2248400.0 points'), 'development ($340 and $4,000 at $10 a point) apart');
   ok(!t.includes('$90.00') && !t.includes('$340.00') && !t.includes('$444.41'), 'no allowance dollars and no total across the two kinds of money');
   ok(t.includes('In the last 30 days 41% of eval run spend bought nothing (\u224882.0 points of \u2248200.0 points), mostly eval changed (\u224850.0 points) and eval no longer scheduled (\u224830.0 points).'), t.slice(0, 2500));
   eq(t.split('hover for the rate').length - 1, 1, 'the approximation is explained once');
@@ -1434,7 +1451,7 @@ await test('E10: the private build shows no UTC and no cron expression either', 
     { name: 'R2', what: 'does', schedule: 'Every 6 hours (UTC hours 0, 6, 12 and 18: 7 AM, 1 PM, 7 PM and 1 AM ET), fired by x', last_run: null, health: 'OK', link: null }]),
   run_stream: okData([{ key: 'k1', at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'Nightly', title: 'scheduled — 47 8 * * *', state: 'Failed', duration_s: 5, link: 'https://github.com/o/r/actions/runs/1' }]),
   usage_rows: okData([{ kind: 'skill', name: 'a', repo: 'o/r', week: '2026-11-09', surface: 'local', invocations: 2, sessions: 1, blocked: 0, overridden: 0 }]),
-  cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 1, real_work_reach: 1, owner_messages: 1 }]) });
+  cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, api_usd: 1, dev_usd: 1, dev_points: 1, changes: 1, real_work_reach: 1, owner_messages: 1 }]) });
   for (const name of ['activity', 'spend', 'needs']) {
     const t = textOf(renderRoute(ET_DOC(), { name, id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) })).replace(/\s+/g, ' ');
     eq((t.match(/\bUTC\b/g) || []).length, usesUtcDays({ name }) ? 1 : 0, name);

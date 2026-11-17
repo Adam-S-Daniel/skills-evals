@@ -15,8 +15,23 @@
 # account's only use ($6 to $7.3 per point; Adam chose $6.67 on 2026-11-11).
 eval_usd_per_point: 6.67
 
-# Project-thread spend has no rate here on purpose: one fixed rate cannot fit
+# API-equivalent dollars of scheduled-task runs per point (the Routines page's
+# tasks and the tasks a project made). No measurement of their own is possible:
+# the account meter reads whole points, one run costs well under one, and the
+# fire ledger misses every run between two refreshes, so no quiet window holds
+# only scheduled-task runs that the ledger fully records (checked 2026-11-17 on
+# meter-history.csv: the meter rose on nights with no recorded run). An eval
+# run's outer session is itself a short scheduled-task run, so the eval rate
+# above is the closest measured rate; it is copied here, not linked, so a
+# measurement of either can move it alone. scripts/forecast_catch_up.py prices
+# automatic jobs at evals/budget.yml points_per_usd ($6.667 a point), 0.05%
+# from this.
+scheduled_task_usd_per_point: 6.67
+
+# Project threads are development (Adam building and refining the system), never
+# the system's own use (Adam, 2026-11-17): the pages show them apart and never
+# add them to a system total. Their spend has no rate here on purpose: one fixed rate cannot fit
 # both kinds (the week of 2026-11-09 spent $1,045 on threads: 157 points at
 # the eval rate, more than the whole weekly allowance). dashboard/build.py derives it on every refresh as the
-# account meter's weekly reading, less that week's eval points at the rate
-# above, over the week's thread dollars, summed over every complete week.
+# account meter's weekly reading, less that week's eval and scheduled-task
+# points at the rates above, over the week's thread dollars, summed over every complete week.
