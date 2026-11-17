@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QY29F6mvGjc4wo8YcvBmUm",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./.git -prune -o -type f -print | head -50 && ls .github/workflows 2><path>; cat .github/workflows/actions.lock 2><path>; cat AGENTS.md 2><pa...",
+      "input_chars": 282,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QY29F6mvGjc4wo8YcvBmUm",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndeba38d seed\n./.idea\n./.bashrc\n./.gitconfig\n./.github/actions/release-notes/action.yml\n./.github/workflows/ci.yml\n./.github/workflows/actions.lock\n./.zprofile\n./...",
+      "output_chars": 823,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Kw6Bn7in1sThCtjezph6ob",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md; which gh actionlint; gh extension list 2>&1 | head",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Kw6Bn7in1sThCtjezph6ob",
+      "is_error": false,
+      "output": "name: ci\non: pull_request\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4.2.2\n      - run: make test\n# example-widgets\n\nExample repository for a fixture. There is no network here, so `gh` and\n`git ls-remote` cannot be run.\n<path>\nTo...",
+      "output_chars": 465,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S7vqE3hRymDEXS5JwrsfXB",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 84,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MRWrwYH8UWMsXC5YT44rju",
+      "name": "Bash",
+      "input": "python3 -c \"import yaml,sys;print(yaml.safe_load(open('.github/workflows/release-notes.yml')))\" 2>&1; ls Makefile 2>&1",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S7vqE3hRymDEXS5JwrsfXB",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 180,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MRWrwYH8UWMsXC5YT44rju",
+      "is_error": true,
+      "output": "Exit code 2\n{'name': 'release-notes', True: {'push': {'tags': ['v*']}}, 'permissions': {'contents': 'read'}, 'jobs': {'release-notes': {'runs-on': 'ubuntu-latest', 'steps': [{'uses': 'actions/checkout@v4.2.2'}, {'uses': '$<path>'}]}}}\nls: cannot access 'Makefile': No such file or directory",
+      "output_chars": 314,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
