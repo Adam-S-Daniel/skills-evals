@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-16T17:37:12Z",
+  "generated_at": "2026-11-17T17:37:22Z",
   "rows": [
     {
       "blocked": null,
@@ -5669,8 +5669,21 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 7,
+      "sessions": 8,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance",
+      "name": "stub-only",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 79,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -5682,13 +5695,26 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 1,
+      "sessions": 78,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance-check",
+      "name": "none",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 2,
       "surface": "cloud",
       "week": "2026-11-16"
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 3,
       "kind": "hook",
       "name": "agents-md-size",
       "outcome": null,
@@ -5701,7 +5727,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 6,
       "kind": "hook",
       "name": "agents-md-size",
       "outcome": null,
@@ -5714,7 +5740,20 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "agents-md-size",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "441f84345b7c",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 14,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5727,7 +5766,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 207,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5740,7 +5779,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 31,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5766,7 +5805,7 @@
     },
     {
       "blocked": 1,
-      "invocations": 111,
+      "invocations": 258,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5779,7 +5818,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 3,
       "kind": "hook",
       "name": "dated-phrasing",
       "outcome": null,
@@ -5792,7 +5831,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 6,
       "kind": "hook",
       "name": "dated-phrasing",
       "outcome": null,
@@ -5801,6 +5840,19 @@
       "runner": "441f84345b7c",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "dated-phrasing",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "441f84345b7c",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -5818,7 +5870,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 3,
       "kind": "hook",
       "name": "gha-template-injection",
       "outcome": null,
@@ -5831,7 +5883,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "gha-template-injection",
       "outcome": null,
@@ -5840,6 +5892,19 @@
       "runner": "441f84345b7c",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "gha-template-injection",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "441f84345b7c",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -5857,7 +5922,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5870,7 +5935,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 19,
+      "invocations": 23,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5883,7 +5948,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 190,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5896,7 +5961,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5909,7 +5974,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 9,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5922,7 +5987,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -5935,7 +6000,7 @@
     },
     {
       "blocked": 1,
-      "invocations": 19,
+      "invocations": 23,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -5948,7 +6013,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -5974,7 +6039,20 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "local-identity",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "441f84345b7c",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 7,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -5987,7 +6065,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6000,7 +6078,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 11,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6013,7 +6091,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 94,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6026,7 +6104,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6039,7 +6117,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6065,7 +6143,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -6078,7 +6156,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 7,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6091,7 +6169,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6104,7 +6182,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 11,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6117,7 +6195,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 94,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6130,7 +6208,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6143,7 +6221,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6169,7 +6247,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -6182,7 +6260,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 190,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -6195,7 +6273,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -6208,7 +6286,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 14,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6221,7 +6299,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6234,7 +6312,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 19,
+      "invocations": 23,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6247,7 +6325,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 190,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6260,7 +6338,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6273,7 +6351,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 9,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6299,7 +6377,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -6312,7 +6390,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 14,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6325,7 +6403,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6338,7 +6416,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 19,
+      "invocations": 23,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6351,7 +6429,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 190,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6364,7 +6442,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6377,7 +6455,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 9,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6390,7 +6468,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 31,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6416,7 +6494,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -6429,7 +6507,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 14,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6442,7 +6520,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6455,7 +6533,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 19,
+      "invocations": 23,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6468,7 +6546,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 190,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6481,7 +6559,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6494,7 +6572,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 9,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6507,7 +6585,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 31,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6533,7 +6611,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -6546,7 +6624,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 7,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6559,7 +6637,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6572,7 +6650,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 11,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6585,7 +6663,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 94,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6598,7 +6676,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 7,
+      "invocations": 8,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6611,7 +6689,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6637,7 +6715,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 76,
+      "invocations": 217,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -6657,7 +6735,20 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 7,
+      "sessions": 79,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "listing",
+      "name": "full",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 8,
       "surface": "local",
       "week": "2026-11-16"
     },
@@ -6694,7 +6785,7 @@
     {
       "from": "2026-09-28T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2986,
+      "sessions_scanned": 2979,
       "skill_keys": [
         "add-from-address",
         "add-received-from-addresses",
@@ -6735,43 +6826,43 @@
         "writing-adrs"
       ],
       "surface": "local",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     },
     {
       "from": "2026-09-28T00:00:00Z",
-      "runs_scanned": 7100,
+      "runs_scanned": 7252,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
       "listing_recorded": true,
-      "records_scanned": 825,
+      "records_scanned": 904,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     },
     {
       "from": "2026-11-09T00:00:00Z",
-      "records_scanned": 647,
+      "records_scanned": 848,
       "scope": "hook-records",
       "surface": "cloud",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     },
     {
       "events_scanned": 1,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     },
     {
       "events_scanned": 6,
       "from": "2026-10-19T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-16T17:37:12Z"
+      "to": "2026-11-17T17:37:22Z"
     }
   ]
 }
