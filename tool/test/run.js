@@ -536,6 +536,78 @@ test('whole-guidance headline pools full vs none', () => {
   ok(w.sentence.startsWith('With all the guidance, Example Large 2.0 passed'), w.sentence);
 });
 
+// --- the whole-guidance comparison taken apart --------------------------------
+// One whole-guidance run: `full` passed fp of total checks, `none` passed np.
+const wholeRun = (at, fixtureName, fp, np, total) => ({ at, model: 'example-large-2-0', fixture: fixtureName,
+  modes: { full: { checks_passed: fp, checks_total: total, trials: 1 }, none: { checks_passed: np, checks_total: total, trials: 1 } } });
+const times = (n, fn) => Array.from({ length: n }, (_, i) => fn(i));
+/* Two weeks. `steady` helps the same in both; in the newer week one new task
+   of `swamped` takes most of the eval runs and scores worse with guidance. */
+const mixDoc = () => ({ schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-15T00:00:00Z', skills: [], guidance: { sections: [
+  { id: 'steady', heading: 'Steady', status: 'covered', runs: [wholeRun('2026-11-03T00:00:00Z', 'task-a', 9, 3, 10), wholeRun('2026-11-10T00:00:00Z', 'task-a', 9, 3, 10)] },
+  { id: 'swamped', heading: 'Swamped', status: 'covered', runs: times(8, (i) => wholeRun('2026-11-1' + (i % 4) + 'T0' + i + ':00:00Z', 'task-new', 5, 10, 10)) },
+  { id: 'dropped', heading: 'Dropped', status: 'skipped', runs: [wholeRun('2026-11-02T00:00:00Z', 'task-old', 10, 0, 10)] }] } });
+
+test('a week swamped by one new task does not move the same-task comparison', () => {
+  const doc = mixDoc();
+  const w = P.wholeGuidance(doc);
+  // What the old weekly line plotted: the pooled gain falls below zero.
+  const secs = doc.guidance.sections;
+  const pooled = P.weeklyGains([].concat(...secs.map((x) => x.runs)), 'whole', Date.parse(doc.generated_at));
+  ok(pooled[0].gain > 0.5 && pooled[1].gain < 0, 'the pooled weekly gain falls below zero: ' + JSON.stringify(pooled));
+  eq(w.weekly.pairs.length, 1, 'one pair of weeks');
+  const p = w.weekly.pairs[0];
+  eq(p.shared, 1, 'one task in both weeks'); eq(p.dropped, 1, 'one not tested again'); eq(p.added, 1, 'one new');
+  eq(p.then.with - p.then.without, p.now.with - p.now.without, 'the same gain on the shared task in both weeks');
+  eq(Math.round((p.now.with - p.now.without) * 100), 60);
+  eq(p.now.wp + ' of ' + p.now.wt + ' vs ' + p.now.op + ' of ' + p.now.ot, '9 of 10 vs 3 of 10', 'the check counts stay beside the rate');
+  const newest = w.weekly.weeks[w.weekly.weeks.length - 1];
+  eq(newest.n, 9); eq(newest.tasks, 2); eq(newest.top.fixture, 'task-new'); eq(newest.top.n, 8);
+});
+
+test('a shared task counts once however many eval runs it had', () => {
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-15T00:00:00Z', skills: [], guidance: { sections: [
+    { id: 'a', status: 'covered', runs: [wholeRun('2026-11-03T00:00:00Z', 't1', 10, 0, 10)].concat(times(9, (i) => wholeRun('2026-11-10T0' + i + ':00:00Z', 't1', 10, 0, 10))) },
+    { id: 'b', status: 'covered', runs: [wholeRun('2026-11-03T00:00:00Z', 't2', 0, 0, 10), wholeRun('2026-11-10T00:00:00Z', 't2', 0, 0, 10)] }] } };
+  const p = P.wholeGuidance(doc).weekly.pairs[0];
+  eq(p.shared, 2);
+  eq(p.now.with, 0.5, 'the mean of the two tasks, not 90 of 100 checks');
+  eq(p.then.with, 0.5);
+  eq(p.now.wp + '/' + p.now.wt, '90/100', 'the pooled counts are still reported');
+  // The same fixture name under two sections is two tasks.
+  const twin = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-15T00:00:00Z', skills: [], guidance: { sections: [
+    { id: 'a', status: 'covered', runs: [wholeRun('2026-11-03T00:00:00Z', 't', 1, 0, 1)] }, { id: 'b', status: 'covered', runs: [wholeRun('2026-11-10T00:00:00Z', 't', 1, 0, 1)] }] } };
+  eq(P.wholeGuidance(twin).weekly.pairs[0].shared, 0);
+});
+
+test('the section-by-section chart sorts by gain and sets apart sections no longer evaluated', () => {
+  const w = P.wholeGuidance(mixDoc());
+  eq(w.spread.map((r) => r.id + ':' + r.tested).join(','), 'dropped:false,steady:true,swamped:true');
+  eq(w.spread[2].wp + '/' + w.spread[2].wt + ' ' + w.spread[2].n + ' ' + w.spread[2].tasks, '40/80 8 1');
+  const t = P.textOf(P.sectionSpreadChart(w.spread, Date.parse('2026-11-15T00:00:00Z'))).replace(/\s+/g, ' ');
+  ok(t.indexOf(P.STRINGS.spreadOn(2)) < t.indexOf('Steady') && t.indexOf('Steady') < t.indexOf(P.STRINGS.spreadOff(1)) && t.indexOf(P.STRINGS.spreadOff(1)) < t.indexOf('Dropped'), t);
+  ok(t.includes('18 of 20 with, 6 of 20 without') && t.includes('2 eval runs on 1 task'), 'checks passed out of checks run, and the eval runs behind them: ' + t);
+});
+
+test('the whole-guidance panel draws the same-task panels and names a week one task dominated, not a pooled weekly line', () => {
+  const doc = mixDoc();
+  const t = P.textOf(P.renderRoute(doc, { name: 'guidance', id: null }, {})).replace(/\s+/g, ' ');
+  ok(t.includes(P.STRINGS.pairTitle) && t.includes(P.STRINGS.spreadTitle), 'both charts are titled');
+  ok(!t.includes(P.STRINGS.trendCaption) && !t.includes('Weekly gain'), 'no pooled weekly gain line');
+  ok(t.includes('The guidance added 60 percentage points in the earlier week and added 60 percentage points in the later one.'), t);
+  ok(t.includes('One task tested in both weeks. 1 not tested again, 1 new.'), 'the change of mix is stated');
+  ok(t.includes('8 of the 9 were one task (Swamped: task-new)'), 'the dominated week is called out');
+  ok(t.includes('90% of checks passed, averaged over the one shared task (9 of 10 checks in 1 eval run)'), 'a point names its rate, its checks and its eval runs');
+  eq(P.STRINGS.pairGap(-5, 1), 'The guidance cost 5 percentage points in the earlier week and added 1 percentage point in the later one.');
+  // One week only: nothing to compare, and it says so.
+  const one = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-15T00:00:00Z', skills: [], guidance: { sections: [{ id: 'a', status: 'covered', runs: [wholeRun('2026-11-10T00:00:00Z', 't', 1, 0, 1)] }] } };
+  ok(P.textOf(P.weekPairsChart(P.wholeGuidance(one).weekly, Date.parse(one.generated_at))).includes(P.STRINGS.pairOneWeek));
+  // Two weeks with no task in common cannot be compared.
+  const apart = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-15T00:00:00Z', skills: [], guidance: { sections: [{ id: 'a', status: 'covered',
+    runs: [wholeRun('2026-11-03T00:00:00Z', 't1', 1, 0, 1), wholeRun('2026-11-10T00:00:00Z', 't2', 1, 0, 1)] }] } };
+  ok(P.textOf(P.weekPairsChart(P.wholeGuidance(apart).weekly, Date.parse(apart.generated_at))).includes(P.STRINGS.pairNone));
+});
+
 // --- failure states ---------------------------------------------------------
 const mode = 'skills';
 test('failure state when the fetch fails', async () => {

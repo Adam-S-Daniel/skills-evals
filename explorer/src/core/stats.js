@@ -204,3 +204,90 @@ export function gainPer100Words(pooled, bytes) {
   const words = wordsFor(bytes);
   return g === null ? null : (g * 100 / words) * 100;
 }
+
+/* The whole-guidance comparison, taken apart. The pooled totals mix every
+   section's tasks, and the loop tests a different mix each week (sections
+   leave the schedule, new tasks arrive, one task can take most of a week), so
+   a pooled weekly number moves when the mix moves. These two views hold the
+   mix still: one row per section, and week-to-week changes on the tasks both
+   weeks share. A task is one fixture of one section. */
+
+const pairedWhole = (raw, refMs) => {
+  const r = normRun(raw, 'whole');
+  return r && r.model && inWindow(r, refMs) && r.with && r.without ? r : null;
+};
+const rateOf = (p, t) => (t > 0 ? p / t : null);
+
+/* One row per section with a paired full-vs-none run, biggest gain first.
+   {id, heading, tested, n, tasks, wp, wt, op, ot, gain, last}. `tested` is
+   false for a section the loop no longer evaluates (status 'skipped'). */
+export function sectionSpread(sections, refMs) {
+  const rows = [];
+  for (const s of Array.isArray(sections) ? sections : []) {
+    if (!s || !s.id) continue;
+    const acc = emptyAcc();
+    const tasks = new Set();
+    for (const raw of Array.isArray(s.runs) ? s.runs : []) {
+      const r = pairedWhole(raw, refMs);
+      if (!r) continue;
+      addRun(acc, r);
+      tasks.add(String(r.fixture));
+    }
+    if (!acc.n) continue;
+    finish(acc);
+    rows.push({ id: String(s.id), heading: s.heading || String(s.id), tested: s.status !== 'skipped', n: acc.n, tasks: tasks.size,
+      wp: acc.wp, wt: acc.wt, op: acc.op, ot: acc.ot, gain: acc.gain, last: acc.last });
+  }
+  return rows.sort((a, b) => (b.gain - a.gain) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/* Week buckets of the whole-guidance runs, by task. Returns
+   { weeks: [{week, start, n, tasks, sections, top: {section, fixture, n}}],
+     pairs: [{from, to, shared, dropped, added, then: side, now: side}] },
+   both oldest first. A pair joins two consecutive weeks that had runs; its
+   sides cover only the tasks tested in both: {with, without} are the mean of
+   each task's pass rate (every task counted once, so a task with many runs
+   weighs no more than one with few), beside the pooled check counts. */
+export function weekPairs(sections, refMs) {
+  if (!isFinite(refMs)) return { weeks: [], pairs: [] };
+  const buckets = new Map();
+  for (const s of Array.isArray(sections) ? sections : []) {
+    if (!s || !s.id) continue;
+    for (const raw of Array.isArray(s.runs) ? s.runs : []) {
+      const r = pairedWhole(raw, refMs);
+      if (!r) continue;
+      const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
+      if (w >= WINDOW_WEEKS) continue;
+      if (!buckets.has(w)) buckets.set(w, new Map());
+      const key = JSON.stringify([String(s.id), String(r.fixture)]);
+      const tasks = buckets.get(w);
+      if (!tasks.has(key)) tasks.set(key, Object.assign(emptyAcc(), { section: String(s.id), heading: s.heading || String(s.id), fixture: String(r.fixture) }));
+      addRun(tasks.get(key), r);
+    }
+  }
+  const order = Array.from(buckets.keys()).sort((a, b) => b - a);
+  const weeks = order.map((w) => {
+    const tasks = Array.from(buckets.get(w).values());
+    const top = tasks.reduce((best, t) => (!best || t.n > best.n ? t : best), null);
+    return { week: w, start: refMs - (w + 1) * WEEK_MS, n: tasks.reduce((sum, t) => sum + t.n, 0), tasks: tasks.length,
+      sections: new Set(tasks.map((t) => t.section)).size, top: { section: top.section, heading: top.heading, fixture: top.fixture, n: top.n } };
+  });
+  const side = (tasks, keys) => {
+    const out = { with: 0, without: 0, wp: 0, wt: 0, op: 0, ot: 0, n: 0 };
+    for (const k of keys) {
+      const t = tasks.get(k);
+      out.with += rateOf(t.wp, t.wt); out.without += rateOf(t.op, t.ot);
+      out.wp += t.wp; out.wt += t.wt; out.op += t.op; out.ot += t.ot; out.n += t.n;
+    }
+    out.with /= keys.length; out.without /= keys.length;
+    return out;
+  };
+  const pairs = [];
+  for (let i = 1; i < order.length; i++) {
+    const a = buckets.get(order[i - 1]), b = buckets.get(order[i]);
+    const keys = Array.from(a.keys()).filter((k) => b.has(k));
+    pairs.push({ from: weeks[i - 1], to: weeks[i], shared: keys.length, dropped: a.size - keys.length, added: b.size - keys.length,
+      then: keys.length ? side(a, keys) : null, now: keys.length ? side(b, keys) : null });
+  }
+  return { weeks: weeks, pairs: pairs };
+}

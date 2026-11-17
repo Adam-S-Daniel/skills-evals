@@ -4,7 +4,7 @@ import { clean } from '../core/format.js';
 import { h } from '../core/h.js';
 import { termify, SENTENCE_TERMS } from '../core/terms.js';
 import { chip } from '../core/charts.js';
-import { trendChart } from './trend.js';
+import { sectionSpreadChart, weekPairsChart } from './wholecharts.js';
 import { modelCharts, legendFor } from './models.js';
 
 /* `whole` is core/items.js wholeGuidance(doc). */
@@ -16,5 +16,5 @@ export function wholeView(whole, refMs) {
       h('p', { class: 'note' }, STRINGS.wholeNote),
       h('p', { class: 'sent' }, termify(clean(whole.sentence), SENTENCE_TERMS)),
       legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-      trendChart(whole.trend, refMs, 'whole')));
+      sectionSpreadChart(whole.spread, refMs), weekPairsChart(whole.weekly, refMs)));
 }

@@ -1,7 +1,7 @@
 /* View models: one item per card, sorted the way the page shows them. */
 import { STRINGS } from './strings.js';
 import { parseTime } from './format.js';
-import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainOf } from './stats.js';
+import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainOf, sectionSpread, weekPairs } from './stats.js';
 
 export function context(doc) {
   const refMs = parseTime(doc.generated_at);
@@ -95,5 +95,5 @@ export function wholeGuidance(doc) {
   secs.forEach((s) => (Array.isArray(s && s.runs) ? s.runs : []).forEach((r) => runs.push(r)));
   const pooled = poolRuns(runs, 'whole', c.refMs, c.order);
   return { pooled: pooled, chip: chipFor(pooled, { subject: 'whole' }), sentence: sentenceFor(pooled, 'whole', c.refMs),
-    trend: weeklyGains(runs, 'whole', c.refMs) };
+    spread: sectionSpread(secs, c.refMs), weekly: weekPairs(secs, c.refMs) };
 }

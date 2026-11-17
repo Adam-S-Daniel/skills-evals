@@ -9,6 +9,7 @@
 //   node build.js          write every page
 //   node build.js --check  exit 1 when any committed page differs from a build
 import { build } from 'esbuild';
+import { parse, tokTypes } from 'acorn';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +84,9 @@ export function widthQueriesToContainer(css) {
 function fill(templatePath, js, vars, opts) {
   if (/<\/script/i.test(js)) throw new Error('the bundle contains </script, which would end the inline script early');
   let css = fs.readFileSync(BASE_CSS, 'utf8').replace(/\n$/, '');
-  if (opts && opts.container) css = widthQueriesToContainer(css);
+  // The private page has a hard size cap, so its stylesheet ships without its
+  // comments (a comment is a lexical token; no rule is touched).
+  if (opts && opts.container) css = widthQueriesToContainer(css).replace(/\/\*[\s\S]*?\*\/\n?/g, '');
   let tpl = fs.readFileSync(templatePath, 'utf8');
   const c = tpl.split('/*__CSS__*/');
   if (c.length !== 2) throw new Error(templatePath + ' must hold exactly one /*__CSS__*/ marker');
@@ -101,8 +104,31 @@ export async function buildPublicPage() {
   return fill(TEMPLATE, await bundle('public.js'), { DATA_URL: DEFAULT_DATA_URL });
 }
 
+/* The console stores the private page as a JSON string, where every double
+   quote costs two bytes. esbuild writes string literals with double quotes,
+   so each literal that serializes smaller in single quotes is rewritten that
+   way. Literals are the string tokens of a real parse of the bundle, never a pattern match. */
+export function singleQuoted(js) {
+  const edits = [];
+  parse(js, { ecmaVersion: 'latest', sourceType: 'script', onToken(tok) {
+    if (tok.type !== tokTypes.string || js[tok.start] !== '"') return;
+    const inner = js.slice(tok.start + 1, tok.end - 1);
+    let out = '';
+    for (let i = 0; i < inner.length; i++) {
+      const c = inner[i];
+      if (c === '\\') { const next = inner[++i]; out += next === '"' ? '"' : c + next; }
+      else out += c === "'" ? "\\'" : c;
+    }
+    const next = "'" + out + "'";
+    if (JSON.stringify(next).length < JSON.stringify(js.slice(tok.start, tok.end)).length) edits.push([tok.start, tok.end, next]);
+  } });
+  edits.sort((a, b) => b[0] - a[0]);
+  for (const [start, end, text] of edits) js = js.slice(0, start) + text + js.slice(end);
+  return js;
+}
+
 export async function buildPrivatePage() {
-  return fill(PRIVATE_TEMPLATE, await bundle('private.js'), {}, { container: true });
+  return fill(PRIVATE_TEMPLATE, singleQuoted(await bundle('private.js')), {}, { container: true });
 }
 
 export async function buildArtifactPage() {

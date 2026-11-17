@@ -1362,7 +1362,10 @@ guidance already covers it. A `retire` whose alone check has not finished
 removed nor proposed to the owner (2026-11-13), since the alone check could
 still turn it into `shorten-or-merge`; the planner fires the alone arm. The Improvement Loop Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
-whole-guidance headline still pools every run with no guidance, and each
+whole-guidance headline still pools every run with no guidance (under it,
+one line per section and week-to-week panels that compare only the tasks
+tested in both weeks, each task counted once, so a change in which tasks
+were tested is not read as a change in how much the guidance helps), and each
 section card's trend, help-per-word order and early sign use the in-situ
 gain. In `auto` mode, the committed
 `guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
