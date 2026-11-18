@@ -475,13 +475,21 @@ class PartialTests(SinkCase):
         self.assertEqual(stored, json.dumps(guidance(listing="truncated"),
                                             separators=(",", ":")) + "\n")
 
-    def test_the_summary_counts_dropped_guidance_records_apart(self):
-        # The private ingest workflow turns red on this count: a validator
-        # drifting from the hook must not pass as a green run again.
-        self.put(KEY, drop([guidance(note="x")], [skill(machine="box")]))
-        self.assertIn("guidance_dropped=1", self.apply().stdout)
-        self.put(KEY2, drop([guidance(session=SID2)], [skill(machine="box")]))
-        self.assertIn("guidance_dropped=0", self.apply().stdout)
+    def test_a_field_the_hook_adds_later_costs_only_that_field(self):
+        self.put(KEY, drop([guidance(listing="full", future="marker-value")], []))
+        proc = self.apply()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("0 partial", proc.stdout)
+        self.assertIn("1 unknown guidance fields ignored", proc.stdout)
+        stored = (self.store / "events/2026-09/cloud-guidance.jsonl").read_text()
+        self.assertEqual(json.loads(stored), guidance(listing="full"))
+
+    def test_too_many_unknown_fields_or_a_missing_one_is_invalid(self):
+        many = {f"k{i}": 1 for i in range(sink.MAX_UNKNOWN_FIELDS + 1)}
+        self.assertFalse(sink.guidance_record_ok(guidance(**many)))
+        missing = guidance(future=1)
+        del missing["state"]
+        self.assertFalse(sink.guidance_record_ok(missing))
 
     def test_a_listing_of_another_shape_is_invalid(self):
         for value in ("partial", "", None, True, 1, ["full"]):
@@ -511,7 +519,7 @@ class PartialTests(SinkCase):
         self.assertEqual(self.plan(listing)[1], [])
 
     def test_a_partial_key_is_planned_once_per_validator(self):
-        self.put(KEY, drop([guidance(note="x")]))
+        self.put(KEY, drop([guidance(remote=False)]))
         self.assertEqual(self.apply().returncode, 0)
         listing = self.listing([self.item(KEY)])
         self.assertEqual(self.plan(listing)[1], [])
@@ -520,7 +528,7 @@ class PartialTests(SinkCase):
         self.assertEqual([key for key, _ in planned], [KEY])
 
     def test_a_bad_guidance_record_keeps_the_skill_lines(self):
-        self.put(KEY, drop([guidance(note="x")]))
+        self.put(KEY, drop([guidance(remote=False)]))
         self.assertEqual(self.apply().returncode, 0)
         self.assertEqual(self.events(), [f"events/2026-09/cloud-skills/{SID}.jsonl"])
         self.assertTrue(self.index("ingested")[0].endswith(" partial=1"))
@@ -590,6 +598,70 @@ class BackdatingTests(SinkCase):
         self.assertEqual([r["id"] for r in census.cloud_skill_records(self.store)],
                          ["toolu_marker_01"])
         self.assertTrue(self.index("ingested")[0].endswith(" partial=2"))
+
+
+class HealthTests(SinkCase):
+
+    AT = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+
+    def lines(self, folder, sessions):
+        for sid in sessions:
+            path = self.store / f"events/2026-09/{folder}/{sid}.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"ts": "2026-09-03T10:00:00Z", "session": sid}) + "\n")
+
+    def guided(self, sessions):
+        path = self.store / "events/2026-09/cloud-guidance.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps({"session": s}) + "\n" for s in sessions))
+
+    def partial(self, count, version=None):
+        version = sink.VALIDATOR_VERSION if version is None else version
+        self.write_index("ingested", *[f"drop/2026-09-03/{i:032x}.json {'0' * 64} "
+                                       f"v{version} partial=1" for i in range(count)])
+
+    def test_an_empty_store_is_healthy(self):
+        self.assertEqual(sink.health(self.store, self.AT)["problems"], [])
+
+    def test_repeated_dropped_records_are_a_problem(self):
+        self.partial(sink.HEALTH_MIN_PARTIAL - 1)
+        self.assertEqual(sink.health(self.store, self.AT)["problems"], [])
+        self.partial(1)
+        self.assertEqual(len(sink.health(self.store, self.AT)["problems"]), 1)
+
+    def test_lines_an_older_validator_left_wait_for_the_replay(self):
+        self.write_index("ingested", *[f"drop/2026-09-03/{i:032x}.json {'0' * 64} partial=1"
+                                       for i in range(9)])
+        self.assertEqual(sink.health(self.store, self.AT)["partial"], 0)
+
+    def test_old_dropped_records_age_out(self):
+        self.partial(9)
+        later = self.AT + sink.HEALTH_WINDOW + timedelta(days=1)
+        self.assertEqual(sink.health(self.store, later)["problems"], [])
+
+    def test_active_sessions_without_guidance_are_a_problem(self):
+        sids = [f"{i:016x}" for i in range(sink.HEALTH_MIN_SESSIONS)]
+        self.lines("cloud-hooks", sids[:2])
+        self.lines("cloud-skills", sids[2:])
+        self.guided(sids[:-2])
+        report = sink.health(self.store, self.AT)
+        self.assertEqual((report["sessions"], report["covered"]), (5, 3))
+        self.assertEqual(len(report["problems"]), 1)
+        self.guided(sids[:4])
+        self.assertEqual(sink.health(self.store, self.AT)["problems"], [])
+
+    def test_too_few_sessions_prove_nothing(self):
+        self.lines("cloud-hooks", [f"{i:016x}" for i in range(sink.HEALTH_MIN_SESSIONS - 1)])
+        self.assertEqual(sink.health(self.store, self.AT)["problems"], [])
+
+    def test_the_command_exits_by_health_and_prints_only_counts(self):
+        args = ("health", "--store", str(self.store), "--now", "2026-09-03T12:00:00Z")
+        self.assertEqual(self.run_cli(*args).returncode, 0)
+        self.partial(sink.HEALTH_MIN_PARTIAL)
+        proc = self.run_cli(*args)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("::error::usage-sink health:", proc.stdout)
+        self.assertNotIn("drop/", proc.stdout)
 
 
 class VersionTests(SinkCase):
