@@ -521,9 +521,11 @@ jobs:
           exit 0
 
       # The public data contract's `activity`: per public repository, one call each for pull
-      # requests (newest updated first), open issues and the last 14 days of
-      # workflow runs. Bodies are dropped here; explorer_data.py validates
-      # every row again and builds every URL. Any failed call drops the file.
+      # requests (newest updated first), open issues, the last 14 days of
+      # workflow runs and the workflow definitions (their names decide which
+      # runs are the loop's). Bodies are dropped here; explorer_data.py keeps
+      # only the loop's rows, validates every row again and builds every URL.
+      # Any failed call drops the file.
       - name: List recent activity in the public repositories
         continue-on-error: true
         env:
@@ -541,7 +543,7 @@ jobs:
           since=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
           rc=0
           mkdir -p "$work"
-          : > "$work/pulls.jsonl"; : > "$work/issues.jsonl"; : > "$work/runs.jsonl"
+          : > "$work/pulls.jsonl"; : > "$work/issues.jsonl"; : > "$work/runs.jsonl"; : > "$work/workflows.jsonl"
           for repo in $(jq -r '.repos[] | select(.private == false) | .full_name' "$repos"); do
             [[ "$repo" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || continue
             { gh api --method GET "repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=100" \
@@ -550,17 +552,22 @@ jobs:
                 "$work/page.json" >> "$work/pulls.jsonl" \
               && gh api --method GET "repos/$repo/issues?state=open&per_page=100" \
                 > "$work/page.json" 2>/dev/null \
-              && jq -c --arg repo "$repo" '.[] | select(.pull_request == null) | {repo: $repo, number, title, state, created_at, updated_at}' \
+              && jq -c --arg repo "$repo" '.[] | select(.pull_request == null) | {repo: $repo, number, title, labels: [.labels[].name], state, created_at, updated_at}' \
                 "$work/page.json" >> "$work/issues.jsonl" \
               && gh api --method GET -f "created=>=$since" -f per_page=100 "repos/$repo/actions/runs" \
                 > "$work/page.json" 2>/dev/null \
               && jq -c --arg repo "$repo" '.workflow_runs[] | {repo: $repo, id, path, workflow: .name, title: .display_title, event, status, conclusion, created_at, updated_at}' \
-                "$work/page.json" >> "$work/runs.jsonl"; } || { rc=$?; break; }
+                "$work/page.json" >> "$work/runs.jsonl" \
+              && gh api --method GET -f per_page=100 "repos/$repo/actions/workflows" \
+                > "$work/page.json" 2>/dev/null \
+              && jq -c --arg repo "$repo" '.workflows[] | {repo: $repo, path, name}' \
+                "$work/page.json" >> "$work/workflows.jsonl"; } || { rc=$?; break; }
           done
           if [ "$rc" -eq 0 ]; then
             jq -n --arg fetched_at "$fetched_at" --slurpfile pulls "$work/pulls.jsonl" \
               --slurpfile issues "$work/issues.jsonl" --slurpfile runs "$work/runs.jsonl" \
-              '{fetched_at: $fetched_at, pulls: $pulls, issues: $issues, runs: $runs}' \
+              --slurpfile workflows "$work/workflows.jsonl" \
+              '{fetched_at: $fetched_at, pulls: $pulls, issues: $issues, runs: $runs, workflows: $workflows}' \
               > "$out.tmp" 2>/dev/null && mv "$out.tmp" "$out" || rc=$?
           fi
           rm -rf "$work" "$out.tmp"

@@ -1,6 +1,7 @@
 /* The lines a subject's page and the Skills and Guidance tables share, and the counts line above the table. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, fmtWeekStart, fmtDayKey, dayKeyOf, dayKeyMs, isDayKey, wordsFor, fmtCount } from '../core/format.js';
+import { spendText } from '../core/points.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf, nextKey, usesOf } from '../core/items.js';
@@ -53,7 +54,7 @@ export function stakesLine(st) {
 // (unknown) or empty.
 export function discardedLine(d) {
   if (!d || typeof d !== 'object' || !Number.isInteger(d.total) || d.total <= 0) return null;
-  const usd = typeof d.cost_usd === 'number' && isFinite(d.cost_usd) ? fmtUsd(d.cost_usd) : STRINGS.noValue;
+  const usd = typeof d.cost_usd === 'number' && isFinite(d.cost_usd) ? spendText(d.cost_usd, 'eval') : STRINGS.noValue;
   const rows = Object.entries(d.by_reason && typeof d.by_reason === 'object' ? d.by_reason : {})
     .filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0)
     .sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1))
@@ -71,6 +72,46 @@ export function usageLine(u, window, refMs) {
   const reads = Number.isInteger(u.reads) ? u.reads : 0;
   return h('p', { class: 'meta' }, STRINGS.used(n, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs))
     + (reads > 0 ? ' ' + STRINGS.usedSplit(u.invocations, reads) : ''));
+}
+
+/* The use-by line of a skill: the last day a use still keeps it from being
+   removed as unused (data `use_by`, null for a skill the census does not
+   cover). The numbers in the sentence come from `policy`, never from here. */
+const USE_BY_STATES = ['date', 'due', 'not-at-pace', 'exempt', 'local-only', 'unknown'];
+export function useByLine(ub, policy, refMs) {
+  if (!ub || typeof ub !== 'object' || !USE_BY_STATES.includes(ub.state)) return null;
+  const S = STRINGS.useBy;
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  const p = policy && typeof policy === 'object' ? policy : {};
+  let text;
+  if (ub.state === 'date') {
+    if (!isDayKey(ub.use_by)) return null;
+    const late = isFinite(refMs) && dayKeyMs(ub.use_by) < dayKeyMs(dayKeyOf(refMs));
+    text = late ? S.late : S.date(fmtWeekStart(ub.use_by, refMs));
+  } else if (ub.state === 'due') text = S.due(num(p.floor_weeks));
+  else if (ub.state === 'not-at-pace') text = S.notAtPace(num(p.value_per_use_usd));
+  else text = S[ub.state === 'local-only' ? 'localOnly' : ub.state];
+  return h('p', { class: 'meta' }, text, ' (', link(STRINGS.removalRuleUrl, S.link), ')');
+}
+
+/* The Use by cell and its sort key: dated skills by date (due first), then
+   no date, unknown, local-only, exempt, and a skill without the field last. */
+const USE_BY_RANK = { 'not-at-pace': 1e14, unknown: 2e14, 'local-only': 3e14, exempt: 4e14 };
+export function useBySort(ub) {
+  if (!ub || typeof ub !== 'object') return 5e14;
+  if (ub.state === 'due') return 0;
+  if (ub.state === 'date') return isDayKey(ub.use_by) ? dayKeyMs(ub.use_by) : 2e14;
+  return USE_BY_RANK[ub.state] || 5e14;
+}
+export function useByCell(ub, refMs) {
+  if (!ub || typeof ub !== 'object') return STRINGS.noValue;
+  if (ub.state === 'date') {
+    if (!isDayKey(ub.use_by)) return STRINGS.useByCell.unknown;
+    const late = isFinite(refMs) && dayKeyMs(ub.use_by) < dayKeyMs(dayKeyOf(refMs));
+    return late ? STRINGS.useByCell.late : fmtDayKey(ub.use_by, refMs);
+  }
+  const k = ub.state === 'not-at-pace' ? 'notAtPace' : ub.state === 'local-only' ? 'localOnly' : ub.state;
+  return STRINGS.useByCell[k] || STRINGS.noValue;
 }
 
 // #562: uses by which copy they loaded, counted from `copies.loaded`; nothing
@@ -118,10 +159,11 @@ export function subjectTable(items, kind, refMs) {
     { label: STRINGS.colName, sort: (it) => it.name, cell: (it) => [navLink(hashFor(kind, it.id || it.name), clean(guidance ? it.raw.heading || it.id : it.name)), it.raw.private === true ? [' ', badge(STRINGS.privateBadge, 'private')] : null] },
     { label: STRINGS.colStatus, sort: (it) => TABLE_RANK.indexOf(it.chip), cell: (it) => chip(it.chip) },
     { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => (gain(it) === null ? STRINGS.noValue : signedPoints(gain(it) * 100)) },
-    { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
+    { label: STRINGS.colEvalRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
     guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
+    guidance ? null : { label: STRINGS.colUseBy, sort: (it) => useBySort(it.raw.use_by), cell: (it) => useByCell(it.raw.use_by, refMs) },
     { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs, it.raw.verdict, it.raw.removal) },
     { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => STRINGS.verdictCell[it.raw.verdict || 'insufficient'] || clean(it.raw.verdict) }
   ].filter(Boolean), rows);

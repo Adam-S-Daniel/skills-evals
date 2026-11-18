@@ -31,7 +31,7 @@ categories:
     in_loop: true
   - id: improving_targets
     label: Improving and re-checking targets (eval loop upkeep)
-    match: ["eval scope", "hook block review", "prompt[- ]audit", "lesson", "improve", "retire", "removal"]
+    match: ["eval scope", "hook block review", "prompt[- ]audit", "lesson", "improve", "retire", "removal", "loop worker"]
     in_loop: true
   - id: fleet_maintenance
     label: Fleet maintenance (fleet worker, audits, security, CI health)
@@ -53,22 +53,41 @@ categories:
 # Jobs outside the loop even though their category is in it (Adam,
 # 2026-11-15: security alert triage, the fleet health audit and the "work
 # locally" feature watch are not part of the continuous improvement system).
+# The fleet worker is the maintenance half of the split fleet worker
+# (_agent-guidance ADR 0046); its loop half is the loop worker. Dependabot
+# work is the maintenance half's too (Adam, 2026-11-15), so Dependabot's own
+# runs and the auto-merge workflows stay out of the loop's Activity log.
 outside_loop:
+  - "^fleet worker$"
+  - "dependabot"
   - "security alert triage"
   - "fleet health audit"
   - "work locally"
-inside_loop: []
+# Jobs inside the loop that no category names. skills-evals' own workflows
+# are the eval loop's machinery (fixture supply, scaffolds, gates, scope,
+# roster, rules, spend and arrival counts), except its CI, agent-checks and
+# site preview; _agent-guidance's impact report measures the targets' real-work
+# effect. These match a workflow's `<repo>/<file>` only, never a scheduled
+# task's name, so no task's cap share moves; none of them spends Claude
+# usage itself.
+inside_loop:
+  - "^skills-evals/(?!(?:ci|agent-checks|site-preview)\\.ya?ml$)[\\w.-]+\\.ya?ml$"
+  - "^_agent-guidance/impact-report\\.yml$"
 other_in_loop: false
 
 # Scheduled tasks with no cron of their own, fired by a GitHub workflow,
 # keyed by a regex on the task's name (ids stay out of this public file). The
 # rate is that workflow's cron, thinned to `cadence_hours` when the workflow
 # skips cron lines off that cadence (fleet-worker-fire.yml reads the repo
-# variable FLEET_WORKER_EVERY_HOURS; keep this in step with it).
+# variables FLEET_WORKER_EVERY_HOURS and LOOP_WORKER_EVERY_HOURS; keep this in
+# step with them).
 fired_by:
   "^fleet worker$":
     workflow: _agent-guidance/fleet-worker-fire.yml
     cadence_hours: 6
+  "^loop worker$":
+    workflow: _agent-guidance/fleet-worker-fire.yml
+    cadence_hours: 24
 
 # Scheduled tasks (name regexes) whose spend is already counted inside the
 # eval cap by scripts/allowance_guard.py (their fires go through

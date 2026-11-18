@@ -484,23 +484,39 @@ class ActivityTests(unittest.TestCase):
                            "updated_at": "2026-10-26T10:00:00Z", "closed_at": "2026-10-26T10:00:00Z",
                            "merged_at": "2026-10-26T10:00:00Z", "body": "never published"},
                           {"repo": "Adam-S-Daniel/open-one", "number": 8, "title": "Old merge",
-                           "state": "closed", "merged_at": "2026-10-01T10:00:00Z"},
+                           "head_ref": "retire-skill/old", "state": "closed",
+                           "merged_at": "2026-10-01T10:00:00Z"},
+                          {"repo": "Adam-S-Daniel/open-one", "number": 10, "title": "Not the loop's",
+                           "head_ref": "dependabot/npm_and_yarn/x", "state": "open"},
                           {"repo": "Adam-S-Daniel/open-one", "number": 9, "title": "Closed unmerged",
                            "state": "closed", "merged_at": None},
-                          {"repo": "jodidaniel/open-three", "number": 3,
+                          {"repo": "jodidaniel/open-three", "number": 3, "head_ref": "sync/update",
                            "title": "See cmsg_01AbCdEfGh for context", "state": "open"},
                           {"repo": "Adam-S-Daniel/hidden-a", "number": 1, "title": "Hidden work",
-                           "state": "open"}],
-                "issues": [{"repo": "Adam-S-Daniel/open-two", "number": 4, "title": "Open issue",
+                           "head_ref": "eval-improve/x", "state": "open"}],
+                "issues": [{"repo": "Adam-S-Daniel/open-two", "number": 4,
+                            "title": "Memory promotion 2026-10-30: two facts",
                             "state": "open", "created_at": "2026-09-01T10:00:00Z"},
-                           {"repo": "Adam-S-Daniel/hidden-a", "number": 2, "title": "Hidden issue",
+                           {"repo": "Adam-S-Daniel/open-two", "number": 5, "title": "Not the loop's",
+                            "labels": ["bug"], "state": "open"},
+                           {"repo": "Adam-S-Daniel/open-two", "number": 6, "title": "A hook idea",
+                            "labels": ["hook-proposal"], "state": "open",
+                            "updated_at": "2026-08-01T10:00:00Z"},
+                           {"repo": "Adam-S-Daniel/hidden-a", "number": 2, "title": "Retire skill x: unused",
                             "state": "open"}],
-                "runs": [{"repo": "Adam-S-Daniel/open-two", "id": 1234, "workflow": "CI",
+                "workflows": [{"repo": "Adam-S-Daniel/open-two", "path": ".github/workflows/sync.yml",
+                               "name": "Sync AGENTS.md"},
+                              {"repo": "Adam-S-Daniel/skills-evals", "path": ".github/workflows/ci.yml",
+                               "name": "CI"},
+                              {"repo": "Adam-S-Daniel/skills-evals", "path": ".github/workflows/eval.yml",
+                               "name": "Real eval"}],
+                "runs": [{"repo": "Adam-S-Daniel/open-two", "id": 1234, "workflow": "PR #9 a run title",
+                          "path": ".github/workflows/sync.yml",
                           "title": "Merge pull request #4", "event": "push", "status": "completed",
                           "conclusion": "success", "created_at": "2026-10-30T10:00:00Z",
                           "updated_at": "2026-10-30T10:05:00Z"},
                          {"repo": "Adam-S-Daniel/open-two", "id": 1233, "workflow": "CI",
-                          "title": "old", "status": "completed", "conclusion": "success",
+                          "path": ".github/workflows/sync.yml", "title": "old", "status": "completed", "conclusion": "success",
                           "created_at": "2026-10-10T10:00:00Z"},
                          {"repo": "Adam-S-Daniel/skills-evals", "id": 1235,
                           "path": ".github/workflows/explorer-data.yml",
@@ -511,22 +527,56 @@ class ActivityTests(unittest.TestCase):
                           "path": ".github/workflows/ci.yml", "workflow": "CI", "title": "CI",
                           "status": "completed", "conclusion": "success",
                           "created_at": "2026-10-30T09:00:00Z"},
+                         {"repo": "Adam-S-Daniel/skills-evals", "id": 1237,
+                          "path": ".github/workflows/eval.yml", "workflow": "fleet sweep improve",
+                          "title": "Eval run", "status": "completed", "conclusion": "failure",
+                          "created_at": "2026-10-30T08:00:00Z"},
+                         {"repo": "Adam-S-Daniel/open-two", "id": 1238,
+                          "path": ".github/workflows/deploy.yml", "workflow": "Fleet improve lesson",
+                          "title": "Deploy", "status": "completed", "conclusion": "success",
+                          "created_at": "2026-10-30T07:00:00Z"},
                          {"repo": "Adam-S-Daniel/hidden-a", "id": 99, "workflow": "CI",
+                          "path": ".github/workflows/sync.yml",
                           "title": "Hidden run", "status": "completed",
                           "created_at": "2026-10-30T10:00:00Z"}], **extra}
 
     def test_only_public_repositories_and_the_window_are_kept(self):
         a = self.activity(self.doc())
         self.assertEqual([(p["number"], p["state"]) for p in a["pulls"]], [(7, "merged"), (3, "open")])
-        self.assertEqual([i["number"] for i in a["issues"]], [4])
-        # explorer-data.yml's own run is left out; another workflow here stays.
-        self.assertEqual([r["run_id"] for r in a["runs"]], [1234, 1236])
+        self.assertEqual([i["number"] for i in a["issues"]], [4, 6])
+        # explorer-data.yml's own run is left out; another loop workflow here stays.
+        self.assertEqual([r["run_id"] for r in a["runs"]], [1234, 1237])
         self.assertNotIn("path", a["runs"][0])
         self.assertEqual(a["since"], "2026-10-17T20:00:00Z")
         self.assertEqual(a["repos"], sorted(PUBLIC))
         text = json.dumps(a)
         for leak in ("hidden", "Hidden", "never published", "body", "@", "cmsg_"):
             self.assertNotIn(leak, text)
+
+    def test_only_the_loops_own_activity_is_kept(self):
+        # Adam, 2026-11-18: the Activity log shows the improvement loop's work,
+        # not everything in his repos. A pull request by its head branch, an
+        # issue by its title or label, a run by its workflow's own definition
+        # (a run's title can name anything; 1238's says "Fleet improve lesson").
+        a = self.activity(self.doc())
+        self.assertNotIn(10, [p["number"] for p in a["pulls"]])
+        self.assertNotIn(5, [i["number"] for i in a["issues"]])
+        self.assertNotIn(1236, [r["run_id"] for r in a["runs"]])  # skills-evals' CI
+        self.assertNotIn(1238, [r["run_id"] for r in a["runs"]])
+        self.assertEqual([r["workflow"] for r in a["runs"]], ["Sync AGENTS.md", "Real eval"])
+        # Without the definitions, a run is judged by its file alone.
+        no_names = self.doc()
+        no_names.pop("workflows")
+        self.assertEqual([(r["run_id"], r["workflow"]) for r in self.activity(no_names)["runs"]],
+                         [(1234, None), (1237, None)])
+
+    def test_the_workflow_reads_labels_and_workflow_names(self):
+        wf = yaml.safe_load((ROOT / ".github" / "workflows" / "explorer-data.yml").read_text(encoding="utf-8"))
+        run = [st for job in wf["jobs"].values() for st in job["steps"]
+               if st.get("name") == "List recent activity in the public repositories"][0]["run"]
+        self.assertIn("labels: [.labels[].name]", run)
+        self.assertIn('repos/$repo/actions/workflows', run)
+        self.assertIn("workflows: $workflows", run)
 
     def test_the_workflow_reads_each_pulls_head_branch(self):
         # Without head_ref in the reduction the document can never select the
@@ -546,7 +596,7 @@ class ActivityTests(unittest.TestCase):
             self.assertIsNone(ref(bad))
         self.assertIsNone(ref("0123456789abcdef0123"))
         a = self.activity(self.doc())
-        self.assertEqual([p["head_ref"] for p in a["pulls"]], ["eval-improve/some-skill", None])
+        self.assertEqual([p["head_ref"] for p in a["pulls"]], ["eval-improve/some-skill", "sync/update"])
 
     def test_titles_are_cleaned_and_urls_built(self):
         a = self.activity(self.doc())
@@ -598,9 +648,9 @@ class SpendTests(unittest.TestCase):
         self.assertEqual(spend["generated_at"], "2026-10-31T12:00:00Z")
         self.assertEqual(spend["weeks"], [
             {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1, "api_usd": 0,
-             "thread_spend_usd": 2, "run_usd": 1.5, "plan": "Pro"},
+             "thread_spend_usd": 2, "run_usd": 1.5, "scheduled_usd": None, "plan": "Pro"},
             {"week": "2026-10-19", "eval_runs": 12, "plan_meter_points": 30.5, "api_usd": 4.25,
-             "thread_spend_usd": 18.123456789, "run_usd": None, "plan": "Max 20x"}])
+             "thread_spend_usd": 18.123456789, "run_usd": None, "scheduled_usd": None, "plan": "Max 20x"}])
         self.assertIsNone(spend["total"], "a file without a total publishes none")
         self.assertNotIn("invented", json.dumps(spend))
         self.assertNotIn("thread-0001", json.dumps(spend))

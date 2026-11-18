@@ -347,6 +347,12 @@ class DashboardBuildTests(unittest.TestCase):
                 self.assertEqual(out.get(key), value, key)
         for key, value in doc["total"].items():
             self.assertEqual(got["total"].get(key), value, key)
+        # The display rates travel from the build to the public document unchanged.
+        self.assertEqual(doc["rates"]["eval_usd_per_point"], build.eval_usd_per_point())
+        self.assertEqual(got["rates"], doc["rates"])
+        bad = dict(doc, rates=dict(doc["rates"], session_count=1))
+        with self.assertRaisesRegex(ingest.Rejected, "not a display rate"):
+            ingest.check_spend(bad, json.dumps(bad), "built spend file")
 
     def test_retired_routines_are_left_out_of_the_table(self):
         rows = build.routines([routine(source={"kind": "none"}, retired=True), routine(source={"kind": "none"})], {}, {}, NOW)
@@ -468,7 +474,8 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_run_stream_maps_states_windows_dedupes_and_sorts(self):
         def wf(url, at, status="completed", conclusion="success", end=None):
-            return {"repo": "o/skills-evals", "workflow": "ci.yml", "event": "push", "status": status,
+            return {"repo": "o/skills-evals", "workflow": "PR #4 a run title", "path": ".github/workflows/eval.yml",
+                    "event": "push", "status": status,
                     "conclusion": conclusion, "created_at": at, "updated_at": end or at, "html_url": url,
                     "display_title": "T " + url}
         cases = [("queued", None, "Queued"), ("waiting", None, "Queued"), ("in_progress", None, "Running"),
@@ -479,8 +486,10 @@ class DashboardBuildTests(unittest.TestCase):
         for status, conclusion, want in cases:
             with self.subTest(status=status, conclusion=conclusion):
                 row = build.run_stream({"workflow_runs": [wf("u", "2026-01-06T12:00:00Z", status, conclusion)]}, NOW)[0]
+                self.assertEqual(row["key"], "u")
                 self.assertEqual(row["state"], want)
         dump = {
+            "workflow_names": {"o/skills-evals:.github/workflows/eval.yml": "Real eval"},
             "workflow_runs": [
                 wf("old", "2025-12-30T12:59:59Z"),  # just outside 7 days
                 wf("edge", "2025-12-30T13:00:00Z"),
@@ -489,13 +498,13 @@ class DashboardBuildTests(unittest.TestCase):
                 wf("live", "2026-01-06T12:30:00Z", "in_progress", None),
             ],
             "routine_runs": [
-                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                {"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
                  "finished_at": "2026-01-06T09:10:30Z", "status": "ROUTINE_RUN_STATUS_FAILED"},
-                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                {"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
                  "finished_at": None, "status": "ROUTINE_RUN_STATUS_RUNNING"},
-                {"trigger_id": "t2", "name": "Sweep", "fired_at": "2026-01-06T12:45:00Z",
+                {"trigger_id": "t2", "name": "Prompt audit", "fired_at": "2026-01-06T12:45:00Z",
                  "finished_at": "2026-01-06T12:50:00Z", "status": "ROUTINE_RUN_STATUS_PENDING"},
-                {"trigger_id": "t3", "name": "Odd", "fired_at": "2026-01-06T08:00:00Z",
+                {"trigger_id": "t3", "name": "Memory curation", "fired_at": "2026-01-06T08:00:00Z",
                  "finished_at": None, "status": "ROUTINE_RUN_STATUS_SUCCEEDED"},
             ],
         }
@@ -506,21 +515,45 @@ class DashboardBuildTests(unittest.TestCase):
         by = {r["key"]: r for r in rows}
         self.assertEqual(by["new"]["duration_s"], 125)
         self.assertEqual((by["new"]["source"], by["new"]["name"], by["new"]["kind"]),
-                         ("skills-evals", "ci.yml", "workflow"))
+                         ("skills-evals", "Real eval", "workflow"))
         self.assertIsNone(by["live"]["duration_s"])
         r = by["t1@2026-01-06T09:00:00Z"]
         self.assertEqual((r["state"], r["duration_s"], r["kind"], r["source"], r["title"]),
-                         ("Failed", 630, "routine", "scheduled task", "Nightly"))
+                         ("Failed", 630, "routine", "scheduled task", "Eval runner"))
         self.assertEqual(r["link"], "https://claude.ai/scheduled-task/t1")
         pending = by["t2@2026-01-06T12:45:00Z"]
         self.assertEqual((pending["state"], pending["duration_s"]), ("Running", None))
 
+    def test_run_stream_keeps_only_the_loops_runs(self):
+        # Adam, 2026-11-18: the Activity log shows the improvement loop's runs only,
+        # judged by evals/automatic-spend.yml's in_loop marks on the workflow's own
+        # name and file, never on a run's title.
+        def wf(url, repo, path, title):
+            return {"repo": repo, "workflow": title, "path": path, "status": "queued",
+                    "created_at": "2026-01-06T12:00:00Z", "html_url": url}
+        dump = {"workflow_names": {"o/_agent-guidance:.github/workflows/sync.yml": "Sync AGENTS.md",
+                                   "o/_agent-guidance:.github/workflows/ci.yml": "CI"},
+                "workflow_runs": [wf("sync", "o/_agent-guidance", ".github/workflows/sync.yml", "push"),
+                                  wf("ci", "o/_agent-guidance", ".github/workflows/ci.yml", "Fleet improve eval"),
+                                  wf("site", "o/adamdaniel.ai", ".github/workflows/deploy.yml", "Deploy"),
+                                  wf("bot", "o/skills-evals", "dynamic/dependabot/dependabot-updates", "npm")],
+                "routine_runs": [{"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"},
+                                 {"trigger_id": "t2", "name": "Morning brief", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"},
+                                 {"trigger_id": "t3", "name": "Fleet worker", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"}]}
+        rows = build.run_stream(dump, NOW)
+        self.assertEqual([(r["key"], r["name"]) for r in rows],
+                         [("sync", "Sync AGENTS.md"), ("t1@2026-01-06T09:00:00Z", "Eval runner")])
+
     def test_run_stream_caps_rows_and_has_a_placeholder(self):
-        runs = [{"repo": "o/r", "workflow": "w", "status": "queued", "created_at": "2026-01-06T12:00:00Z",
-                 "html_url": f"u{i}"} for i in range(600)]
+        runs = [{"repo": "o/skills-evals", "workflow": "w", "path": ".github/workflows/eval.yml", "status": "queued",
+                 "created_at": "2026-01-06T12:00:00Z", "html_url": f"u{i}"} for i in range(600)]
         self.assertEqual(len(build.run_stream({"workflow_runs": runs}, NOW)), 500)
         # An older failure past the cap is still listed: the cap trims only runs that went fine.
-        failed = {"repo": "o/r", "workflow": "w", "status": "completed", "conclusion": "failure",
+        failed = {"repo": "o/skills-evals", "workflow": "w", "path": ".github/workflows/eval.yml",
+                  "status": "completed", "conclusion": "failure",
                   "created_at": "2026-01-01T12:00:00Z", "updated_at": "2026-01-01T12:01:00Z", "html_url": "old-fail"}
         rows = build.run_stream({"workflow_runs": runs + [failed]}, NOW)
         self.assertEqual(len(rows), 501)
@@ -573,17 +606,37 @@ class DashboardBuildTests(unittest.TestCase):
     def plan_row(self, at, cost, after=None, points=None):
         return {"run_id": "r" + at, "fired_at": at, "cost_usd": cost, "meter_points": points, "account_week_after": after}
 
-    def test_points_per_usd_is_the_account_reading_over_all_spend_of_complete_weeks(self):
+    def test_thread_rate_is_thread_dollars_over_the_meter_reading_less_eval_points(self):
         starts = self.cb_starts()
         rows = [self.plan_row("2026-10-20T10:00:00Z", 5, after=20), self.plan_row("2026-10-22T10:00:00Z", 5, after=30),
                 self.plan_row("2026-11-03T10:00:00Z", 50, after=90)]  # the current week is not complete
-        rate, basis, weeks = build.points_per_usd(rows, {0: 20, 2: 999}, starts, self.cb_now())
-        self.assertEqual((rate, weeks), (1.0, 1))  # the week's largest reading, 30, over $20 + $10
+        rate, basis, weeks = build.thread_usd_per_point(rows, {0: 20, 2: 999}, starts, self.cb_now(), 0.5)
+        # The week's largest reading, 30, less its eval points ($10 at $0.50 a point, 20): 10 points for $20 of threads.
+        self.assertEqual((rate, weeks), (2.0, 1))
         self.assertIn("upper bound", basis)
-        rate, basis, weeks = build.points_per_usd([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts, self.cb_now())
-        self.assertEqual((rate, weeks), (build.DEFAULT_POINTS_PER_USD, 0))
-        self.assertEqual(build.DEFAULT_POINTS_PER_USD, 0.07)
-        self.assertIn("default", basis)
+        # No reading in a complete week, or readings the eval runs alone explain: no rate, and no default.
+        rate, basis, weeks = build.thread_usd_per_point([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts,
+                                                        self.cb_now(), 0.5)
+        self.assertEqual((rate, weeks), (None, 0))
+        self.assertIn("no complete week", basis)
+        rate, basis, _ = build.thread_usd_per_point(rows, {0: 20}, starts, self.cb_now(), 0.1)
+        self.assertIsNone(rate)
+        self.assertIn("leave no points", basis)
+        self.assertFalse(hasattr(build, "DEFAULT_POINTS_PER_USD"), "no hard-coded rate fallback")
+
+    def test_the_eval_rate_comes_only_from_the_points_config(self):
+        self.assertEqual(build.eval_usd_per_point(), 6.67)
+        for text, why in (("other: 1\n", "eval_usd_per_point must be a positive number"),
+                          ("eval_usd_per_point: 0\n", "eval_usd_per_point must be a positive number"),
+                          ("eval_usd_per_point: true\n", "eval_usd_per_point must be a positive number")):
+            path = self.tmp / "points.yml"
+            path.write_text(text)
+            with self.assertRaises(SystemExit) as caught:
+                build.eval_usd_per_point(path)
+            self.assertIn(why, str(caught.exception))
+        with self.assertRaises(SystemExit) as caught:
+            build.eval_usd_per_point(self.tmp / "missing.yml")
+        self.assertIn("cannot read the points display config", str(caught.exception))
 
     def test_loop_changes_parse_each_prefix_and_ignore_unmerged_prs(self):
         def pr(n, ref, merged="2026-10-27T10:00:00Z"):
@@ -601,7 +654,7 @@ class DashboardBuildTests(unittest.TestCase):
         args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], samples=[],
                     owner_msgs=[], prs=[], explorer={}, now=self.cb_now())
         args.update(kw)
-        return build.cost_benefit(*args.values())
+        return build.cost_benefit(**args)
 
     def test_real_work_reach_counts_uses_in_weeks_after_a_change_merged(self):
         pr = {"repo": "example-owner/r", "number": 1, "url": "u", "head_ref": "eval-improve/writing-adrs",
@@ -643,18 +696,92 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertIn(build.API_BILLED, (REPO / "harness" / "run_eval.py").read_text())
         explorer = {"skills": [{"verdict": "keep"}, {"verdict": "insufficient"}, {"verdict": None}],
                     "guidance": {"sections": [{"verdict": "retire"}]}}
-        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=10, points=2)]
-        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10)]
-        weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer)
+        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=12, points=2)]
+        # A project-made scheduled task's run is a thread session too; its id in the fire ledger keeps it
+        # out of development.
+        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10),
+                   dict(self.sample("2026-10-25T17:00:00Z", 0), session_id="cse_fired"),
+                   dict(self.sample("2026-10-26T17:00:00Z", 30), session_id="cse_fired")]
+        sched = {"usd_per_week": 4.0, "since": datetime(2026, 10, 20, tzinfo=timezone.utc), "unmeasured": []}
+        raw = {}
+        weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer,
+                                      raw=raw, eval_rate=2.0, sched=sched, sched_rate=4.0,
+                                      fire_sessions={"cse_fired"})
         w = weeks[0]
-        rate = 10 / (10 + 10)  # reading 10 over thread $10 + plan-run $10 in the one complete week with a reading
-        self.assertEqual((w["api_usd"], w["build_usd"], w["build_estimated"]), (1.0, 10.0, False))
-        self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 10 * rate))
-        self.assertEqual((w["build_points"], w["total_points"]), (10 * rate, 10 * rate + 10 * rate + 1.0 * rate))
+        # Reading 12 less the eval run's 5 points ($10 at $2) and the scheduled tasks' 1 ($4 at $4) leaves
+        # 6 points for $10 of development.
+        thread_rate = 10 / 6
+        self.assertEqual((w["api_usd"], w["dev_usd"], w["dev_estimated"]), (1.0, 10.0, False))
+        self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 5.0))
+        # The allowance total is eval runs plus scheduled tasks; development and API credit never join it.
+        self.assertEqual((w["sched_points"], w["total_points"], w["dev_points"]), (1.0, 6.0, 6.0))
+        # The current week counts its scheduled tasks for the elapsed part only (Nov 2 17:00 to Nov 5 13:00).
+        self.assertAlmostEqual(weeks[2]["sched_points"], round(68 / 168, 2))
         self.assertEqual([x["verdicts"] for x in weeks], [None, None, 2])
         sm = {r["key"]: r for r in summary_rows}
-        self.assertEqual(sm["points_per_usd"]["value"], rate)
-        self.assertEqual(sm["cost_per_verdict"]["value"], round((10 + 10 + 1.0) / 2, 2))
+        self.assertEqual((sm["eval_usd_per_point"]["value"], sm["sched_usd_per_point"]["value"],
+                          sm["thread_usd_per_point"]["value"]), (2.0, 4.0, round(thread_rate, 2)))
+        system = 5 + 1 + 1 + 68 / 168
+        self.assertEqual(sm["points_per_verdict"]["value"], round(system / 2, 2))
+        self.assertEqual(sm["api_usd_per_verdict"]["value"], round(1.0 / 2, 2))
+        self.assertIn("Development is not included", sm["points_per_verdict"]["note"])
+        self.assertIn("$1.00", sm["api_usd_per_verdict"]["note"])
+        self.assertNotIn("cost_per_verdict", sm)
+        self.assertEqual({r["key"] for r in summary_rows if r["group"] == "development"},
+                         {"dev_points", "bar_build", "thread_usd_per_point"})
+        self.assertEqual(sm["dev_points"]["value"], 6.0)
+        self.assertEqual(sm["sched_points_per_week"]["value"], 1.0)
+        self.assertEqual(raw["rates"], {"eval_usd_per_point": 2.0, "scheduled_task_usd_per_point": 4.0,
+                                        "thread_usd_per_point": thread_rate})
+        self.assertEqual(raw["total"]["usd"], 10 + 4 + 4 + 4 * 68 / 168 + 1.0)
+        self.assertEqual((raw["total"]["thread_spend_usd"], raw["total"]["scheduled_since"]), (10.0, "2026-10-19"))
+
+    def test_scheduled_tasks_before_the_fire_ledger_read_as_no_value(self):
+        sched = {"usd_per_week": 7.0, "since": datetime(2026, 10, 28, tzinfo=timezone.utc), "unmeasured": ["New"]}
+        weeks, rows = self.cb(sched=sched, sched_rate=7.0)
+        self.assertEqual([w["sched_points"] for w in weeks], [None, 1.0, round(68 / 168, 2)])
+        self.assertEqual([w["total_points"] for w in weeks][0], None)
+        sm = {r["key"]: r for r in rows}
+        self.assertIn("1 unmeasured", sm["sched_points_per_week"]["note"])
+        self.assertIn("from Oct 26", sm["points_per_verdict"]["note"])
+        # Without the fire ledger there is no scheduled-task figure and no system total.
+        weeks, rows = self.cb()
+        self.assertEqual({w["sched_points"] for w in weeks} | {w["total_points"] for w in weeks}, {None})
+        self.assertIsNone({r["key"]: r for r in rows}["sched_points_per_week"]["value"])
+
+    def test_the_scheduled_task_rate_comes_only_from_the_points_config(self):
+        self.assertEqual(build.scheduled_usd_per_point(), 6.67)
+        path = self.tmp / "points.yml"
+        path.write_text("eval_usd_per_point: 6.67\n")
+        with self.assertRaises(SystemExit) as caught:
+            build.scheduled_usd_per_point(path)
+        self.assertIn("scheduled_task_usd_per_point must be a positive number", str(caught.exception))
+
+    def test_each_scheduled_task_row_carries_its_cost_in_points_most_expensive_first(self):
+        jobs = [{"kind": "scheduled task", "id": "t1", "name": "Worker", "lane": "meter", "in_loop": True, "fires_per_week": 28,
+                 "usd_per_fire": 2.0, "usd_per_week": 56.0},
+                {"kind": "scheduled task", "id": "t2", "name": "Runner", "lane": "eval_cap", "in_loop": True, "fires_per_week": 7,
+                 "usd_per_fire": 0.4, "usd_per_week": 2.8},
+                {"kind": "scheduled task", "id": "t3", "name": "Unmeasured", "lane": "meter", "in_loop": False, "fires_per_week": 7,
+                 "usd_per_fire": None, "usd_per_week": None},
+                {"kind": "workflow", "id": "w.yml", "lane": "actions_only", "usd_per_week": 0.0}]
+        rows = [{"name": n, "id": i} for n, i in (("Unmeasured", "t3"), ("Workflow", "w.yml"), ("Runner", "t2"),
+                                                  ("Worker", "t1"))]
+        got = build.task_costs(rows, ({"jobs": jobs}, []), 4.0)
+        self.assertEqual([r["name"] for r in got][:2], ["Worker", "Runner"])
+        by = {r["name"]: r for r in got}
+        self.assertEqual((by["Worker"]["runs_per_week"], by["Worker"]["points_per_run"], by["Worker"]["points_per_week"]),
+                         (28, 0.5, 14.0))
+        self.assertEqual((by["Runner"]["lane"], by["Worker"]["in_loop"], by["Unmeasured"]["in_loop"]), ("eval_cap", True, False))
+        # Unmeasured is no value, never a guess; a workflow uses no allowance and carries no cost.
+        self.assertEqual((by["Unmeasured"]["runs_per_week"], by["Unmeasured"]["points_per_week"]), (7, None))
+        self.assertNotIn("points_per_week", by["Workflow"])
+        sched = build.scheduled_tasks(({"jobs": jobs}, [{"fired_at": "2026-11-13T06:56:00Z", "session_id": "cse_a"},
+                                                        {"fired_at": "2026-11-10T02:06:00Z"}]))
+        # The eval runner is inside eval runs: only meter-lane tasks count.
+        self.assertEqual((sched["usd_per_week"], sched["unmeasured"], sched["sessions"]), (56.0, ["Unmeasured"], {"cse_a"}))
+        self.assertEqual(sched["since"], datetime(2026, 11, 10, 2, 6, tzinfo=timezone.utc))
+        self.assertIsNone(build.scheduled_tasks(None))
 
     def test_the_bars_follow_the_week_and_the_date(self):
         def bars(now, **kw):
@@ -671,8 +798,12 @@ class DashboardBuildTests(unittest.TestCase):
         sm = bars(late, prs=prs, usage_rows=usage)
         self.assertEqual((sm["bar_changes"]["status"], sm["bar_verdict"]["value"]), ("Met", "Met: keep the eval system"))
         hot = [self.sample("2026-12-10T00:00:00Z", 100000, created="2026-12-10T00:00:00Z")]
+        # A thread rate needs thread dollars in a complete week with a meter reading.
+        hot = [self.sample("2026-10-20T00:00:00Z", 0, created="2026-10-20T00:00:00Z"),
+               self.sample("2026-10-21T00:00:00Z", 100, created="2026-10-20T00:00:00Z")] + hot
         ppu_rows = [self.plan_row("2026-10-20T10:00:00Z", 1, after=50)]
         sm = bars(late, prs=prs, usage_rows=usage, samples=hot, plan_rows=ppu_rows)
+        self.assertEqual(sm["bar_build"]["group"], "development")
         self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
                          ("Not met", "Missed: cut back to guidance-only evals"))
 
@@ -682,7 +813,8 @@ class DashboardBuildTests(unittest.TestCase):
         notes = {r["key"]: r["note"] for r in rows}
         for key, note in notes.items():
             self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", note), f"{key}: {note}")
-        self.assertIn("since Oct 19:", notes["cost_per_verdict"])
+        self.assertIn("since Oct 19:", notes["points_per_verdict"])
+        self.assertIn("since Oct 19 over", notes["api_usd_per_verdict"])
         self.assertIn("merged since Oct 19 out of", notes["decision_yield"])
         self.assertIn("in the week of Mon Oct 26", notes["real_work_reach"])
         self.assertIn("Due Dec 15.", notes["bar_build"])
@@ -707,7 +839,7 @@ class DashboardBuildTests(unittest.TestCase):
     def test_half_built_missing_dump_is_not_checked(self):
         issues, summary = build.half_built({}, self.HB_NOW)
         self.assertEqual([r["key"] for r in issues], ["none"])
-        self.assertEqual((summary[0]["status"], summary[0]["open"], summary[0]["checked_at"]), ("not-checked", 0, None))
+        self.assertEqual((summary[0]["status"], summary[0]["checked_at"]), ("not-checked", None))
         _, via_build = build.half_built(build.load(str(self.tmp / "absent.json"), {}), self.HB_NOW)
         self.assertEqual(via_build[0]["status"], "not-checked")
 
@@ -734,9 +866,8 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((issues[0]["opened"], issues[0]["age_days"], issues[0]["closed_at"]), ("2026-10-25", 9, None))
         self.assertEqual(issues[-1]["closed_at"], "2026-10-30T12:00:00Z")
         self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
-                         {"open": 4, "high": 2, "broken": 1, "partial": 1, "implied_only": 1, "idle": 1,
-                          "needs_owner": 0, "fixed_7d": 1,
-                          "checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
+                         # No counts: the page counts the issue rows, the one source.
+                         {"checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
 
     def test_half_built_puts_high_first_then_what_needs_the_owner(self):
         dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
@@ -747,7 +878,6 @@ class DashboardBuildTests(unittest.TestCase):
         issues, summary = build.half_built(dump, self.HB_NOW)
         self.assertEqual([r["number"] for r in issues], [3, 4, 2, 1])
         self.assertEqual([r["needs_owner"] for r in issues], ["", "needs you", "needs you", ""])
-        self.assertEqual(summary[0]["needs_owner"], 2)
 
     def test_half_built_unknown_kind_and_severity(self):
         dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
@@ -755,7 +885,7 @@ class DashboardBuildTests(unittest.TestCase):
         issues, summary = build.half_built(dump, self.HB_NOW)
         self.assertEqual([(r["number"], r["kind"], r["severity"]) for r in issues],
                          [(2, "partial", "low"), (1, "unknown", "unknown")])
-        self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
+        self.assertEqual(summary[0]["status"], "attention")
 
     def test_a_build_without_the_explorer_document_refuses(self):
         (self.results / "explorer" / "latest.json").unlink()
@@ -775,13 +905,15 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((doc["schema"], doc["generated_at"]), (1, "2026-10-30T12:00:00Z"))
         self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
         for w in doc["weeks"]:
-            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "api_usd", "thread_spend_usd"})
+            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "scheduled_usd", "api_usd",
+                                      "thread_spend_usd"})
             self.assertIsInstance(w["eval_runs"], int)
         total = doc["total"]
         self.assertEqual(total["since"], "2026-10-19")
         for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd")):
             self.assertAlmostEqual(sum(w[part] for w in doc["weeks"]), total[key], msg=key)
-        self.assertAlmostEqual(total["usd"], total["run_usd"] + total["thread_spend_usd"] + total["api_usd"])
+        # The total is the system's use; development (thread_spend_usd) is never in it.
+        self.assertAlmostEqual(total["usd"], total["run_usd"] + (total["scheduled_usd"] or 0) + total["api_usd"])
         sys.path.insert(0, str(REPO / "scripts"))
         import explorer_public
         tree = self.tmp / "tree"
@@ -820,12 +952,12 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_spend_file_keeps_full_precision(self):
         raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,
-                          "build_usd": 2.0000001, "run_usd": 0.1234567}],
+                          "dev_usd": 2.0000001, "run_usd": 0.1234567, "scheduled_usd": 0.7654321}],
                "total": {"usd": 1 / 3, "cost_per_verdict": 1 / 3}}
         doc = build.spend_file(raw, NOW, "Example plan")
         w = doc["weeks"][0]
-        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"]),
-                         (1.23456, 0.333333, 2.0000001, 0.1234567))
+        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"], w["scheduled_usd"]),
+                         (1.23456, 0.333333, 2.0000001, 0.1234567, 0.7654321))
         self.assertNotIn("cost_per_verdict", w)
         self.assertEqual(doc["total"]["cost_per_verdict"], 1 / 3)
         self.assertEqual(doc["plan"], "Example plan")
@@ -851,7 +983,8 @@ class DashboardBuildTests(unittest.TestCase):
             self.assertRegex(page, r'["\']' + name + r'["\']', f"the page never reads {name}")
         for name, key in (("half_built_issues", "key"), ("usage_rows", "kind"),
                           ("cost_benefit_weeks", "week"), ("run_stream", "key"), ("waiting", "id")):
-            self.assertRegex(page, name + r':\s*"' + key + '"', f"{name} placeholder rows stay hidden")
+            # The build writes string literals in whichever quote stores smaller.
+            self.assertRegex(page, name + r':\s*["\']' + key + r'["\']', f"{name} placeholder rows stay hidden")
 
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
@@ -862,6 +995,39 @@ class DashboardBuildTests(unittest.TestCase):
         for text in (page, words):
             for name in ("Waiting on Adam", "Adam's", "Adam "):
                 self.assertNotIn(name, text)
+
+    def test_build_py_prose_uses_no_banned_phrase(self):
+        """Reader-facing strings in build.py avoid the phrases explorer/test/banned-phrases.json retires.
+
+        Same list and matching as the explorer's test: case-insensitive on word
+        boundaries. Docstrings are not reader-facing and are skipped.
+        """
+        import ast
+        spec_ = json.loads((REPO / "explorer" / "test" / "banned-phrases.json").read_text())
+        phrases = spec_["phrases"] if isinstance(spec_, dict) else spec_
+        allow = spec_.get("allow", []) if isinstance(spec_, dict) else []
+        self.assertGreaterEqual(len(phrases), 20)
+        matchers = [(b["phrase"], re.compile(r"(?<![A-Za-z0-9_])" + re.escape(b["phrase"]) + r"(?![A-Za-z0-9_])", re.I))
+                    for b in phrases]
+        source = (DASH / "build.py").read_text()
+        tree = ast.parse(source)
+        docstrings = set()
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body and isinstance(n.body[0], ast.Expr) \
+                    and isinstance(n.body[0].value, ast.Constant) and isinstance(n.body[0].value.value, str):
+                docstrings.add(id(n.body[0].value))
+        # Every string constant, including the literal parts of an f-string (a
+        # tokenizer sees those as FSTRING_MIDDLE, not STRING, on Python 3.12).
+        found = []
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Constant) and isinstance(n.value, str)) or id(n) in docstrings or " " not in n.value:
+                continue
+            if any(a["file"] == "dashboard/build.py" and a["substring"] in n.value for a in allow):
+                continue
+            for phrase, rx in matchers:
+                if rx.search(n.value):
+                    found.append(f"build.py:{n.lineno}: {phrase!r} in {n.value[:80]}")
+        self.assertEqual(found, [])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Synthetic inputs only: no network, no clock."""
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -233,6 +234,18 @@ class ShippedConfig(unittest.TestCase):
         for c in cfg["categories"]:
             self.assertIsInstance(c.get("in_loop"), bool, c["id"])
         self.assertIsInstance(cfg.get("other_in_loop"), bool)
+
+    def test_the_split_fleet_worker_is_marked_and_rated(self):
+        # _agent-guidance ADR 0046: the loop worker is in the loop, daily; the
+        # maintenance fleet worker is outside it, every 6 hours.
+        import yaml
+        cfg = yaml.safe_load((ROOT / "evals" / "automatic-spend.yml").read_text(encoding="utf-8"))
+        for name, inside, hours in (("Loop worker", True, 24), ("Fleet worker", False, 6)):
+            cat = aus.categorize(name, cfg["categories"])
+            self.assertIs(aus.loop_membership(name, cat, cfg), inside, name)
+            spec = next(v for k, v in cfg["fired_by"].items() if re.search(k, name, re.I))
+            self.assertEqual((spec["workflow"], spec["cadence_hours"]),
+                             ("_agent-guidance/fleet-worker-fire.yml", hours), name)
 
 
 class BoxyTasks(unittest.TestCase):

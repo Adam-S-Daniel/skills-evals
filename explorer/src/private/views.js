@@ -5,18 +5,21 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, utcClockToEt, utcMomentToEt } from '../core/format.js';
 import { h } from '../core/h.js';
+import { fmtPoints } from '../core/points.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, fold, srcLine, tile, badge, navLink, foldSummary } from '../views/bits.js';
+import { table, panel, fold, srcLine, tile, navLink, foldSummary } from '../views/bits.js';
 import { alertText, alertHref } from '../views/alerts.js';
 import { problemsToggle, PROBLEMS_PANEL, runName } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
 import { isTrending, alertKindLabel } from '../core/stats.js';
-import { LOOP_BRANCH, LIST_CAP, repoNumber } from '../views/loop.js';
+import { LIST_CAP, repoNumber } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
+/* A sortable column that shows one field through `f`. */
+const col = (label, k, f, num) => ({ label, num, sort: (r) => r[k], cell: (r) => f(r[k]) });
 const usd = (v) => (typeof v === 'number' ? fmtUsd(v) : STRINGS.noValue);
 const SAFE = /^https:\/\/(github\.com|claude\.ai)\//;
 export function plink(url, text) {
@@ -27,15 +30,14 @@ const ROUTE = /^#\/[a-z]/;
 export function rowLink(url, text) {
   return typeof url === 'string' && ROUTE.test(url) ? navLink(url, text) : plink(url, text);
 }
-function pill(text) {
+function pill(text, label) {
   const t = String(text || '');
   const kind = /^(Done|OK|Met|Succeeded|Passed|ok|clear)$/i.test(t) ? 'good'
     : /stalled|stopped|not started|failed|^(high|broken)$/i.test(t) ? 'bad'
       : /waiting|partly|needs|not yet|in progress|^(Running|Queued|medium)$/i.test(t) ? 'warn' : '';
-  return h('span', { class: 'st ' + kind }, clean(t));
+  return h('span', { class: 'st ' + kind }, clean(label || t));
 }
 const src = (id) => P.srcSnapshot(id);
-const isLoopBranch = (b) => LOOP_BRANCH.test(String(b || ''));
 
 /* "Monday noon ET": the weekday and clock time of a reset, in US Eastern,
    read from the reset itself rather than assumed. */
@@ -157,7 +159,7 @@ export function attentionRows(dash, doc) {
   for (const r of some(dash, 'half_built_issues') || []) {
     if (r.state !== 'open') continue;
     if (typeof r.finding_id === 'string' && r.finding_id) filed.add(r.finding_id);
-    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built', hbKind: r.kind });
+    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built', hbKind: r.kind, needsOwner: !!r.needs_owner });
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
@@ -241,6 +243,25 @@ export function groupHref(list) {
   return null;
 }
 
+/* How many of a folded kind's rows sit at each severity, worst first, so the
+   row never reads as if all of them were at the worst one. */
+export function severityCounts(list) {
+  const by = new Map();
+  for (const r of list) by.set(r.severity, (by.get(r.severity) || 0) + 1);
+  return [...by].map(([severity, count]) => ({ severity, count })).sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3));
+}
+
+/* The half-built line's counts, from the same open issue rows the Needs
+   attention table lists (attentionRows), so the two cannot disagree. Null
+   when the issues dataset is not loaded. */
+export function halfBuiltCounts(dash) {
+  const rows = some(dash, 'half_built_issues');
+  if (!rows) return null;
+  const open = rows.filter((r) => r.state === 'open');
+  return { open: open.length, high: open.filter((r) => r.severity === 'high').length, needsOwner: open.filter((r) => r.needs_owner).length,
+    fixed: rows.filter((r) => r.state === 'closed').length };
+}
+
 /* The Needs you list with a kind that has many rows folded into one row (the
    individual rows stay in `children`), so 29 copies of one notice are one
    line. attentionRows stays the flat list, which the Summary's count reads. */
@@ -257,11 +278,18 @@ export function attentionGroups(rows) {
     const names = new Set(list.map((r) => r.name).filter(Boolean));
     const since = list.map((r) => r.since).filter((x) => typeof x === 'string').sort()[0];
     const worst = list.reduce((a, r) => ((SEVERITY[r.severity] ?? 3) < (SEVERITY[a] ?? 3) ? r.severity : a), list[0].severity);
-    out.push({ kind: list[0].kind, severity: worst, what: drift ? P.driftTitle(list.length, names.size) : P.groupTitle(list.length, list[0].kind),
+    list.sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3));
+    out.push({ kind: list[0].kind, severity: worst, severities: severityCounts(list), what: drift ? P.driftTitle(list.length, names.size) : P.groupTitle(list.length, list[0].kind),
       note: drift ? P.driftNote(since ? fmtDay(parseTime(since)) : STRINGS.unknown) : list[0].acts || null, url: groupHref(list),
       helpUrl: drift ? P.driftHelpUrl : null, where: null, age: null, children: list });
   }
   return out.sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3));
+}
+
+/* A folded row's severity: one pill when its rows agree, else a count at each. */
+function attentionSeverity(r) {
+  if (!r.severities || r.severities.length < 2) return pill(r.severity);
+  return r.severities.map((s, i) => [i ? ' ' : null, pill(s.severity, s.count + ' ' + s.severity)]);
 }
 
 /* A group row's cell: its title, the note on who acts, and every row under a fold. */
@@ -269,7 +297,7 @@ function attentionWhat(r) {
   if (!r.children) return rowLink(r.url, clean(r.what));
   return [h('strong', null, rowLink(r.url, clean(r.what))), r.note ? h('p', { class: 'note' }, r.note, r.helpUrl ? [' ', plink(r.helpUrl, P.driftHelpLink)] : null) : null,
     h('details', { class: 'history' }, foldSummary(P.showAll(r.children.length)),
-      h('ul', { class: 'plain' }, r.children.map((c) => h('li', null, rowLink(c.url, clean(c.what))))))];
+      h('ul', { class: 'plain' }, r.children.map((c) => h('li', null, r.severities && r.severities.length > 1 ? [pill(c.severity), ' '] : null, rowLink(c.url, clean(c.what)), c.needsOwner ? [' ', pill(P.needsYou)] : null))))];
 }
 
 /* The use line, its bar and the room line must agree: when the guard still
@@ -306,14 +334,15 @@ export function healthStrip(doc, rh, stale) {
 function routineTable(rows) {
   return table([
     { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
-    { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
-    { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) }], rows);
+    col(P.colHealth, 'health', pill),
+    col(P.colLastRun, 'last_run', at)], rows);
 }
 
 function needsView(dash, ctx, nowMs) {
   const doc = ctx.doc;
   const waiting = rowsOf(dash, 'waiting');
   const hb = (rowsOf(dash, 'half_built_summary') || [])[0];
+  const hbc = halfBuiltCounts(dash);
   const att = attentionGroups(attentionRows(dash, doc));
   const cap = capUse(rowsOf(dash, 'eval_allowance'), rowsOf(dash, 'budget'));
   const routines = some(dash, 'routines');
@@ -325,11 +354,14 @@ function needsView(dash, ctx, nowMs) {
       { label: P.colWhat, sort: (r) => r.item, cell: (r) => plink(r.link, clean(r.item)) },
       { label: P.colWhy, sort: (r) => r.why || '', cell: (r) => clean(r.why || '') },
       { label: P.colWhere, sort: (r) => r.where, cell: (r) => clean(r.where || '') },
-      { label: P.colSince, sort: (r) => r.since, cell: (r) => at(r.since) }], waiting)] : h('p', null, P.waitingNone)) : null,
+      col(P.colSince, 'since', at)], waiting)] : h('p', null, P.waitingNone)) : null,
     panel(P.healthHeading, h('p', { class: 'big' }, healthStrip(doc, rh, staleHours(snap, nowMs, refreshHours(dash))))),
-    panel(P.attentionHeading, [h('p', { class: 'note' }, P.attentionNote), att.length ? table([
+    panel(P.attentionHeading, [h('p', { class: 'note' }, P.attentionNote),
+      hbc && hbc.open > 0 ? h('p', { class: 'note' }, P.hbLine(n(hbc.open), n(hbc.high), n(hbc.needsOwner), n(hbc.fixed)), ' ',
+        hb && hb.checked_at ? P.hbChecked(at(hb.checked_at)) + (hb.incomplete ? P.hbIncomplete : '') : P.hbNever) : null,
+      att.length ? table([
       { label: P.colKind, sort: (r) => r.kind, cell: (r) => r.kind },
-      { label: P.colSeverity, sort: (r) => r.severity, cell: (r) => pill(r.severity) },
+      { label: P.colSeverity, sort: (r) => r.severity, cell: attentionSeverity },
       { label: P.colWhat, sort: (r) => r.what, cell: attentionWhat },
       { label: P.colWhere, sort: (r) => r.where || '', cell: (r) => clean(r.where || '') },
       { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att)
@@ -337,10 +369,7 @@ function needsView(dash, ctx, nowMs) {
     cap ? panel(P.allowanceHeading, allowanceView(cap, snap, 'eval_allowance')) : null,
     rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.due, rh.attention, rh.fresh)),
       problems.length ? routineTable(problems.slice().sort((x, y) => (x.name < y.name ? -1 : 1))) : null,
-      healthy.length ? h('details', { class: 'history' }, foldSummary(P.showHealthy(healthy.length)), routineTable(healthy)) : null]) : null,
-    hb && Number(hb.open) > 0 ? h('section', { class: 'block banner', 'data-state': hb.status || 'loading' }, h('h2', null, P.hbHeading),
-      h('p', { class: 'big' }, P.hbLine(n(hb.open), n(hb.high), n(hb.broken), n(hb.needs_owner), n(hb.fixed_7d))),
-      h('p', { class: 'note' }, hb.checked_at ? P.hbChecked(at(hb.checked_at)) + (hb.incomplete ? P.hbIncomplete : '') : P.hbNever)) : null);
+      healthy.length ? h('details', { class: 'history' }, foldSummary(P.showHealthy(healthy.length)), routineTable(healthy)) : null]) : null);
 }
 
 function usageGroup(rows, keyOf) {
@@ -355,6 +384,31 @@ function usageGroup(rows, keyOf) {
     if (r.week > g.last) g.last = r.week;
   }
   return Array.from(by.values());
+}
+
+/* A cost panel value: approximate points for allowance spend, dollars for the
+   API credit and the rates (dollars per point), else as the data says. */
+const POINT_KEYS = ['points_per_verdict', 'bar_build', 'dev_points', 'sched_points_per_week'];
+const approxCell = (v) => (typeof v === 'number' ? fmtPoints(v) : STRINGS.noValue);
+/* A routine's cost: blank on a row with no cost of its own (a workflow), else as approxCell. */
+const taskPts = (v) => (v === undefined ? '' : approxCell(v));
+function costValue(r) {
+  if (r.value === null || r.value === undefined) return STRINGS.noValue;
+  if (POINT_KEYS.includes(r.key)) return approxCell(r.value);
+  if (r.key === 'api_usd_per_verdict') return usd(r.value);
+  if (/usd_per_point$/.test(r.key)) return usd(r.value) + P.perPoint;
+  return typeof r.value === 'number' ? fmtCount(r.value) : clean(r.value);
+}
+
+/* "Scheduled tasks use ≈X a week: ≈Y in the loop, ≈Z outside it…" from the
+   routines rows' cost (dashboard/build.py task_costs); null when no row has
+   one. The eval runner (lane eval_cap) is in eval runs, not this total. */
+export function taskCostLine(rows) {
+  const meter = rows.filter((r) => r.lane === 'meter'), cap = rows.filter((r) => r.lane === 'eval_cap');
+  if (!meter.length && !cap.length) return null;
+  const sum = (list) => list.reduce((t, r) => t + (r.points_per_week || 0), 0);
+  return h('p', null, P.taskCost(fmtPoints(sum(meter)), fmtPoints(sum(meter.filter((r) => r.in_loop))), fmtPoints(sum(meter.filter((r) => !r.in_loop))),
+    cap.length ? fmtPoints(sum(cap)) : '', meter.filter((r) => r.points_per_week === null).length));
 }
 
 export function makeExt(dash, opts) {
@@ -403,8 +457,8 @@ export function makeExt(dash, opts) {
       if (!rows.length) return null;
       const byRepo = usageGroup(rows, (r) => r.repo).sort((a, b) => b.uses - a.uses);
       return [h('h3', null, P.byRepoHeading), table([
-        { label: P.colRepo, sort: (g) => g.repo, cell: (g) => clean(g.repo) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
+        col(P.colRepo, 'repo', clean),
+        col(P.colUses, 'uses', n, true),
         { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], byRepo)];
     },
     /* The live merged pull requests, in the document's own shape, for the changes list. */
@@ -417,57 +471,62 @@ export function makeExt(dash, opts) {
       const sources = some(dash, 'usage_sources');
       return [panel(P.useHeading, rows.length ? [h('p', { class: 'note' }, P.useNote), asOf('usage_rows'), table([
         { label: P.colKind, sort: (g) => g.kind, cell: (g) => (g.kind === 'hook' ? 'git hook' : clean(g.kind)) },
-        { label: P.colName, sort: (g) => g.name, cell: (g) => clean(g.name) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
-        { label: P.colSessions, num: true, sort: (g) => g.sessions, cell: (g) => n(g.sessions) },
-        { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
-        { label: P.colRedCi, num: true, sort: (g) => g.overridden, cell: (g) => n(g.overridden) },
+        col(P.colName, 'name', clean),
+        col(P.colUses, 'uses', n, true),
+        col(P.colSessions, 'sessions', n, true),
+        col(P.colBlocked, 'blocked', n, true),
+        col(P.colRedCi, 'overridden', n, true),
         { label: P.colRepos, num: true, sort: (g) => g.repos.size, cell: (g) => n(g.repos.size) },
         { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], usageGroup(rows, (r) => r.kind + '|' + r.name).sort((a, b) => b.uses - a.uses), { tall: true }),
       h('h3', null, P.byWeekHeading), table([
         { label: P.colWeek, sort: (g) => g.week, cell: (g) => fmtWeekStart(g.week) },
-        { label: P.colSurface, sort: (g) => g.surface, cell: (g) => clean(g.surface) },
-        { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
-        { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
-        { label: P.colRedCi, num: true, sort: (g) => g.overridden, cell: (g) => n(g.overridden) }],
+        col(P.colSurface, 'surface', clean),
+        col(P.colUses, 'uses', n, true),
+        col(P.colBlocked, 'blocked', n, true),
+        col(P.colRedCi, 'overridden', n, true)],
       usageGroup(rows.filter((r) => r.kind !== 'guidance-check'), (r) => r.week + '|' + r.surface).sort((a, b) => (a.week < b.week ? 1 : -1)), { tall: true })] : null),
       panel(P.sourcesHeading, sources ? table([
-        { label: P.colFile, sort: (r) => r.file, cell: (r) => clean(r.file) }, { label: P.colSurface, cell: (r) => clean(r.surface) },
-        { label: P.colScope, cell: (r) => clean(r.scope) }, { label: P.colFrom, sort: (r) => r.from, cell: (r) => at(r.from) },
-        { label: P.colTo, sort: (r) => r.to, cell: (r) => at(r.to) },
+        col(P.colFile, 'file', clean), { label: P.colSurface, cell: (r) => clean(r.surface) },
+        { label: P.colScope, cell: (r) => clean(r.scope) }, col(P.colFrom, 'from', at),
+        col(P.colTo, 'to', at),
         { label: P.colRead, num: true, sort: (r) => r.scanned, cell: (r) => (r.scanned === null ? '' : fmtCount(r.scanned) + ' ' + clean(r.scanned_unit || '')) },
-        { label: P.colMade, sort: (r) => r.generated_at, cell: (r) => at(r.generated_at) }], sources) : null)];
+        col(P.colMade, 'generated_at', at)], sources) : null)];
     },
     cost() {
       const weeks = some(dash, 'cost_benefit_weeks');
-      return panel(P.costHeading, [h('p', { class: 'note' }, P.costNote), asOf('cost_benefit_summary'), table([
+      const rows = some(dash, 'cost_benefit_summary') || [];
+      const dev = (r) => r.group === 'development';
+      const sumTable = (list) => table([
         { label: P.colMeasure, cell: (r) => clean(r.label) },
-        { label: P.colValue, num: true, sort: (r) => r.value, cell: (r) => (r.value === null ? STRINGS.noValue : r.key === 'cost_per_verdict' ? usd(r.value) : typeof r.value === 'number' ? fmtCount(r.value) : clean(r.value)) },
+        { label: P.colValue, num: true, sort: (r) => r.value, cell: costValue },
         { label: P.colTarget, cell: (r) => clean(r.target || '') },
         { label: P.colStatus, cell: (r) => (r.status ? pill(r.status) : '') },
-        { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'cost_benefit_summary')),
-      weeks ? [h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
-        { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
-        { label: P.colEvalRuns, num: true, sort: (r) => r.run_count, cell: (r) => n(r.run_count) },
-        { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => n(r.run_points_est) },
-        { label: P.colApi, num: true, sort: (r) => r.api_usd, cell: (r) => usd(r.api_usd) },
-        { label: P.colThreads, num: true, sort: (r) => r.build_usd, cell: (r) => usd(r.build_usd) + (r.build_estimated ? P.estimated : '') },
-        { label: P.colThreadPoints, num: true, sort: (r) => r.build_points, cell: (r) => n(r.build_points) },
-        { label: P.colChanges, num: true, sort: (r) => r.changes, cell: (r) => n(r.changes) },
-        { label: P.colReach, num: true, sort: (r) => r.real_work_reach, cell: (r) => n(r.real_work_reach) },
-        { label: P.colMessages, num: true, sort: (r) => r.owner_messages, cell: (r) => n(r.owner_messages) }], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))),
-      h('p', { class: 'note' }, P.estimatedNote))] : null]);
+        { label: P.colNote, cell: (r) => clean(r.note || '') }], list);
+      return [panel(P.costHeading, [h('p', { class: 'note' }, P.costNote), asOf('cost_benefit_summary'), sumTable(rows.filter((r) => !dev(r))),
+        weeks ? h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
+          { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
+          col(STRINGS.colEvalRuns, 'run_count', n, true),
+          col(STRINGS.colRunPoints, 'run_points_est', approxCell, true),
+          col(STRINGS.colSchedPoints, 'sched_points', approxCell, true),
+          col(P.colAllowancePoints, 'total_points', approxCell, true),
+          col(STRINGS.colApi, 'api_usd', usd, true),
+          col(P.colChanges, 'changes', n, true),
+          col(P.colReach, 'real_work_reach', n, true),
+          col(P.colMessages, 'owner_messages', n, true)], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1)))) : null]),
+      panel(P.devHeading, [h('p', { class: 'note' }, P.devNote), sumTable(rows.filter(dev))])];
     },
     opsTop() {
-      return [panel(P.routinesTable, ok('routines') ? [asOf('routines'), table([
+      const rows = some(dash, 'routines');
+      return [panel(P.routinesTable, rows ? [asOf('routines'), taskCostLine(rows), table([
         { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
         { label: P.colDoes, cell: (r) => clean(r.what) },
         { label: P.colSchedule, cell: (r) => clean(etSchedule(r.schedule, now())) },
-        { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) },
-        { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
-        { label: P.colNote, cell: (r) => clean(etSchedule(r.note || '', now())) }], some(dash, 'routines'), { cap: 10 })] : null),
+        col(P.colLastRun, 'last_run', at),
+        col(P.colHealth, 'health', pill),
+        col(P.colRunsWeek, 'runs_per_week', n, true), col(P.colPtsRun, 'points_per_run', taskPts, true), col(P.colPtsWeek, 'points_per_week', taskPts, true),
+        { label: P.colNote, cell: (r) => clean(etSchedule(r.note || '', now())) }], rows, { cap: 10 })] : null),
       panel(P.checkinsHeading, ok('checkins') ? table([
-        { label: P.colWhen, sort: (r) => r.when, cell: (r) => at(r.when) },
+        col(P.colWhen, 'when', at),
         { label: P.colWhat, cell: (r) => clean(r.what) }], some(dash, 'checkins')) : null)];
     },
     runs() {
@@ -477,7 +536,7 @@ export function makeExt(dash, opts) {
           : Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's');
       return panel(P.runsHeading, [h('p', { class: 'note' }, P.runsNote(refreshHours(dash))), asOf('run_stream'), problemsToggle(), table([
         { label: P.colWhen, cls: 'when', sort: (r) => r.at, cell: (r) => at(r.at) },
-        { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
+        col(P.colState, 'state', pill),
         { label: P.colWhere, sort: (r) => r.source, cell: (r) => clean(r.source || '') },
         { label: P.colRun, sort: (r) => runName(r.title, r.name), cell: (r) => plink(r.link, clean(runName(r.title, r.name))) },
         { label: P.colTook, num: true, sort: (r) => r.duration_s, cell: (r) => took(r.duration_s, r) }],
@@ -488,23 +547,23 @@ export function makeExt(dash, opts) {
       const merged = some(dash, 'merged_prs') || [];
       return panel(P.prsHeading, [srcLine(P.srcLive, NaN), open.length ? [h('h3', null, P.openPrs), table([
         { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => repoNumber(p.repo, p.number, p.url) },
-        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
+        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
           p.labels ? [' ', h('span', { class: 'sub' }, clean(p.labels))] : null] },
-        { label: P.colOpened, sort: (p) => p.created_at, cell: (p) => at(p.created_at) }], open, { tall: true, cap: LIST_CAP })] : null,
+        col(P.colOpened, 'created_at', at)], open, { tall: true, cap: LIST_CAP })] : null,
       merged.length ? [h('h3', null, P.mergedPrs), prRows(merged.map((p) => Object.assign({ state: 'merged' }, p)))] : null]);
     },
     issues() {
       return panel(P.issuesHeading, [srcLine(P.srcLive, NaN), table([
         { label: STRINGS.colRepoNumber, sort: (i) => i.repo + '#' + String(i.number).padStart(9, '0'), cell: (i) => repoNumber(i.repo, i.number, i.url) },
         { label: P.colTitle, sort: (i) => i.title, cell: (i) => [plink(i.url, clean(i.title)), i.labels ? [' ', h('span', { class: 'sub' }, clean(i.labels))] : null] },
-        { label: P.colUpdated, sort: (i) => i.updated_at, cell: (i) => at(i.updated_at) }],
+        col(P.colUpdated, 'updated_at', at)],
       some(dash, 'open_issues').slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))), { tall: true, cap: LIST_CAP })]);
     },
     opsBottom() {
       return [
         panel(P.ingestsHeading, ok('eval_ingests') ? [h('p', { class: 'note' }, P.ingestsNote), table([
-          { label: P.colRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
-          { label: P.colSaved, sort: (r) => r.ingested_at, cell: (r) => at(r.ingested_at) }], some(dash, 'eval_ingests'), { tall: true })] : null),
+          { label: P.colEvalRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
+          col(P.colSaved, 'ingested_at', at)], some(dash, 'eval_ingests'), { tall: true })] : null),
         panel(P.threadsHeading, ok('threads') ? threadTables(some(dash, 'threads')) : null)];
     },
     searchExtra() {
@@ -523,8 +582,8 @@ export function makeExt(dash, opts) {
 export function threadTables(threads) {
   const cols = [
     { label: P.colThread, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title)) },
-    { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
-    { label: P.colActive, sort: (r) => r.last_active, cell: (r) => at(r.last_active) }];
+    col(P.colState, 'state', pill),
+    col(P.colActive, 'last_active', at)];
   const open = threads.filter((r) => r.state !== 'Done'), done = threads.filter((r) => r.state === 'Done');
   return [open.length ? table(cols, open) : h('p', null, P.threadsNoneOpen), fold(P.threadsDone(done.length), done.length ? table(cols, done, { tall: true }) : null)];
 }

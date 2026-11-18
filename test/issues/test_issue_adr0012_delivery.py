@@ -1042,7 +1042,13 @@ class ArmDeliveryTests(Base):
 
 class RealHookTests(Base):
     def test_the_real_hook_delivers_identical_blocks_to_both_arms(self):
-        hook = (ROOT / ".claude/hooks/fleet-memory.sh").read_bytes()
+        # The hook's source is _agent-guidance: consumer repos, this one
+        # included, no longer carry a copy (_agent-guidance ADR 0043). CI
+        # checks that repo out side by side.
+        source = ROOT.parent / "_agent-guidance" / ".claude/hooks/fleet-memory.sh"
+        if not source.is_file():
+            self.skipTest(f"no _agent-guidance checkout beside this one ({source})")
+        hook = source.read_bytes()
         self.guidance_sha = self.commit(self.guidance, {".claude/hooks/fleet-memory.sh": hook})
         self.git(self.guidance, "update-ref", "refs/remotes/origin/main", self.guidance_sha)
         self.metadata["guidance_revision"] = self.guidance_sha

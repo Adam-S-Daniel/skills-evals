@@ -37,6 +37,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 from eval_facts import (add_costs, arm_model, cli_version, cost, fired_at, iso, judge,  # noqa: E402,F401
                         objective, scored_runs)
+import loop_activity  # noqa: E402
 
 PLACEHOLDER_ID = "none"
 HB_FIXED_WINDOW = timedelta(days=7)
@@ -86,12 +87,12 @@ def eval_rows(er, report_base):
     (scripts/eval_facts.py `scored_runs`), each list given one placeholder row when empty."""
     rows, bare = scored_runs(er, report_base)
     if not bare:
-        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No bare runs yet", "skill": None,
+        bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No model-alone eval runs yet", "skill": None,
                  "model": None, "trials": None, "bare": None, "checks": None, "bare_share": None,
                  "cost_usd": None, "report_url": None, "paired_at": None, "with_share": None,
                  "without_share": None}]
     if not rows:
-        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored runs yet", "skill": None,
+        rows = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No scored eval runs yet", "skill": None,
                  "model": None, "trials": None, "with_skill": None, "without_skill": None, "checks": None,
                  "gain": None, "with_judge": None, "without_judge": None, "judge": None, "with_share": None,
                  "without_share": None, "cost_usd": None, "meter_points": None, "account_week_after": None,
@@ -369,9 +370,11 @@ PROBLEM_STATES = ("Failed", "Cancelled", "Needs approval")
 
 
 def run_stream(dump, now):
-    """Recent workflow runs and scheduled-task runs, newest first, for the console tab."""
+    """The loop's recent workflow runs and scheduled-task runs, newest first, for the
+    Activity log (scripts/loop_activity.py decides which runs are the loop's)."""
     cutoff = now - timedelta(days=STREAM_DAYS)
     seen = {}
+    names = dump.get("workflow_names") or {}
 
     def add(key, at, row):
         when = parse(at)
@@ -379,6 +382,9 @@ def run_stream(dump, now):
             seen[key] = {"key": key, "at": iso(when), **row}
 
     for w in dump.get("workflow_runs") or []:
+        workflow = names.get(f'{w.get("repo")}:{w.get("path")}')
+        if not loop_activity.workflow_in_loop(w.get("repo") or "", w.get("path"), workflow):
+            continue
         if w.get("status") == "completed":
             c = w.get("conclusion") or ""
             state = CONCLUSION_STATE.get(c, c.replace("_", " ").capitalize() or "Done")
@@ -388,10 +394,12 @@ def run_stream(dump, now):
             state = WORKFLOW_STATE.get(w.get("status"), str(w.get("status") or "").replace("_", " ").capitalize())
             dur = None
         add(w.get("html_url"), w.get("created_at"), {
-            "kind": "workflow", "source": (w.get("repo") or "").split("/")[-1], "name": w.get("workflow"),
+            "kind": "workflow", "source": (w.get("repo") or "").split("/")[-1], "name": workflow,
             "title": w.get("display_title") or w.get("workflow"), "state": state,
             "duration_s": max(dur, 0) if dur is not None else None, "link": w.get("html_url")})
     for r in dump.get("routine_runs") or []:
+        if not loop_activity.task_in_loop(r.get("name")):
+            continue
         status = str(r.get("status") or "").replace("ROUTINE_RUN_STATUS_", "")
         done = status not in ("PENDING", "RUNNING") and r.get("finished_at")
         dur = int((parse(r["finished_at"]) - parse(r["fired_at"])).total_seconds()) if done and r.get("fired_at") else None
@@ -406,7 +414,7 @@ def run_stream(dump, now):
     keep = {id(r) for r in problems} | {id(r) for r in [r for r in rows if r["state"] not in PROBLEM_STATES][:STREAM_CAP]}
     rows = [r for r in rows if id(r) in keep]
     return rows or [{"key": PLACEHOLDER_ID, "at": None, "kind": None, "source": None,
-                     "name": "No runs in the last 7 days", "title": None, "state": None,
+                     "name": "No loop runs in the last 7 days", "title": None, "state": None,
                      "duration_s": None, "link": None}]
 
 
@@ -469,7 +477,8 @@ def waiting(snap, needs_owner, reviews, open_heads, thread_dump, link_states, si
 # A cost week starts Monday 17:00 UTC (the account's weekly reset) and is labeled by that date.
 COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
 WEEK = timedelta(days=7)
-DEFAULT_POINTS_PER_USD = 0.07
+#: The display rates' one home (evals/points.yml); no default exists anywhere else.
+POINTS_CONFIG = REPO / "evals" / "points.yml"
 BAR_DUE = "2026-12-15"
 BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
 BAR_MIN_CHANGES = 3
@@ -555,12 +564,40 @@ def session_spend(samples, starts):
     return usd, estimated
 
 
-def points_per_usd(rows, build_usd, starts, now):
-    """(points per dollar, basis, weeks used): the account meter's reading over all API-equivalent spend.
+def usd_per_point(key, path=None):
+    """Dollars per point of the weekly allowance, from evals/points.yml `key`. Exits with what is wrong when
+    the file or the value is missing or not a positive number: the pages never guess a rate."""
+    import yaml
+    path = Path(path or POINTS_CONFIG)
+    try:
+        doc = yaml.safe_load(path.read_text())
+    except OSError as e:
+        sys.exit(f"{path}: cannot read the points display config ({e.strerror}); it must set {key}, "
+                 "dollars per point of the weekly allowance")
+    rate = doc.get(key) if isinstance(doc, dict) else None
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0 or rate == float("inf"):
+        sys.exit(f"{path}: {key} must be a positive number of dollars per point, got {rate!r}")
+    return float(rate)
+
+
+def eval_usd_per_point(path=None):
+    """Dollars of routine eval runs per point (evals/points.yml)."""
+    return usd_per_point("eval_usd_per_point", path)
+
+
+def scheduled_usd_per_point(path=None):
+    """Dollars of scheduled-task runs per point (evals/points.yml)."""
+    return usd_per_point("scheduled_task_usd_per_point", path)
+
+
+def thread_usd_per_point(rows, build_usd, starts, now, eval_rate, other_points=None):
+    """(project-thread dollars per point or None, basis, weeks used), derived from the account meter.
 
     For each complete cost week with an account reading (the largest `account_week_after`, a percent, so
-    points, among plan runs fired in it): reading divided by that week's thread spend plus plan-run dollars,
-    summed over the weeks. Without such a week, the default."""
+    points, among the eval runs fired in it): the reading less that week's eval points (eval dollars over
+    `eval_rate`) and its `other_points` ({week index: points}, the scheduled tasks') is what the threads
+    used. Thread dollars over those points, summed over the weeks. None, with the reason, when no week has a
+    reading or the readings leave no points for the threads."""
     points = usd = weeks = 0
     for i, s in enumerate(starts):
         if s + WEEK > now:
@@ -569,13 +606,16 @@ def points_per_usd(rows, build_usd, starts, now):
         seen = [r["account_week_after"] for r in mine if r.get("account_week_after") is not None]
         if not seen:
             continue
-        points += max(seen)
-        usd += build_usd.get(i, 0) + sum(r["cost_usd"] or 0 for r in mine)
+        points += max(seen) - sum(r["cost_usd"] or 0 for r in mine) / eval_rate - ((other_points or {}).get(i) or 0)
+        usd += build_usd.get(i, 0)
         weeks += 1
-    if not weeks or usd <= 0:
-        return DEFAULT_POINTS_PER_USD, f"default {DEFAULT_POINTS_PER_USD}: no complete week with an account reading yet", 0
-    return points / usd, (f"account meter \u00f7 all API-equivalent spend over {weeks} complete weeks; assumes nearly "
-                          "all account use is this project, so it is an upper bound on points per dollar"), weeks
+    if not weeks:
+        return None, "no complete week has an account meter reading yet", 0
+    if points <= 0 or usd <= 0:
+        return None, f"the account meter readings of {weeks} complete weeks leave no points for project threads", weeks
+    return usd / points, (f"thread dollars over the account meter's weekly reading less eval and scheduled-task points, {weeks} complete "
+                          "weeks; the meter also counts use outside this project, so development points are an upper "
+                          "bound"), weeks
 
 
 def api_billed_usd(er, starts):
@@ -636,15 +676,54 @@ def r2(v):
     return None if v is None else round(v, 2)
 
 
+def approx(value, unit):
+    """'≈12.3 points' for allowance spend (approximate: dollars at a rate); '$4.50' for API credit."""
+    if value is None:
+        return "no value"
+    return f"\u2248{value:,.1f} points" if unit == "points" else f"${value:,.2f}"
+
+
+def scheduled_week_usd(sched, starts, now):
+    """{week index: dollars} of scheduled-task runs: `sched` (usd_per_week, since) a week from the week holding
+    `since` (the fire ledger's first recorded run; earlier weeks have no measurement), the current week only
+    for its elapsed part. An estimate: each task's runs a week times its median run cost."""
+    if not sched or sched.get("usd_per_week") is None or sched.get("since") is None:
+        return {}
+    out = {}
+    for i, s in enumerate(starts):
+        if s + WEEK <= sched["since"]:
+            continue
+        out[i] = sched["usd_per_week"] * min(1.0, (now - s) / WEEK)
+    return out
+
+
 def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
-                 raw=None):
+                 raw=None, eval_rate=None, sched=None, sched_rate=None, fire_sessions=()):
     """(weeks rows, summary rows) for the Spend and use group's cost panel. `raw`, a
-    dict, receives the week rows and the cost per verdict before rounding."""
+    dict, receives the week rows, the totals and the rates before rounding.
+
+    What the system uses is eval runs and scheduled tasks, both from the weekly Max allowance and shown as
+    approximate points (`eval_rate` and `sched_rate`, evals/points.yml), plus API-billed eval runs, paid
+    from the monthly API credit, kept in dollars and never in a points total. `sched` is
+    {usd_per_week, since} from scheduled_tasks (None without the fire ledger: no value, never a guess).
+
+    Project threads are development (Adam building and refining the system, Adam 2026-11-17): reported
+    apart (summary rows with group "development"), at the rate thread_usd_per_point derives from the
+    account meter, and never added to a system total. A session in `fire_sessions` (the fire ledger's
+    session ids) is a scheduled-task run that a project made, so it is left out of development.
+    `run_meter_points`, the meter's movement during skill eval runs, stays in the data for reference only."""
+    eval_rate = eval_usd_per_point() if eval_rate is None else eval_rate
+    sched_rate = scheduled_usd_per_point() if sched_rate is None else sched_rate
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
     starts = week_starts(start, now)
-    build_usd, build_est = session_spend(samples, starts)
-    ppu, basis, _ = points_per_usd(plan, build_usd, starts, now)
+    fire_sessions = set(fire_sessions)
+    dev_usd, dev_est = session_spend([r for r in samples if r.get("session_id") not in fire_sessions], starts)
+    sched_usd = scheduled_week_usd(sched, starts, now)
+    thread_rate, basis, _ = thread_usd_per_point(plan, dev_usd, starts, now, eval_rate,
+                                                 {i: u / sched_rate for i, u in sched_usd.items()})
+    # No thread dollars is no development points at any rate; any other amount needs the derived rate.
+    to_dev_points = lambda usd: 0.0 if not usd else None if thread_rate is None else usd / thread_rate
     api = api_billed_usd(er, starts)
     changes = [c for c in loop_changes(prs) if week_of(c["merged_at"], starts) is not None]
     verdicts = decided_count(explorer)
@@ -657,73 +736,109 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
         week_run_usd = sum(r["cost_usd"] or 0 for r in mine)
         run_usd += week_run_usd
         week_run_usds.append(week_run_usd)
-        run_points_est = week_run_usd * ppu
-        build_points = build_usd.get(i, 0) * ppu
-        api_usd = api.get(i, 0)
+        run_points_est = week_run_usd / eval_rate
+        sched_points = sched_usd[i] / sched_rate if i in sched_usd else None
         weeks.append({
-            "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points, "api_usd": api_usd,
-            "build_usd": build_usd.get(i, 0), "build_points": build_points, "build_estimated": i in build_est,
-            "total_points": run_points_est + build_points + api_usd * ppu,
+            "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points,
+            "sched_points": sched_points,
+            "total_points": None if sched_points is None else run_points_est + sched_points,
+            "api_usd": api.get(i, 0), "dev_usd": dev_usd.get(i, 0), "dev_points": to_dev_points(dev_usd.get(i, 0)),
+            "dev_estimated": i in dev_est,
             "changes": sum(1 for c in changes if week_of(c["merged_at"], starts) == i),
             "real_work_reach": sum(week_uses(c, label, usage_rows) for c in changes if c["merged_at"] < end),
             "owner_messages": sum(1 for m in msgs.values() if week_of(parse(m["sent_at"]), starts) == i),
             "verdicts": verdicts if i == len(starts) - 1 else None})
     complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
     last = complete[-1] if complete else None
-    total_usd = run_usd + sum(build_usd.values()) + sum(api.values())
+    thread_usd, api_usd, sched_total = sum(dev_usd.values()), sum(api.values()), sum(sched_usd.values())
+    run_points, dev_points = run_usd / eval_rate, to_dev_points(thread_usd)
+    sched_points = sched_total / sched_rate if sched_usd else None
+    points = None if sched_points is None else run_points + sched_points
     reached = 0
     for c in changes:
         if any(week_uses(c, s.date().isoformat(), usage_rows) for s in starts if c["merged_at"] < s + WEEK):
             reached += 1
     bar_changes = reached >= BAR_MIN_CHANGES
-    bar_build = last is not None and last["build_points"] < BAR_MAX_BUILD_POINTS
+    dev_known = last is not None and last["dev_points"] is not None
+    bar_build = dev_known and last["dev_points"] < BAR_MAX_BUILD_POINTS
     due = f"Due {day_text(BAR_DUE)}"
     status = lambda ok: "Met" if ok else "Not met"
+    since = day_text(start.date())
+    sched_since = day_text(starts[min(sched_usd)].date()) if sched_usd else None
+    sched_week = sched["usd_per_week"] / sched_rate if sched and sched.get("usd_per_week") is not None else None
     summary = [
-        {"key": "cost_per_verdict", "label": "Cost per decided verdict", "value": total_usd / verdicts if verdicts else None,
-         "target": None, "status": None,
-         "note": f"API-equivalent dollars since {day_text(start.date())}: ${total_usd:,.2f} over {verdicts} decided verdicts"},
+        {"key": "points_per_verdict", "label": "Allowance per decided verdict",
+         "value": points / verdicts if verdicts and points is not None else None, "target": None, "status": None,
+         "note": f"Approximate. What the system used of the weekly Max allowance since {since}: "
+                 f"{approx(points, 'points')} (eval runs {approx(run_points, 'points')}, scheduled tasks "
+                 + (f"{approx(sched_points, 'points')} from {sched_since}" if sched_usd else "no value")
+                 + f") over {verdicts} decided verdicts. Development is not included"},
+        {"key": "api_usd_per_verdict", "label": "API credit per decided verdict",
+         "value": api_usd / verdicts if verdicts else None, "target": None, "status": None,
+         "note": f"API-billed eval runs, paid from the monthly API credit, not the allowance: {approx(api_usd, 'usd')} "
+                 f"since {since} over {verdicts} decided verdicts"},
+        {"key": "sched_points_per_week", "label": "Scheduled tasks a week", "value": sched_week, "target": None,
+         "status": None, "note": "Estimated: each task's runs a week times its median run cost on its current model"
+                                 + (f"; {len(sched['unmeasured'])} unmeasured" if sched and sched.get("unmeasured") else "")
+                                 + ". The eval runner is counted in eval runs"},
         {"key": "decision_yield", "label": "Decision yield", "value": f"{len(changes)} of {verdicts}",
          "target": None, "status": None,
-         "note": "Loop changes merged since " + day_text(start.date()) + " out of decided verdicts"
+         "note": "Loop changes merged since " + since + " out of decided verdicts"
                  + ("" if verdicts else " (no decided verdicts yet)")},
         {"key": "real_work_reach", "label": "Real-work reach, latest complete week",
          "value": last["real_work_reach"] if last else None, "target": None, "status": None,
          "note": "Uses of changed skills and guidance in the " + week_text(last["week"]) if last else "No complete week yet"},
         {"key": "bar_changes", "label": "Changes used in real work", "value": reached,
          "target": f"at least {BAR_MIN_CHANGES}", "status": status(bar_changes),
-         "note": f"{due}. Merged loop changes whose subject was used at least once after the merge"},
-        {"key": "bar_build", "label": "Build cost, latest complete week", "value": r2(last["build_points"]) if last else None,
-         "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build),
-         "note": f"{due}. " + ("Build spend in the " + week_text(last["week"]) if last else "No complete week yet")},
-        {"key": "points_per_usd", "label": "Points per dollar", "value": round(ppu, 4), "target": None,
-         "status": None, "note": basis},
+         "note": f"{due}. Merged loop changes whose target was used at least once after the merge"},
+        {"key": "eval_usd_per_point", "label": "Eval run dollars per point", "value": eval_rate, "target": None,
+         "status": None, "note": "The measured rate in evals/points.yml (quiet overnight windows, Nov 10 to 12)"},
+        {"key": "sched_usd_per_point", "label": "Scheduled-task dollars per point", "value": sched_rate,
+         "target": None, "status": None, "note": "evals/points.yml: the eval run rate, the closest measured one"},
+        {"key": "dev_points", "label": "Development since " + since, "value": dev_points, "target": None,
+         "status": None, "group": "development",
+         "note": "Approximate. Project threads: you building and refining the system, not its own use"},
+        {"key": "bar_build", "label": "Development, latest complete week", "group": "development",
+         "value": last["dev_points"] if last else None,
+         "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build) if dev_known else None,
+         "note": f"{due}. " + (("Approximate points of project-thread spend in the " + week_text(last["week"])
+                               if dev_known else "No development rate yet: " + basis) if last else "No complete week yet")},
+        {"key": "thread_usd_per_point", "label": "Development dollars per point", "value": thread_rate,
+         "target": None, "status": None, "group": "development", "note": "Derived: " + basis},
     ]
+    for row in summary:
+        row.setdefault("group", "system")
     if now >= BAR_JUDGED_AT:
-        summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None,
+        summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None, "group": "system",
                         "value": "Met: keep the eval system" if bar_changes and bar_build
                         else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {day_text(BAR_DUE)}"})
     if raw is not None:
-        raw["weeks"] = [{**w, "run_usd": u} for w, u in zip(weeks, week_run_usds)]
-        raw["cost_per_verdict"] = summary[0]["value"]
-        raw["total"] = {"since": start.date().isoformat(), "usd": total_usd, "run_usd": run_usd,
-                        "thread_spend_usd": sum(build_usd.values()), "api_usd": sum(api.values()),
-                        "verdicts": verdicts, "cost_per_verdict": summary[0]["value"]}
+        raw["weeks"] = [{**w, "run_usd": u, "scheduled_usd": sched_usd.get(i)}
+                        for i, (w, u) in enumerate(zip(weeks, week_run_usds))]
+        raw["rates"] = {"eval_usd_per_point": eval_rate, "scheduled_task_usd_per_point": sched_rate,
+                        "thread_usd_per_point": thread_rate}
+        system = run_usd + sched_total + api_usd
+        raw["total"] = {"since": start.date().isoformat(), "usd": system, "run_usd": run_usd,
+                        "scheduled_usd": sched_total if sched_usd else None,
+                        "scheduled_since": starts[min(sched_usd)].date().isoformat() if sched_usd else None,
+                        "api_usd": api_usd, "thread_spend_usd": thread_usd, "verdicts": verdicts,
+                        "cost_per_verdict": system / verdicts if verdicts else None}
     if not weeks:
-        weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
-                  "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
-                  "real_work_reach": None, "owner_messages": None, "verdicts": None}]
+        weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None,
+                  "sched_points": None, "total_points": None, "api_usd": None, "dev_usd": None, "dev_points": None,
+                  "dev_estimated": None, "changes": None, "real_work_reach": None, "owner_messages": None,
+                  "verdicts": None}]
     for w in weeks:
-        for k in ("run_points_est", "run_meter_points", "api_usd", "build_usd", "build_points", "total_points"):
+        for k in ("run_points_est", "run_meter_points", "sched_points", "total_points", "api_usd", "dev_usd", "dev_points"):
             w[k] = r2(w[k])
     for row in summary:
         if isinstance(row["value"], float):
-            row["value"] = r2(row["value"]) if row["key"] != "points_per_usd" else row["value"]
+            row["value"] = r2(row["value"])
     return weeks, summary
 
 
 def half_built(dump, now):
-    """(issue rows, summary rows) for the Overview banner: open half-built or broken findings, plus those fixed in 7 days."""
+    """(issue rows, one check-status row) for Needs attention: open half-built or broken findings, plus those fixed in 7 days."""
     dump = dump if isinstance(dump, dict) else {}
     checked = parse(dump.get("checked_at"))
     order = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
@@ -744,13 +859,10 @@ def half_built(dump, now):
     # High severity first, then what needs Adam, then the rest by severity; oldest first within each.
     rows.sort(key=lambda r: (r["state"] != "open", r["severity"] != "high", not r["needs_owner"],
                              order.get(r["severity"], 3), -(r["age_days"] or 0)))
-    opened_ = [r for r in rows if r["state"] == "open"]
-    count = lambda field, v: sum(1 for r in opened_ if r[field] == v)
-    status = "not-checked" if checked is None else "attention" if opened_ else "clear"
-    summary = [{"key": "all", "open": len(opened_), "high": count("severity", "high"), "broken": count("kind", "broken"),
-                "partial": count("kind", "partial"), "implied_only": count("kind", "implied-only"),
-                "idle": count("kind", "idle"), "needs_owner": count("needs_owner", "needs you"), "fixed_7d": len(rows) - len(opened_),
-                "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")), "status": status}]
+    status = "not-checked" if checked is None else "attention" if any(r["state"] == "open" for r in rows) else "clear"
+    # No counts here: the page counts the issue rows themselves, so its line and its table cannot disagree.
+    summary = [{"key": "all", "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")),
+                "status": status}]
     return rows or [{"key": PLACEHOLDER_ID, "repo": None, "number": None, "url": None, "title": None, "state": None,
                      "kind": None, "severity": None, "finding_id": None, "needs_owner": "", "opened": None, "age_days": None,
                      "closed_at": None}], summary
@@ -759,33 +871,32 @@ def half_built(dump, now):
 def spend_file(raw, now, plan=None):
     """The weekly totals in spend/weekly.json's shape (explorer/schema.json,
     `spend_file`), from cost_benefit's unrounded weeks: totals only, never a
-    session or thread row. Each week carries its three dollar parts (`run_usd`,
-    `thread_spend_usd`, `api_usd`); cost per verdict is a total over all weeks,
-    so it lives once in `total`, never on a week."""
+    session or thread row. Each week carries the system's dollar parts (`run_usd`,
+    `api_usd`, `scheduled_usd`, null before the fire ledger) and development's
+    `thread_spend_usd`, never in a system total; cost per verdict is a total over all weeks,
+    so it lives once in `total`, never on a week. `rates` carries the dollars
+    per point the pages convert allowance spend with (cost_benefit)."""
     out = [{"week": w["week"], "eval_runs": w["run_count"], "plan_meter_points": w["run_meter_points"],
-            "run_usd": w.get("run_usd"), "api_usd": w["api_usd"], "thread_spend_usd": w["build_usd"]}
+            "run_usd": w.get("run_usd"), "scheduled_usd": w.get("scheduled_usd"), "api_usd": w["api_usd"],
+            "thread_spend_usd": w["dev_usd"]}
            for w in raw.get("weeks") or []]
     doc = {"schema": 1, "generated_at": iso(now), "weeks": out}
     if raw.get("total"):
         doc["total"] = raw["total"]
+    if raw.get("rates"):
+        doc["rates"] = raw["rates"]
     if plan:
         doc["plan"] = plan
     return doc
 
 
-def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14):
-    """The `loop_jobs` block of spend/weekly.json: the loop's own automatic jobs'
-    weekly meter use, measured by scripts/automatic_spend.py `breakdown` from the
-    build's `triggers.json`, the fire ledger and, for `fired_by`, the scanned
-    workflows. None without a ledger (ROUTINE_FIRES_LEDGER unset or missing), so
-    the block is omitted rather than guessed. `points_per_week` is meter points
-    (percent of the weekly allowance): dollars at the budget's `points_per_usd`,
-    as scripts/forecast_catch_up.py converts them."""
+def task_breakdown(inputs, config, workflows_root, now, ledger=None, window_days=14):
+    """(scripts/automatic_spend.py `breakdown` doc, the ledger's fires) over the build's `triggers.json`, the
+    fire ledger and, for `fired_by`, the scanned workflows; None without a ledger (ROUTINE_FIRES_LEDGER unset
+    or missing) or workflows: a task fired through `fired_by` (the fleet worker) would have no rate."""
     import yaml
     import automatic_spend
     if not ledger or not os.path.isfile(ledger) or not workflows_root:
-        # Without the workflows, a task fired through `fired_by` (the fleet
-        # worker) has no rate and would read as $0: omit, never undercount.
         return None
     wrapped = load(os.path.join(inputs, "triggers.json"), {})
     rows = wrapped.get("data", wrapped) if isinstance(wrapped, dict) else wrapped
@@ -801,15 +912,63 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14):
         row.setdefault("name", names.get(row.get("id")) or row.get("id"))
         triggers[row["id"]] = row
     cfg = yaml.safe_load(open(REPO / "evals" / "automatic-spend.yml"))
+    fires = automatic_spend.load_fires([ledger])
     workflows = automatic_spend.scan_workflows(Path(workflows_root))
-    doc = automatic_spend.breakdown(cfg, triggers, automatic_spend.load_fires([ledger]), workflows,
-                                    [], now, window_days)
+    return automatic_spend.breakdown(cfg, triggers, fires, workflows, [], now, window_days), fires
+
+
+def scheduled_tasks(tb):
+    """{usd_per_week, since, unmeasured, sessions} for the cost panel from task_breakdown's result: the
+    measured weekly dollars of every scheduled task on the allowance meter (the eval runner, lane eval_cap, is
+    inside eval runs), the first recorded run, the unmeasured tasks' names and every recorded run's session
+    id. None without a breakdown."""
+    if not tb:
+        return None
+    doc, fires = tb
+    tasks = [j for j in doc["jobs"] if j["kind"] == "scheduled task" and j["lane"] == "meter"]
+    times = [t for t in (parse(r.get("fired_at")) for r in fires) if t is not None]
+    return {"usd_per_week": sum(j["usd_per_week"] or 0 for j in tasks),
+            "unmeasured": sorted(j["name"] for j in tasks if j["usd_per_week"] is None),
+            "since": min(times) if times else None,
+            "sessions": {r["session_id"] for r in fires if r.get("session_id")}}
+
+
+def task_costs(rows, tb, rate):
+    """Add each scheduled task's cost to its routines row, in approximate points at `rate`: `runs_per_week`,
+    `points_per_run`, `points_per_week`, `in_loop` and `lane` (`meter`, or `eval_cap` for the eval runner,
+    whose spend is in eval runs). A task with no recorded run on its current model reads null, never a guess;
+    a row with no scheduled-task cost (a workflow: GitHub Actions minutes use no allowance) gets none of these
+    fields, so the page leaves its cells blank."""
+    jobs = {j["id"]: j for j in (tb[0]["jobs"] if tb else []) if j["kind"] == "scheduled task"}
+    for r in rows:
+        j = jobs.get(r["id"])
+        if not j:
+            continue
+        r.update({"runs_per_week": r2(j["fires_per_week"]),
+                  "points_per_run": None if j.get("usd_per_fire") is None else r2(j["usd_per_fire"] / rate),
+                  "points_per_week": None if j.get("usd_per_week") is None else r2(j["usd_per_week"] / rate),
+                  "in_loop": j.get("in_loop"), "lane": j["lane"]})
+    rows.sort(key=lambda r: r.get("points_per_week") if r.get("points_per_week") is not None else -1, reverse=True)
+    return rows
+
+
+def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, tb=None):
+    """The `loop_jobs` block of spend/weekly.json: the loop's own automatic jobs'
+    weekly meter use from task_breakdown's result (`tb`, else read here). None without one, so the
+    block is omitted rather than guessed. `points_per_week` is meter points
+    (percent of the weekly allowance): dollars at the budget's `points_per_usd`,
+    as scripts/forecast_catch_up.py converts them."""
+    import yaml
+    import automatic_spend
+    tb = tb or task_breakdown(inputs, config, workflows_root, now, ledger, window_days)
+    if not tb:
+        return None
+    doc, fires = tb
     usd = doc["loop_meter_usd_per_week"]
     # No in-loop job may count as $0. One with a rate but no fire on its current
     # model is priced at its dearest recorded fire on any model; one never costed
     # at all (a new task) at the dearest fire of any in-loop task. A rate that
     # cannot be read (its firing workflow was not scanned) omits the block.
-    fires = automatic_spend.load_fires([ledger])
     loop_ids = {j["id"] for j in doc["jobs"] if j.get("in_loop")}
     def dearest(ids):
         costs = [c for c in (automatic_spend._cost(r) for r in fires
@@ -834,7 +993,8 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14):
 # Datasets the page reads only when they exist: build() never writes them.
 OPTIONAL_DATASETS = {"explorer_private"}
 
-def build(results, inputs, config, now, raw=None):
+def build(results, inputs, config, now, raw=None, tb=None):
+    """Every dataset. `tb` is task_breakdown's result (None: scheduled-task cost reads as no value)."""
     site = load(os.path.join(config, "site.json"))
     snap = load(os.path.join(config, "snapshots.json"))
     inp = lambda name, default=None: load(os.path.join(inputs, name), default)
@@ -853,6 +1013,9 @@ def build(results, inputs, config, now, raw=None):
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
+    sched_rate = scheduled_usd_per_point()
+    task_costs(out["routines"], tb, sched_rate)
+    sched = scheduled_tasks(tb)
     out["run_stream"] = run_stream(inp("run_stream.json", {}), now)
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
     out["waiting"] = waiting(snap, inp("needs_owner.json", []), inp("waiting_reviews.json", []),
@@ -865,7 +1028,7 @@ def build(results, inputs, config, now, raw=None):
         results, plan_rows, out["usage_rows"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now,
-        raw=raw)
+        raw=raw, sched=sched, sched_rate=sched_rate, fire_sessions=sched["sessions"] if sched else ())
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
     return out
 
@@ -877,11 +1040,13 @@ def main(argv=None):
     ap.add_argument("--now", help="ISO time to build as of (default: now)")
     ap.add_argument("--spend", help="also write the weekly cost totals here, in spend/weekly.json's shape")
     ap.add_argument("--workflows-root", help="a folder holding <repo>/.github/workflows checkouts (_agent-guidance), for "
-                    "automatic-spend.yml `fired_by`; only the spend file's loop_jobs reads it")
+                    "automatic-spend.yml `fired_by`; scheduled-task cost and the spend file's loop_jobs read it "
+                    "with ROUTINE_FIRES_LEDGER")
     a = ap.parse_args(argv)
     now = parse(a.now) if a.now else datetime.now(timezone.utc)
     raw = {}
-    out = build(a.results, a.inputs, a.config, now, raw=raw)
+    tb = task_breakdown(a.inputs, a.config, a.workflows_root, now, os.environ.get("ROUTINE_FIRES_LEDGER"))
+    out = build(a.results, a.inputs, a.config, now, raw=raw, tb=tb)
     os.makedirs(a.out, exist_ok=True)
     for name, rows in out.items():
         if not rows:  # the page reads [] as "a source failed to load"
@@ -892,8 +1057,7 @@ def main(argv=None):
         site = load(os.path.join(a.config, "site.json"), {})
         with open(a.spend, "w") as f:
             doc = spend_file(raw, now, site.get("plan"))
-            jobs = loop_jobs(a.inputs, a.config, a.workflows_root, now,
-                             os.environ.get("ROUTINE_FIRES_LEDGER"))
+            jobs = loop_jobs(a.inputs, a.config, a.workflows_root, now, tb=tb)
             if jobs:
                 doc["loop_jobs"] = jobs
             json.dump(doc, f, indent=1)

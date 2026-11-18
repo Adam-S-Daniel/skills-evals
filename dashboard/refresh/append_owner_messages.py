@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Append the owner's own messages to inputs/owner_messages.jsonl (a ledger).
 
-usage: append_owner_messages.py --read-through <ISO time> '<json list>' | @<file>
+usage: append_owner_messages.py --read-through <ISO time> [--chat-cursor <cursor>] '<json list>' | @<file>
 
 Each item: {message_id, sent_at, thread_id}; thread_id is null for the project
 chat. Ids and times only, never message text. Ids already in the ledger are
@@ -14,6 +14,12 @@ stops when it lags the newest thread activity by more than 24 hours. The
 ledger stopped on 2026-11-04 and nothing noticed until the 2026-11-12 UX
 review (C6), because a quiet ledger looks the same as a quiet owner; the
 read-through time tells the two apart.
+
+--chat-cursor is the read_project_chat cursor that fetched the chat's last page
+this run. read_project_chat pages oldest first, so without it every run paged
+the whole chat (20 pages, about 370k characters on 2026-11-18) to reach a few
+new messages; the next run starts from the saved cursor instead. Left out, the
+saved cursor is kept.
 """
 import datetime
 import json
@@ -36,6 +42,11 @@ def iso(s):
 
 
 def main(argv):
+    cursor = None
+    if len(argv) == 5 and argv[2] == "--chat-cursor":
+        cursor, argv = argv[3], argv[:2] + argv[4:]
+        if not cursor.strip():
+            sys.exit("--chat-cursor is empty")
     if len(argv) != 3 or argv[0] != "--read-through":
         sys.exit(__doc__)
     through = iso(argv[1])
@@ -59,9 +70,16 @@ def main(argv):
         for r in new:
             f.write(json.dumps(r) + "\n")
     newest = max([r["sent_at"] for r in new], default=None)
-    json.dump({"read_through": through,
-               "written_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
-              open(MARK, "w"))
+    if cursor is None:
+        try:
+            cursor = json.load(open(MARK)).get("chat_cursor")
+        except (OSError, ValueError):
+            cursor = None
+    mark = {"read_through": through,
+            "written_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if cursor:
+        mark["chat_cursor"] = cursor
+    json.dump(mark, open(MARK, "w"))
     print(f"appended {len(new)} of {len(items)}; newest {newest}; read through {through}")
 
 

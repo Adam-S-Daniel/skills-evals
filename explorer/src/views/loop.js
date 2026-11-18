@@ -1,13 +1,15 @@
 /* The loop's records the Changes page shows: fixture requests, where lessons
    went, and which pull requests are the loop's own. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtCount, fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtCount } from '../core/format.js';
+import { spendCell } from '../core/points.js';
 import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { table, srcLineFor } from './bits.js';
 import { barChart, chartTitle } from '../core/charts.js';
 
-const usd = (x) => fmtUsd(Number(x) || 0);
+/* A fixture request's eval runs are allowance spend: approximate points. */
+const usd = (x) => spendCell(Number(x) || 0, 'eval');
 
 /* What fixture_queue.py's findings say, by kind (read off the finding id), and
    each one as a link to what it names. */
@@ -36,7 +38,7 @@ export function fixtureRequestsView(doc, refMs) {
       { label: STRINGS.colAge, num: true, sort: (r) => r.ageDays, cell: (r) => (r.ageDays === null ? '' : STRINGS.ageDays(Math.round(r.ageDays))) },
       { label: STRINGS.colPr, sort: (r) => r.prs, cell: (r) => (r.prs ? link(r.prUrl, STRINGS.prState(r.merged, r.prs)) : '') },
       { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + ' (' + r.realWork + ')' },
-      { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
+      { label: STRINGS.colEvalRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
       { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd(r.costUsd) }
     ], fq.rows, { tall: true, foot: [fq.unlisted && Object.assign({ subject: STRINGS.fqUnlisted }, fq.unlisted), fq.noRequest && Object.assign({ subject: STRINGS.fqNoRequest }, fq.noRequest)]
       .filter(Boolean).map((r) => Object.assign({ issueUrl: null, kind: '', state: '', ageDays: null, prs: 0 }, r)) }) : null];

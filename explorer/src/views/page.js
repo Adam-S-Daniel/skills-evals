@@ -3,6 +3,7 @@
    one banner above every group. */
 import { STRINGS } from '../core/strings.js';
 import { parseTime } from '../core/format.js';
+import { useRates } from '../core/points.js';
 import { h } from '../core/h.js';
 import { skillItems, sectionItems, wholeGuidance, purposeOf, usesOf } from '../core/items.js';
 import { groupOf, GROUPS, hashFor } from '../core/route.js';
@@ -85,6 +86,7 @@ export const usesUtcDays = (route) => UTC_ROUTES.includes(route.name) || ['skill
    the private build's overlays; the public build passes none. */
 export function renderRoute(doc, route, opts) {
   const o = opts || {};
+  useRates(doc);
   indexDoc(doc, (d) => purposeOf(d), (id) => (Object.prototype.hasOwnProperty.call(GLOSSES, id) ? GLOSSES[id] : GLOSS_MISSING));
   const ctx = { doc, route, url: o.url || DEFAULT_DATA_URL, ext: o.ext || null, onFilter: o.onFilter, onClear: o.onClear };
   if (isSearching(o.search)) return h('div', null, searchView(doc, o.search, ctx));

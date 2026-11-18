@@ -2088,6 +2088,21 @@ class GuidanceRemovalTests(unittest.TestCase):
             os.environ.update(old)
         return rc, gh, pushed, out.getvalue()
 
+    def test_removal_without_the_payload_mirror_does_not_recreate_it(self):
+        # _agent-guidance ADR 0043 deletes .claude/hooks/fleet-guidance.md.
+        root = guidance_repo(self)
+        sh(root, "git", "rm", "-q", ".claude/hooks/fleet-guidance.md")
+        sh(root, "git", "commit", "-q", "-m", "drop mirror")
+        rc, _gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(pushed, ["retire-guidance/bravo"])
+        self.assertFalse((root / ".claude/hooks/fleet-guidance.md").exists())
+        changed = sh(root, "git", "show", "--name-only", "--format=", "HEAD").stdout.split()
+        self.assertEqual(sorted(changed), sorted([
+            "AGENTS.md", "agents-md/base.md", "agents-md/eval-coverage.yml",
+            "docs/guidance-impact.md"]))
+        self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")
+
     def test_auto_mode_opens_one_auto_merging_removal(self):
         root = guidance_repo(self)
         rc, gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root)
@@ -2277,7 +2292,8 @@ class GuidanceRemovalTests(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         plan = json.loads(out)
         self.assertEqual(plan["action"], "guidance-removal")
-        self.assertIn(["copy", "agents-md/base.md", ".claude/hooks/fleet-guidance.md"],
+        self.assertIn(["copy", "agents-md/base.md", ".claude/hooks/fleet-guidance.md",
+                       "(when _agent-guidance still has the mirror)"],
                       plan["would_run"])
         self.assertEqual(pushed, [])
         self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")

@@ -262,7 +262,7 @@ jobs:
           fi
 
       - name: Verify action lockfile
-        uses: Adam-S-Daniel/verify-actions-lock@v1.1.0
+        uses: Adam-S-Daniel/verify-actions-lock@v1.2.0
         with:
           working-directory: skills-evals
 

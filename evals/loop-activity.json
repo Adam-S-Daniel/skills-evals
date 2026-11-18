@@ -1,0 +1,25 @@
+{
+  "pull_branch_prefixes": [
+    "eval-improve/",
+    "claude/eval-improve-",
+    "eval-guidance-improve/",
+    "claude/eval-guidance-improve-",
+    "draft-skill/",
+    "retire-skill/",
+    "retire-guidance/",
+    "agent/lesson-check-",
+    "hook-pin-bump/",
+    "skills-lock-bump/",
+    "sync/update"
+  ],
+  "issue_title_prefixes": [
+    "Prompt-audit sweep ",
+    "Memory promotion ",
+    "Retire skill ",
+    "Retire guidance section "
+  ],
+  "issue_labels": [
+    "hook-proposal",
+    "skill-proposal"
+  ]
+}

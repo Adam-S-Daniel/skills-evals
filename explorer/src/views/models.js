@@ -29,7 +29,7 @@ export function modelCharts(pooled, subject) {
     return h('div', null,
       chartTitle(STRINGS.barTitle[subject === 'guidance' ? 'guidance' : subject === 'whole' ? 'whole' : 'skills'](name)),
       h('p', { class: 'model' }, Math.max(m.n, m.nAbl) + ' ', defn('comparisonRun', Math.max(m.n, m.nAbl) === 1 ? 'comparison run' : 'comparison runs'),
-        m.judgeWith !== null && m.judgeWithout !== null ? ['; ', defn('judge', 'judge score'), ' ' + m.judgeWith.toFixed(1) + ' with, ' + m.judgeWithout.toFixed(1) + ' without (out of 10)'] : null),
+        m.judgeWith !== null && m.judgeWithout !== null ? ['; ', defn('judge', 'judge score'), ' ' + m.judgeWith.toFixed(1) + ' with, ' + m.judgeWithout.toFixed(1) + ' without (0 to 10)'] : null),
       barChart(rows, STRINGS.chartLabel(name)));
   });
 }

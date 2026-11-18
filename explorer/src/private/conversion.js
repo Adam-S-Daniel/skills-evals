@@ -4,7 +4,8 @@
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
-import { fmtCount, fmtUsd, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { fmtCount, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { spendText } from '../core/points.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';
@@ -104,7 +105,8 @@ export function conversionTotals(doc) {
   };
 }
 
-const usd = (x) => fmtUsd(x);
+/* Eval run spend is allowance spend: approximate points (core/points.js). */
+const usd = (x) => spendText(x, 'eval');
 const money = (t) => usd(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : '');
 const pct = (p, t) => Math.round((p / t) * 100) + '%';
 
@@ -137,7 +139,7 @@ function dayChart(days, mode) {
       }
     }
     const tip = total ? P.conversionTip(fmtDayKey(d.date), fmtCount(total), SEGMENTS.filter((k) => d[k])
-      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : fmtDayKey(d.date) + ': 0 runs';
+      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : fmtDayKey(d.date) + ': 0 eval runs';
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0, 'data-tip': tip }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
       kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), fmtDayKey(d.date)));

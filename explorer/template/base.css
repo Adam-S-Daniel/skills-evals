@@ -190,6 +190,29 @@
 .ex .spark { max-width: 320px; margin-top: 10px; }
 .ex .mark:hover, .ex .mark:focus { opacity: 0.75; outline: none; }
 .ex .trend-cap { font-size: 0.86rem; color: var(--muted); margin: 8px 0 0; }
+/* The whole-guidance comparison taken apart: a line per section, then week pairs. */
+.ex .spread-wrap { margin-top: 22px; }
+.ex .spread { margin: 10px 0 0; border-top: 3px solid var(--ink); }
+.ex .spread-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(110px, 1fr) minmax(0, 1.2fr); gap: 2px 14px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--base); }
+.ex .spread-axis { padding: 3px 0; border-bottom: 0; }
+.ex .spread-scale { display: flex; justify-content: space-between; font: 500 0.64rem/1.4 var(--ex-mono); letter-spacing: 0.06em; color: var(--muted); }
+.ex .spread-group { margin: 0; padding: 12px 0 4px; font: 600 0.7rem/1.4 var(--ex-mono); letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid var(--ink); }
+.ex .spread-group .sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.ex .spread-name { font-size: 0.92rem; overflow-wrap: anywhere; }
+.ex .spread-nums { font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.ex .spread-nums .sub { display: block; }
+@media (max-width: 560px) {
+  .ex .spread-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
+  .ex .spread-name { grid-column: 1 / -1; }
+  .ex .spread-axis > span:first-child { display: none; }
+}
+.ex .pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 18px 22px; margin: 12px 0 0; }
+.ex .pair { border-top: 3px solid var(--ink); padding-top: 6px; }
+.ex .pair-head { margin: 0 0 4px; font: 600 0.7rem/1.4 var(--ex-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.ex .pair-chart { max-width: 260px; }
+.ex .pair-gap { margin: 4px 0 0; font-size: 0.9rem; font-weight: 700; }
+.ex .pair .sub { margin: 2px 0 0; }
+.ex .weekmix { font-size: 0.92rem; }
 .ex .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
 .ex ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
 .ex ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }

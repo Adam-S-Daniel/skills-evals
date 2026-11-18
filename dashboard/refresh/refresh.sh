@@ -1,5 +1,6 @@
 #!/bin/bash
-# usage: DASHBOARD_HOME=<private dashboard folder> refresh.sh '<json trigger updates>' '<json {thread_suffix: last_activity}>'
+# usage: DASHBOARD_HOME=<private dashboard folder> ROUTINE_FIRES_LEDGER=<ledger> WORKFLOWS_ROOT=<folder> \
+#          refresh.sh '<json trigger updates>' '<json {thread_suffix: last_activity}>'
 # Run from a skills-evals checkout detached at origin/main (dashboard/README.md "Refresh").
 # This script never checks out another commit: bash reads a script as it runs.
 set -e
@@ -117,9 +118,16 @@ bash "$SE/dashboard/refresh/half_built.sh"
 # Paths are not tied to one session's container (2026-11-12: the refresh had
 # to move sessions, and its baseline lived in the old session's scratchpad).
 cd "$SE" && git fetch -q origin +persistent/eval-results:refs/remotes/origin/persistent/eval-results
+# Scheduled-task cost (the routines table and the cost panel's Scheduled tasks row) is priced from the fire
+# ledger, and the fleet worker's rate from the workflow that fires it: without either, every figure would
+# read as no value, so stop instead (dashboard/README.md "Refresh", step 5).
+[ -n "${ROUTINE_FIRES_LEDGER:-}" ] && [ -f "$ROUTINE_FIRES_LEDGER" ] || { echo "STOP: ROUTINE_FIRES_LEDGER is unset or not a file (${ROUTINE_FIRES_LEDGER:-unset}). Clone adam-agentskills-private's persistent/usage-events branch, export ROUTINE_FIRES_LEDGER=<clone>/spend/routine-fires.jsonl (README step 5) and run again."; exit 1; }
+[ -f "${WORKFLOWS_ROOT:-/nonexistent}/_agent-guidance/.github/workflows/fleet-worker-fire.yml" ] || { echo "STOP: WORKFLOWS_ROOT (${WORKFLOWS_ROOT:-unset}) holds no _agent-guidance/.github/workflows/fleet-worker-fire.yml. Sparse-clone _agent-guidance's .github/workflows under it (README step 5) and run again."; exit 1; }
+ROUTINE_FIRES_LEDGER=$(cd "$(dirname "$ROUTINE_FIRES_LEDGER")" && pwd)/$(basename "$ROUTINE_FIRES_LEDGER"); export ROUTINE_FIRES_LEDGER
+WORKFLOWS_ROOT=$(cd "$WORKFLOWS_ROOT" && pwd)
 S=${REFRESH_WORK:-/tmp/dashboard-refresh}; ER=$S/er_now; DS=$S/ds_now; rm -rf "$ER" "$DS"; mkdir -p "$ER" "$DS"
 git archive origin/persistent/eval-results | tar -x -C $ER
-python3 dashboard/build.py --results $ER --inputs "$DASHBOARD_HOME/inputs/" --config "$DASHBOARD_HOME/config/" --out $DS >/dev/null
+python3 dashboard/build.py --results $ER --inputs "$DASHBOARD_HOME/inputs/" --config "$DASHBOARD_HOME/config/" --out $DS --workflows-root "$WORKFLOWS_ROOT" >/dev/null
 for f in waiting threads routines cost_benefit_weeks refresh; do [ -s $DS/$f.json ] || { echo "STOP: build.py did not write $f.json this run"; exit 1; }; done
 # explorer_private goes to the private artifact only, never to ds/ here.
 if grep -q explorer_private dashboard/page/datasets.json 2>/dev/null; then

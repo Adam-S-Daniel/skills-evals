@@ -56,7 +56,7 @@ function windowOf(counts, arm, when) {
 }
 const judgeOf = (counts, when) => { const w = counts && counts.with && counts.with[when]; return w && isNum(w.judge_mean) ? w.judge_mean : null; };
 const of = (w) => STRINGS.trendOf(fmtCount(w.checks_passed), fmtCount(w.checks_total));
-const earlierRuns = (w) => ['the earlier ', fmtCount(w.runs), ' ', defn('run', w.runs === 1 ? 'run' : 'runs')];
+const earlierRuns = (w) => ['the earlier ', fmtCount(w.runs), ' ', defn('run', w.runs === 1 ? 'eval run' : 'eval runs')];
 const latestRuns = (w) => ['the latest ', fmtCount(w.runs)];
 
 /* The sentence for one measure, with "judge score", "check", "run" and
@@ -71,13 +71,13 @@ function sentence(a, noun, up) {
   const hasFromTo = isNum(a.previous) && isNum(a.current);
   if (a.measure === 'judge') {
     const nodes = [judge('judge score'), hasFromTo
-      ? ' (out of 10) fell from ' + fmt2(a.previous) + ' to ' + fmt2(a.current) + ', a drop of ' + fmt2(a.drop) + '. '
-      : ' (out of 10) fell by ' + fmt2(a.drop) + '. ', STRINGS.trendJudgeNeeds(fmt2(a.threshold), fmt2(a.noise))];
+      ? ' (0 to 10) fell from ' + fmt2(a.previous) + ' to ' + fmt2(a.current) + ', a drop of ' + fmt2(a.drop) + '. '
+      : ' (0 to 10) fell by ' + fmt2(a.drop) + '. ', STRINGS.trendJudgeNeeds(fmt2(a.threshold), fmt2(a.noise))];
     if (wp && wc) nodes.push(' ', checks('Checks'), ' passed: ', of(wp), ' in ', earlierRuns(wp), ', ', of(wc), ' in ', latestRuns(wc), '.');
     return nodes;
   }
   const jp = judgeOf(counts, 'previous'), jc = judgeOf(counts, 'current');
-  const judgeMoved = (what) => (isNum(jp) && isNum(jc) ? [' ', defn('judgeScore', 'Judge score'), ' (out of 10)' + what + ': ' + fmt2(jp) + ' earlier, ' + fmt2(jc) + ' lately.'] : []);
+  const judgeMoved = (what) => (isNum(jp) && isNum(jc) ? [' ', defn('judgeScore', 'Judge score'), ' (0 to 10)' + what + ': ' + fmt2(jp) + ' earlier, ' + fmt2(jc) + ' lately.'] : []);
   if (a.measure === 'objective') {
     const nodes = hasFromTo && wp && wc
       ? [checks(U('checks')), ' passed fell from ', pct(a.previous), ' (' + of(wp) + ') in ', earlierRuns(wp), ' to ', pct(a.current), ' (' + of(wc) + ') in ', latestRuns(wc), '.']

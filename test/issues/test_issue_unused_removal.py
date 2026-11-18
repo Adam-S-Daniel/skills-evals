@@ -21,6 +21,7 @@ a fake `gh`; no network, no clock.
 from __future__ import annotations
 
 import json
+import random
 import sys
 import tempfile
 import unittest
@@ -294,6 +295,478 @@ class UnusedRemovalTests(unittest.TestCase):
         got = decide(census(cloud=3400, local=1))
         self.assertEqual(got["accrued_usd"],
                          3400 * 100 * 3.5 / 119000 + 1 * 100 * 0.81 / 119000)
+
+
+def paced(listings=(), uses=(), *, local=(), cloud_from=None, generated=NOW, recorded=True,
+          cloud_source=True, keys=(SKILL, KEPT)):
+    """A fresh census with full cloud listings per week (`listings`: (ISO week
+    label, sessions)), local ones (`local`), and `uses` (ISO week label,
+    count) of SKILL. Counted from long before the window unless `cloud_from`
+    (the Monday the cloud records start; counted a week later) says otherwise."""
+    floor = NOW - timedelta(weeks=20)
+    rows = [skill_usage.listing_row(week, "full", n, CLOUD) for week, n in listings]
+    rows += [skill_usage.listing_row(week, "full", n) for week, n in local]
+    rows += [skill_usage.row(week, "skill", SKILL, n, 1) for week, n in uses]
+    doc = skill_usage.document(
+        rows, generated, floor, sessions_scanned=1,
+        cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": recorded},
+        skill_keys=list(keys))
+    if cloud_source:
+        skill_usage.add_rows(doc, [], skill_usage.digest_source(
+            cloud_from or floor, generated, 0, surface=CLOUD))
+    return doc
+
+
+def every_week(n, first=35, last=42):
+    """`n` cloud sessions in each ISO week from `first` through `last` of 2026."""
+    return [(f"2026-W{w}", n) for w in range(first, last + 1)]
+
+
+def deadline(doc, **kw):
+    kw.setdefault("d", 100)
+    kw.setdefault("surfaces", BOTH)
+    return removal_policy.unused_deadline(
+        kw.pop("policy", POLICY), doc, kw.pop("skill", SKILL), kw.pop("surfaces"),
+        kw.pop("d"), NOW, set(kw.pop("exempt", ())))
+
+
+# d = 100 on cloud costs 100 * 3.5 / 119000 USD per session, so the 8-week
+# floor window needs 3400 sessions to reach V = 10 (425 a week exactly).
+CLOUD_SESSION_USD = 100 * 3.5 / 119000
+# NOW is Sunday 2026-10-25, in the week that starts Monday 2026-10-19 (W43).
+
+
+def use_by(removable_from: str) -> str:
+    """The `use_by` for a `removable_from` date: the day before it, less the
+    age of census a removal may read (the constant, not a restated 1 day)."""
+    day = datetime.fromisoformat(removable_from) - timedelta(days=1) - skill_usage.CENSUS_MAX_AGE
+    return day.date().isoformat()
+
+
+class UnusedDeadlineTests(unittest.TestCase):
+    def test_never_used_at_pace_is_removable_this_week(self):
+        # 430 a week through W42: window W36-W43 is 7 actual weeks plus W43 at
+        # the mean of the 8 complete weeks (430), 8 * 430 sessions = 10.12 USD.
+        got = deadline(paced(every_week(430)))
+        self.assertEqual(got["state"], "date")
+        self.assertEqual((got["use_by"], got["removable_from"]), (use_by("2026-10-19"), "2026-10-19"))
+        self.assertIsNone(got["last_use_week"])
+        self.assertAlmostEqual(got["projected_usd"], 8 * 430 * CLOUD_SESSION_USD)
+        self.assertFalse(decide(paced(every_week(430)))["remove"])  # W43 has no sessions yet
+
+    def test_a_use_pushes_the_deadline_to_the_last_use_plus_the_floor(self):
+        # Used in W41 (Monday 2026-10-05): no use may sit in the window, so it
+        # starts W42 (2026-10-12) and ends W49 (2026-11-30 = 10-05 + 8 weeks).
+        got = deadline(paced(every_week(430), uses=[("2026-W41", 2)]))
+        self.assertEqual(got["state"], "date")
+        self.assertEqual(got["last_use_week"], "2026-10-05")
+        self.assertEqual((got["use_by"], got["removable_from"]), (use_by("2026-11-30"), "2026-11-30"))
+        # A use in the current week counts too, and the date follows it.
+        got = deadline(paced(every_week(430), uses=[("2026-W43", 1)]))
+        self.assertEqual(got["last_use_week"], "2026-10-19")
+        self.assertEqual(got["removable_from"], "2026-12-14")  # 10-19 + 8 weeks
+        # An old use before the window is no obstacle.
+        got = deadline(paced(every_week(430), uses=[("2026-W20", 9)]))
+        self.assertEqual((got["last_use_week"], got["removable_from"]), ("2026-05-11", "2026-10-19"))
+
+    def test_a_census_that_starts_late_pushes_the_date_past_its_coverage(self):
+        # Cloud records start Monday 2026-10-05, counted from 10-12: the window
+        # must start on or after that, so W49 again, even with no use at all.
+        got = deadline(paced(every_week(430), cloud_from=datetime(2026, 10, 5, tzinfo=timezone.utc)))
+        self.assertEqual(got["state"], "date")
+        self.assertIsNone(got["last_use_week"])
+        self.assertEqual(got["removable_from"], "2026-11-30")
+        self.assertEqual(got["use_by"], use_by("2026-11-30"))
+
+    def test_too_little_exposure_never_reaches_a_date(self):
+        # 200 a week costs 0.588 USD; 8 weeks of it is 4.7 USD, under V = 10.
+        got = deadline(paced(every_week(200)))
+        self.assertEqual(got["state"], "not-at-pace")
+        self.assertEqual((got["use_by"], got["removable_from"]), (None, None))
+        self.assertAlmostEqual(got["projected_usd"], POLICY["floor_weeks"] * 200 * CLOUD_SESSION_USD)
+        # A longer description is dearer per session, so the same traffic is at pace.
+        self.assertEqual(deadline(paced(every_week(200)), d=220)["state"], "date")
+
+    def test_due_when_the_rule_holds_now(self):
+        got = deadline(paced(every_week(500, 36, 43)))
+        self.assertEqual(got["state"], "due")
+        self.assertEqual(got["removable_from"], "2026-10-19")
+        self.assertIsNone(got["use_by"])
+        self.assertAlmostEqual(got["projected_usd"], 4000 * CLOUD_SESSION_USD)
+        self.assertEqual(got["projected_usd"], decide(paced(every_week(500, 36, 43)))["accrued_usd"])
+
+    def test_due_exactly_when_unused_removal_removes(self):
+        fixtures = [
+            dict(doc=paced(every_week(500, 36, 43))),
+            dict(doc=paced(every_week(425, 36, 43))),                  # 3400: the threshold
+            dict(doc=paced(every_week(424, 36, 43))),                  # 3392: one short
+            dict(doc=paced(every_week(430))),
+            dict(doc=paced(every_week(500, 36, 43), uses=[("2026-W40", 1)])),
+            dict(doc=paced(every_week(500, 36, 43)), exempt={SKILL}),
+            dict(doc=paced(every_week(500, 36, 43), recorded=False)),
+            dict(doc=paced(every_week(500, 36, 43), keys=(KEPT,))),
+            dict(doc=paced(every_week(500, 36, 43), generated=NOW - timedelta(days=15))),
+            dict(doc=paced(every_week(500, 36, 43), cloud_from=datetime(2026, 8, 31, tzinfo=timezone.utc))),
+            dict(doc=paced(every_week(500, 36, 43)), surfaces=(LOCAL,)),
+            dict(doc=paced(local=every_week(10 ** 6, 36, 43)), surfaces=(LOCAL,),
+                 policy={**POLICY, "local_removal": True}),
+            dict(doc=None),
+        ]
+        states = set()
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture):
+                args = dict(surfaces=BOTH, exempt=(), policy=POLICY) | {k: v for k, v in fixture.items()
+                                                                       if k != "doc"}
+                got = deadline(fixture["doc"], **args)
+                want = decide(fixture["doc"], surfaces=args["surfaces"], exempt=args["exempt"],
+                              policy=args["policy"])["remove"]
+                self.assertEqual(got["state"] == "due", want, got)
+                states.add(got["state"])
+        self.assertIn("due", states)
+        self.assertGreater(len(states), 2)
+
+    def test_exempt(self):
+        got = deadline(paced(every_week(500, 36, 43)), exempt={SKILL})
+        self.assertEqual(got["state"], "exempt")
+        self.assertEqual((got["use_by"], got["removable_from"], got["projected_usd"]),
+                         (None, None, None))
+
+    def test_local_only(self):
+        got = deadline(paced(local=every_week(10 ** 6)), surfaces=(LOCAL,))
+        self.assertEqual(got["state"], "local-only")
+        self.assertIsNone(got["use_by"])
+        # With local removal on, a local-only skill gets a date like any other.
+        on = deadline(paced(local=every_week(2000)), surfaces=(LOCAL,),
+                      policy={**POLICY, "local_removal": True})
+        self.assertEqual(on["state"], "date")
+
+    def test_unknown(self):
+        cases = {
+            "no census": None,
+            "stale census": paced(every_week(500), generated=NOW - timedelta(days=15)),
+            "untracked skill": paced(every_week(500), keys=(KEPT,)),
+            "cloud listing not recorded": paced(every_week(500), recorded=False),
+            "no cloud counted source": paced(every_week(500), cloud_source=False),
+        }
+        for name, doc in cases.items():
+            with self.subTest(case=name):
+                got = deadline(doc)
+                self.assertEqual(got["state"], "unknown", got)
+                self.assertEqual((got["use_by"], got["removable_from"], got["projected_usd"]),
+                                 (None, None, None))
+                self.assertTrue(got["why"])
+
+    def test_no_complete_counted_week_sets_no_pace(self):
+        # Cloud records start on 2026-10-12, counted from 10-19: no complete week.
+        got = deadline(paced(cloud_from=datetime(2026, 10, 12, tzinfo=timezone.utc)))
+        self.assertEqual(got["state"], "unknown")
+
+
+def stale_cloud(doc, to: datetime):
+    """`doc` with every cloud source's `to` set to `to`: a carried cloud
+    source that stopped being read days before the census was generated."""
+    for source in doc["sources"]:
+        if source.get("surface") == CLOUD:
+            source["to"] = to.strftime(skill_usage.STAMP)
+    return doc
+
+
+class UnusedDeadlineProjectionTests(unittest.TestCase):
+    """The deadline never errs late: a week not yet fully counted costs at
+    least what it has shown, the census's end is the earliest `to`, and
+    `use_by` allows for the age of census a removal may read."""
+
+    def test_the_current_week_is_never_costed_below_what_it_has_shown(self):
+        # Tuesday of W43. Eight weeks (W35-W42) at 400 cloud listings, d = 100:
+        # one cloud session costs 100 * 3.5 / 119000, so the threshold is 3400.
+        now = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+
+        def run(listings, **kw):
+            doc = paced(listings, generated=now, **kw)
+            return removal_policy.unused_deadline(POLICY, doc, SKILL, BOTH, 100, now, set())
+
+        # 500 so far in W43, 1.5 days into it: the week is scaled up to a
+        # whole one, 500 * 7 / 1.5 sessions, so W36-W43 (2800 + 2333.3) passes
+        # 3400 and the date is this week. Costing W43 at the 500 it has shown
+        # (3300 sessions) would read not-at-pace: late.
+        got = run(every_week(400, 35, 42) + [("2026-W43", 500)])
+        self.assertEqual(got["state"], "date")
+        self.assertEqual(got["removable_from"], "2026-10-19")
+        self.assertAlmostEqual(got["projected_usd"],
+                               (7 * 400 + 500 * 7 / 1.5) * CLOUD_SESSION_USD)
+        # 600 so far: W36-W43 is 2800 + 600 = 3400 sessions, so due.
+        got = run(every_week(400, 35, 42) + [("2026-W43", 600)])
+        self.assertEqual(got["state"], "due")
+        self.assertEqual(got["removable_from"], "2026-10-19")
+        # A slow week stays at the pace: 50 so far scaled up (233.3) is under
+        # the 400 pace, so W43 counts 400 and the steady state holds.
+        got = run(every_week(400, 35, 42) + [("2026-W43", 50)])
+        self.assertEqual(got["state"], "not-at-pace")
+        self.assertAlmostEqual(got["projected_usd"], 8 * 400 * CLOUD_SESSION_USD)
+        # A burst that the pace alone would miss: W35 is heavy, so the pace is
+        # (3000 + 7 * 300) / 8 = 637.5. With 1000 in W43 by Tuesday noon (not
+        # due: 3100 sessions), W43 scales to 4666.7 and W36-W43 passes 3400
+        # now; costing W43 at the pace alone (3075 for W37-W44) would say W45.
+        got = run([("2026-W35", 3000)] + every_week(300, 36, 42) + [("2026-W43", 1000)])
+        self.assertEqual(got["state"], "date")
+        self.assertEqual(got["removable_from"], "2026-10-19")
+        self.assertGreaterEqual(got["projected_usd"], POLICY["value_per_use_usd"])
+
+    def test_data_ending_just_after_monday_is_not_scaled_into_a_burst(self):
+        # Monday of W43, 00:30: 30 cloud sessions so far after eight weeks at
+        # 400 (threshold 3400 at d = 100). Scaled by 30 minutes' share they
+        # would read 10080 a week and a false date this week; the share is
+        # held to one day, so W43 reads 210, under the pace, and counts 400:
+        # 3200 sessions, never 3400.
+        now = datetime(2026, 10, 19, 0, 30, tzinfo=timezone.utc)
+        doc = paced(every_week(400, 35, 42) + [("2026-W43", 30)], generated=now)
+        got = removal_policy.unused_deadline(POLICY, doc, SKILL, BOTH, 100, now, set())
+        self.assertEqual(got["state"], "not-at-pace", got)
+        self.assertAlmostEqual(got["projected_usd"], 8 * 400 * CLOUD_SESSION_USD)
+
+    def test_a_stale_carried_cloud_source_makes_its_week_a_projected_one(self):
+        # Friday of W43; the cloud source stopped 6 days before (Saturday of
+        # W42), so W42 holds only what was seen by then: 60 sessions.
+        now = datetime(2026, 10, 23, 12, tzinfo=timezone.utc)
+        doc = stale_cloud(paced(every_week(430, 35, 41) + [("2026-W42", 60)], generated=now),
+                          now - timedelta(days=6))
+        got = removal_policy.unused_deadline(POLICY, doc, SKILL, BOTH, 100, now, set())
+        # Pace is the mean of W35-W41 (430). W42 is projected at it, so W36-W43
+        # is 8 * 430 minus W42's shortfall made up: 3440 sessions, over 3400.
+        self.assertEqual(got["state"], "date", got)
+        self.assertEqual(got["removable_from"], "2026-10-19")
+        self.assertAlmostEqual(got["projected_usd"], 8 * 430 * CLOUD_SESSION_USD)
+        # Not due: the census is not current, so unused_removal refuses.
+        self.assertFalse(removal_policy.unused_removal(POLICY, doc, SKILL, BOTH, 100, now,
+                                                       set())["remove"])
+
+    def test_use_by_is_the_day_before_less_the_age_of_census_a_removal_reads(self):
+        got = deadline(paced(every_week(430)))
+        self.assertEqual(got["state"], "date")
+        removable = datetime.fromisoformat(got["removable_from"])
+        want = removable - timedelta(days=1) - skill_usage.CENSUS_MAX_AGE
+        self.assertEqual(got["use_by"], want.date().isoformat())
+        # A use on `use_by` is seen by a census generated within CENSUS_MAX_AGE
+        # of the removal's Monday.
+        self.assertLess(datetime.fromisoformat(got["use_by"]) + skill_usage.CENSUS_MAX_AGE,
+                        removable)
+
+    def test_a_row_whose_week_is_not_an_iso_monday_is_skipped_not_raised(self):
+        base = paced(every_week(430), uses=[("2026-W41", 1)])
+        bad_weeks = ("2026-11-10", "garbage", "2026-W43", "", None, 5, "2026-10-19T00:00")
+        bad_rows = []
+        for week in bad_weeks:
+            for entry in (skill_usage.row("2026-W42", "skill", SKILL, 7, 1),
+                          skill_usage.listing_row("2026-W42", "full", 9999, CLOUD),
+                          skill_usage.listing_row("2026-W42", "full", 9999, LOCAL)):
+                bad_rows.append({**entry, "week": week})
+        doc = {**base, "rows": base["rows"] + bad_rows}
+        for surface in (LOCAL, CLOUD):
+            self.assertEqual(skill_usage.listing_by_week(doc, surface),
+                             skill_usage.listing_by_week(base, surface))
+        self.assertEqual(skill_usage.uses_by_week(doc, SKILL),
+                         skill_usage.uses_by_week(base, SKILL))
+        self.assertEqual(skill_usage.weight(doc, SKILL, NOW), skill_usage.weight(base, SKILL, NOW))
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW, BOTH, 8),
+                         skill_usage.exposure_by_surface(base, NOW, BOTH, 8))
+        for week in ("2026-11-10", "garbage", None, 5):
+            self.assertIsNone(skill_usage.week_key(week))
+        self.assertEqual(skill_usage.week_key("2026-11-09"),
+                         datetime(2026, 11, 9, tzinfo=timezone.utc))
+        self.assertEqual(deadline(doc), deadline(base))
+        self.assertEqual(decide(doc), decide(base))
+
+    def test_no_surfaces_is_unknown_even_with_local_removal_off(self):
+        for local_removal in (False, True):
+            with self.subTest(local_removal=local_removal):
+                got = deadline(paced(every_week(430)), surfaces=(),
+                               policy={**POLICY, "local_removal": local_removal})
+                self.assertEqual(got["state"], "unknown")
+                self.assertIn("no surface", got["why"])
+                self.assertEqual((got["use_by"], got["removable_from"]), (None, None))
+
+
+def _label(monday: datetime) -> str:
+    year, week, _ = monday.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+class DeadlineNeverLateProperty(unittest.TestCase):
+    """Property: if the pace holds, a skill the deadline says is not removable
+    before `removable_from` is never removed before it, and one it calls
+    `not-at-pace` is never removed. The future is simulated day by day: each
+    later week gets the pace's sessions spread evenly by weekday, and every
+    simulated day a fresh census (generated_at and every source `to` that day)
+    goes through `unused_removal`."""
+
+    CASES = 200
+    SEED = 20261116
+
+    @staticmethod
+    def build(rng):
+        d = rng.randint(50, 600)
+        cur = datetime(2026, 10, 19, tzinfo=timezone.utc) + timedelta(weeks=rng.randint(0, 12))
+        day = rng.randint(0, 6)
+        now = cur + timedelta(days=day, hours=12)
+        start = cur - timedelta(weeks=rng.randint(6, 14))
+        counted = {LOCAL: start, CLOUD: start + timedelta(weeks=rng.randint(0, 3))}
+        # Steady accrual as a multiple of the value of one use, split across
+        # the surfaces; near 1 the case sits on the threshold.
+        ratio, share = rng.uniform(0.5, 1.7), rng.choice([0.0, 1.0, rng.random(), rng.random()])
+        per_week = {}
+        for surface, part in ((CLOUD, share), (LOCAL, 1 - share)):
+            full = POLICY["value_per_use_usd"] * POLICY["prefix_tokens"] / (
+                d * POLICY["reread_usd_per_session"][surface] * POLICY["floor_weeks"])
+            per_week[surface] = ratio * part * full
+        series = {s: {} for s in BOTH}
+        week = start - timedelta(weeks=1)
+        while week < cur - timedelta(weeks=1):
+            week += timedelta(weeks=1)
+            for surface in BOTH:
+                n = 0 if rng.random() < 0.05 else int(per_week[surface] * rng.uniform(0.8, 1.2))
+                series[surface][week] = n
+        uses = []
+        if rng.random() < 0.2:
+            uses.append((cur - timedelta(weeks=rng.randint(0, 9)), rng.randint(1, 3)))
+        return d, cur, day, now, start, counted, series, uses
+
+    @staticmethod
+    def pace(cur, counted, series):
+        out = {}
+        for surface in BOTH:
+            weeks = [cur - timedelta(weeks=k) for k in range(1, POLICY["floor_weeks"] + 1)]
+            weeks = [m for m in weeks if counted[surface] <= m]
+            out[surface] = sum(series[surface].get(m, 0) for m in weeks) / len(weeks)
+        return out
+
+    def run_case(self, rng, tally):
+        d, cur, day, now, start, counted, series, uses = self.build(rng)
+        pace = self.pace(cur, counted, series)
+        # The current week so far: usually the pace's share, sometimes a burst.
+        seen = {}
+        for surface in BOTH:
+            so_far = int(pace[surface] * day / 7 * (rng.uniform(1, 3) if rng.random() < 0.4 else 1))
+            seen[surface] = (so_far, max(int(pace[surface]), so_far))
+
+        def current(surface, k):
+            so_far, total = seen[surface]
+            return so_far + (total - so_far) * (k - day) // (7 - day)
+
+        template = skill_usage.document(
+            [], now, start, sessions_scanned=1,
+            cloud_guidance={"from": start, "records_scanned": 1, "listing_recorded": True},
+            skill_keys=[SKILL])
+        skill_usage.add_rows(template, [], skill_usage.digest_source(
+            counted[CLOUD] - timedelta(days=7), now, 0, surface=CLOUD))
+        base = [skill_usage.row(_label(m), "skill", SKILL, n, 1) for m, n in uses]
+        base += [skill_usage.listing_row(_label(m), "full", n, surface)
+                 for surface in BOTH for m, n in series[surface].items()]
+
+        def census_on(offset):
+            """The census generated `offset` days after `now`."""
+            moment = now + timedelta(days=offset)
+            week, k = divmod(day + offset, 7)
+            rows = list(base)
+            for surface in BOTH:
+                for j in range(week + 1):
+                    if j == 0:
+                        n = current(surface, k) if week == 0 else seen[surface][1]
+                    elif j < week:
+                        n = int(pace[surface])
+                    else:
+                        n = int(pace[surface]) * k // 7
+                    if n:
+                        rows.append(skill_usage.listing_row(
+                            _label(cur + timedelta(weeks=j)), "full", n, surface))
+            stamp = moment.strftime(skill_usage.STAMP)
+            return moment, {**template, "generated_at": stamp, "rows": rows,
+                            "sources": [{**src, "to": stamp} for src in template["sources"]]}
+
+        def removed(offset):
+            moment, doc = census_on(offset)
+            return removal_policy.unused_removal(POLICY, doc, SKILL, BOTH, d, moment, set())["remove"]
+
+        got = removal_policy.unused_deadline(POLICY, census_on(0)[1], SKILL, BOTH, d, now, set())
+        tally[got["state"]] += 1
+        if got["state"] == "due":
+            self.assertTrue(removed(0), got)
+            return
+        if got["state"] == "date":
+            horizon = (datetime.fromisoformat(got["removable_from"]).replace(tzinfo=timezone.utc)
+                       - now).days + 15
+        elif got["state"] == "not-at-pace":
+            horizon = 10 * 7
+        else:
+            return
+        for offset in range(horizon + 1):
+            if not removed(offset):
+                continue
+            day_x = now + timedelta(days=offset)
+            self.assertEqual(got["state"], "date", (offset, got))
+            rf = datetime.fromisoformat(got["removable_from"]).replace(tzinfo=timezone.utc)
+            self.assertLessEqual(rf, day_x, (offset, got))
+            use_by = datetime.fromisoformat(got["use_by"]).replace(tzinfo=timezone.utc)
+            self.assertLess(use_by + skill_usage.CENSUS_MAX_AGE, day_x, (offset, got))
+            tally["removed"] += 1
+            tally["removed-at-" + ("rf" if day_x - rf < timedelta(days=7) else "later")] += 1
+            return
+
+    def test_a_removal_is_never_earlier_than_the_deadline_when_the_pace_holds(self):
+        import collections
+        rng = random.Random(self.SEED)
+        tally = collections.Counter()
+        for index in range(self.CASES):
+            with self.subTest(case=index):
+                self.run_case(rng, tally)
+        # Not vacuous: each state and an actual simulated removal occurred.
+        self.assertGreaterEqual(tally["due"], 10, tally)
+        self.assertGreaterEqual(tally["date"], 30, tally)
+        self.assertGreaterEqual(tally["not-at-pace"], 10, tally)
+        self.assertGreaterEqual(tally["removed"], 20, tally)
+
+
+class UsageRefactorRegressionTests(unittest.TestCase):
+    """`weight` and `exposure_by_surface` now sum `uses_by_week` and
+    `listing_by_week`; their answers did not change."""
+
+    def test_weight_sums_calls_reads_and_cloud_digests_in_the_window(self):
+        doc = census(cloud=5, local=3, uses=[(SKILL, 2), (f"adam-coding-anywhere:{SKILL}", 3),
+                                             (KEPT, 100)])
+        rows = [skill_usage.row("2026-W30", "skill", SKILL, 50, 1),              # before the window
+                skill_usage.row("2026-W42", "skill", SKILL, 4, 1),
+                skill_usage.read_row("2026-10-12", SKILL, 7),
+                skill_usage.read_row("2026-10-12", KEPT, 700),
+                skill_usage.digest_row("2026-10-19", SKILL, None, "a" * 12, 11, 1, CLOUD),
+                skill_usage.digest_row("2026-10-19", SKILL, None, "b" * 12, 13, 1, LOCAL)]  # ignored
+        skill_usage.add_rows(doc, rows, skill_usage.digest_source(NOW - timedelta(weeks=20), NOW, 0))
+        # Calls 2 + 3 + 4, the read 7 and the cloud digest 11; never the local digest.
+        self.assertEqual(skill_usage.weight(doc, SKILL, NOW), 27)
+        self.assertEqual(skill_usage.weight(doc, SKILL, NOW, weeks=1), 16)   # W43: 2 + 3 + 11
+        self.assertEqual(skill_usage.weight(doc, SKILL, NOW, weeks=20), 77)  # adds W30's 50
+        self.assertEqual(skill_usage.weight(doc, "nothing", NOW), 0)
+        self.assertEqual(skill_usage.weight(doc, "other", NOW), 0)
+        self.assertIsNone(skill_usage.weight(None, SKILL, NOW))
+        self.assertIsNone(skill_usage.weight(doc, SKILL, NOW + timedelta(days=30)))
+
+    def test_exposure_by_surface_counts_full_listings_from_counted_weeks(self):
+        doc = census(cloud=3400, local=7, truncated=5)
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW), {"local": 7, "cloud": 3400})
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW, (CLOUD,)), {"cloud": 3400})
+        # The cloud counts from a week after its first record: 10-14 is counted from 10-21.
+        late = census(cloud=3400, local=7, cloud_from=datetime(2026, 10, 14, tzinfo=timezone.utc))
+        self.assertEqual(skill_usage.exposure_by_surface(late, NOW), {"local": 7, "cloud": 0})
+        # No cloud source at all counts nothing; unrecorded listings are unknown.
+        self.assertEqual(skill_usage.exposure_by_surface(
+            census(cloud=3400, cloud_source=False), NOW)["cloud"], 0)
+        self.assertIsNone(skill_usage.exposure_by_surface(
+            census(cloud=3400, recorded=False), NOW)["cloud"])
+        # An older week is inside the default window but not a one-week one.
+        old = paced(listings=[("2026-W40", 9), ("2026-W43", 1)], local=[("2026-W40", 4)])
+        self.assertEqual(skill_usage.exposure_by_surface(old, NOW), {"local": 4, "cloud": 10})
+        self.assertEqual(skill_usage.exposure_by_surface(old, NOW, weeks=1), {"local": 0, "cloud": 1})
+        self.assertIsNone(skill_usage.exposure_by_surface(None, NOW))
+        self.assertIsNone(skill_usage.exposure_by_surface(
+            census(cloud=1, generated=NOW - timedelta(days=15)), NOW))
 
 
 def unused_inputs(exempt=()):

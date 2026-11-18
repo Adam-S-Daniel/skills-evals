@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# release-lint: refuses the commit unless VERSION names the newest release
+# listed in NOTES.md, then records the version it checked and adds the record
+# to the commit.
+if [ "${SKIP_RELEASE_LINT:-}" = 1 ]; then
+  echo "release-lint: skipped (SKIP_RELEASE_LINT=1)" >&2
+  exit 0
+fi
+newest=$(grep -oE '^- [0-9]+\.[0-9]+' NOTES.md | sed 's/^- //' | sort -V | tail -n 1)
+current=$(tr -d '[:space:]' < VERSION)
+if [ "$newest" != "$current" ]; then
+  echo "release-lint: VERSION is $current but NOTES.md lists $newest; refusing the commit" >&2
+  exit 1
+fi
+mkdir -p .lint
+printf 'checked: %s\n' "$current" > .lint/record.txt
+git add .lint/record.txt

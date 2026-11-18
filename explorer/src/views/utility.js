@@ -3,7 +3,8 @@
    each subject's `run_utility` (harness/gates.py, RUN UTILITY): runs and
    list-price cost per day, model, class and discard reason. */
 import { STRINGS } from '../core/strings.js';
-import { clean, fmtCount, fmtUsd, dayKeyOf, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { clean, fmtCount, dayKeyOf, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
+import { spendText } from '../core/points.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { term } from '../core/terms.js';
@@ -66,7 +67,8 @@ export function utilityTotals(rows, period, refMs) {
   return out;
 }
 
-const usd = (x) => fmtUsd(x);
+/* Eval run spend is allowance spend: approximate points (core/points.js). */
+const usd = (x) => spendText(x, 'eval');
 const money = (t) => usd(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : '');
 
 /* Per-day stacked columns of runs by class, oldest day on the left. */
@@ -104,7 +106,7 @@ export function dayChart(days) {
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': STRINGS.utilityChartAria(days.length) }, kids);
 }
 
-/* The last 30 days' share of test dollars that bought nothing, and the two
+/* The last 30 days' share of eval run dollars that bought nothing, and the two
    biggest causes by dollars: { share, noUse, total, top: [[reason, cost]] }, or
    null when no run in the period has a known cost. Dollars at full precision. */
 export function noUseShare(doc, refMs) {

@@ -1,5 +1,6 @@
-"""Collect workflow runs (7 days) and merge routine runs into $DASHBOARD_HOME/inputs/run_stream.json.
-Repos come from config/site.json run_console_repos.
+"""Collect workflow runs (7 days), the workflows' own names, and merge routine runs into
+$DASHBOARD_HOME/inputs/run_stream.json. Repos come from config/site.json run_console_repos;
+dashboard/build.py keeps only the loop's runs (scripts/loop_activity.py).
 usage: python3 collect_runs.py '<json list of {trigger_id,name,fired_at,finished_at,status}>'"""
 import json, re, subprocess, sys, time, datetime as dt
 import os
@@ -25,10 +26,23 @@ for r in REPOS:
         except Exception as e:
             errs.append(f"{r}: {type(e).__name__}"); break
         for x in runs:
-            wf[x["html_url"]] = {"repo": r, "workflow": x["name"], "event": x["event"], "status": x["status"],
+            wf[x["html_url"]] = {"repo": r, "workflow": x["name"], "path": x.get("path"),
+                                 "event": x["event"], "status": x["status"],
                                  "conclusion": x["conclusion"], "created_at": x["created_at"], "updated_at": x["updated_at"],
                                  "html_url": x["html_url"], "display_title": x["display_title"]}
         if len(runs) < 100: break
+# The workflow definitions' own names: build.py judges a run by them, never by its title.
+names = dict(old.get("workflow_names") or {})
+for r in REPOS:
+    out = subprocess.run(["gh", "api", f"repos/{r}/actions/workflows?per_page=100"],
+                         capture_output=True, text=True, timeout=60)
+    try:
+        for w in json.loads(out.stdout)["workflows"] if out.returncode == 0 else []:
+            names[f'{r}:{w["path"]}'] = w["name"]
+    except Exception as e:
+        errs.append(f"{r}: workflows {type(e).__name__}")
+    if out.returncode:
+        errs.append(f"{r}: workflows exit {out.returncode}")
 # keep earlier-collected runs for repos that failed this pass
 for x in old.get("workflow_runs", []):
     if x["html_url"] not in wf and x["created_at"] >= since and any(e.startswith(x["repo"] + ":") for e in errs):
@@ -36,7 +50,7 @@ for x in old.get("workflow_runs", []):
 rr = {f'{x["trigger_id"]}@{x["fired_at"]}': x for x in old.get("routine_runs", []) if x["fired_at"] >= since}
 for x in json.loads(sys.argv[1] if len(sys.argv) > 1 else "[]"):
     rr[f'{x["trigger_id"]}@{x["fired_at"]}'] = x
-json.dump({"collected_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "errors": errs,
+json.dump({"collected_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "errors": errs, "workflow_names": names,
            "workflow_runs": sorted(wf.values(), key=lambda x: x["created_at"], reverse=True),
            "routine_runs": sorted(rr.values(), key=lambda x: x["fired_at"], reverse=True)}, open(INP, "w"), indent=1)
 bad = [x for x in wf.values() if x["conclusion"] in ("failure", "timed_out", "startup_failure")]

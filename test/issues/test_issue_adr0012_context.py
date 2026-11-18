@@ -441,6 +441,33 @@ class ContextTests(unittest.TestCase):
         self.metadata["revision"] = self.commit(self.consumer, {})
         self.error("guidance_unproven", self.resolve)
 
+    def test_stub_with_pinned_contributor_file_proves_guidance_without_payload_copy(self):
+        # _agent-guidance ADR 0043: the payload left the consumers; the stub
+        # plus the pinned source's contributor file is the consumer's shape.
+        rules = b"# Fleet contributor rules\n\n- one rule\n"
+        self.metadata["guidance_revision"] = self.pin_guidance(
+            {".github/fleet-contributor-rules.md": rules})
+        self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
+        self.metadata["revision"] = self.commit(
+            self.consumer, {".github/fleet-contributor-rules.md": rules})
+        frozen = self.resolve()
+        self.assertEqual(frozen.guidance, BASE)
+        self.assertIsNone(frozen.manifest["guidance"]["payload_copy_digest"])
+        self.assertEqual(frozen.manifest["guidance"]["contributor_digest"],
+                         hashlib.sha256(rules).hexdigest())
+        for stale in (rules + b"x", None):
+            with self.subTest(stale=stale):
+                if stale is None:
+                    self.git(self.consumer, "rm", ".github/fleet-contributor-rules.md")
+                    self.metadata["revision"] = self.commit(self.consumer, {})
+                else:
+                    self.metadata["revision"] = self.commit(
+                        self.consumer, {".github/fleet-contributor-rules.md": stale})
+                self.error("guidance_unproven", self.resolve)
+
+    def test_proof_has_no_contributor_key_when_a_payload_copy_proves_it(self):
+        self.assertNotIn("contributor_digest", self.resolve().manifest["guidance"])
+
     def test_full_managed_block_proves_guidance_without_payload_copy(self):
         self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
         self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": managed(BASE, mode="full")})

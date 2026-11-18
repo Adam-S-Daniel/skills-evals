@@ -475,18 +475,46 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     if doc is None or not is_fresh(doc, now) or not isinstance(doc.get("rows"), list):
         return None
     mondays = {week_monday(label) for label in window_weeks(now, weeks)}
+    return sum(n for monday, n in uses_by_week(doc, skill).items() if monday in mondays)
+
+
+def week_key(text) -> datetime | None:
+    """Midnight UTC of the Monday `text` names, when `text` is exactly an ISO
+    Monday date (`2026-11-09`), the form `week_monday` writes; None for any
+    other value, so a malformed row is skipped as `weight` skips it."""
+    if not isinstance(text, str):
+        return None
+    try:
+        day = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if day.weekday() != 0 or day.date().isoformat() != text:
+        return None
+    return day.replace(tzinfo=timezone.utc)
+
+
+def uses_by_week(doc, skill: str) -> dict:
+    """{week Monday: uses of `skill`} over every week `doc` has rows for, the
+    rows `weight` sums (calls, reads, cloud digests); a row whose week is not
+    an ISO Monday (`week_key`) is skipped. Freshness is the
+    caller's question; {} when `doc` has no rows list or `skill` is `other`."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("rows"), list):
+        return {}
     wanted = skill_basename(skill)
     if wanted == OTHER_NAME:
-        return 0
-    return sum(entry["invocations"] for entry in doc["rows"]
-               if isinstance(entry, dict)
-               and (entry.get("kind") in ("skill", READ_KIND)
-                    or (entry.get("kind") == DIGEST_KIND
-                        and entry.get("surface") == SURFACE_CLOUD))
-               and isinstance(entry.get("name"), str)
-               and skill_basename(entry["name"]) == wanted
-               and entry.get("week") in mondays
-               and _count(entry.get("invocations")))
+        return {}
+    out: dict = {}
+    for entry in doc["rows"]:
+        if (isinstance(entry, dict)
+                and (entry.get("kind") in ("skill", READ_KIND)
+                     or (entry.get("kind") == DIGEST_KIND
+                         and entry.get("surface") == SURFACE_CLOUD))
+                and isinstance(entry.get("name"), str)
+                and skill_basename(entry["name"]) == wanted
+                and week_key(entry.get("week")) is not None
+                and _count(entry.get("invocations"))):
+            out[entry["week"]] = out.get(entry["week"], 0) + entry["invocations"]
+    return out
 
 
 def counted_from(doc, surface: str) -> datetime | None:
@@ -545,8 +573,13 @@ def is_tracked(doc, skill: str) -> bool:
 _SURFACE_SCOPES = {SURFACE_LOCAL: ("transcripts",), SURFACE_CLOUD: (CLOUD_SCOPE,)}
 
 
+#: How old a census `census_current` accepts: an irreversible action reads a
+#: census generated at most this long before it runs.
+CENSUS_MAX_AGE = timedelta(days=1)
+
+
 def census_current(doc, surfaces: tuple, now: datetime,
-                   max_age: timedelta = timedelta(days=1)) -> bool:
+                   max_age: timedelta = CENSUS_MAX_AGE) -> bool:
     """True when `doc`'s `generated_at` and the `to` of every source on each
     of `surfaces` lie within `max_age` before `now` (never after it), and each
     surface has the source its counts come from. `is_fresh` allows 14 days and
@@ -610,25 +643,37 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
     mondays = {week_monday(label) for label in window_weeks(now, _window(weeks))}
     out = {}
     for surface in surfaces:
-        if surface == SURFACE_CLOUD and not any(
-                isinstance(s, dict) and s.get("scope") == CLOUD_SCOPE
-                and s.get("surface") == SURFACE_CLOUD and s.get(LISTING_RECORDED) is True
-                for s in doc.get("sources") or []):
-            out[surface] = None
+        by_week = listing_by_week(doc, surface)
+        out[surface] = (None if by_week is None
+                        else sum(n for monday, n in by_week.items() if monday in mondays))
+    return out
+
+
+def listing_by_week(doc, surface: str) -> dict | None:
+    """{week Monday: full-listing sessions on `surface`} over the weeks whose
+    Monday is on or after the surface's `counted_from` (the rows
+    `exposure_by_surface` sums); {} when the surface has no `counted_from`,
+    None when cloud exposure is unknown (no `LISTING_RECORDED`). Freshness is
+    the caller's question."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("rows"), list):
+        return {}
+    if surface == SURFACE_CLOUD and not any(
+            isinstance(s, dict) and s.get("scope") == CLOUD_SCOPE
+            and s.get("surface") == SURFACE_CLOUD and s.get(LISTING_RECORDED) is True
+            for s in doc.get("sources") or []):
+        return None
+    counted = counted_from(doc, surface)
+    out: dict = {}
+    if counted is None:
+        return out
+    for entry in doc["rows"]:
+        if (not isinstance(entry, dict) or entry.get("surface") != surface
+                or week_key(entry.get("week")) is None
+                or not _count(entry.get("sessions"))
+                or entry.get("kind") != "listing" or entry.get("name") != "full"):
             continue
-        counted = counted_from(doc, surface)
-        total = 0
-        if counted is not None:
-            usable = {m for m in mondays
-                      if datetime.fromisoformat(m).replace(tzinfo=timezone.utc) >= counted}
-            for entry in doc["rows"]:
-                if (not isinstance(entry, dict) or entry.get("surface") != surface
-                        or entry.get("week") not in usable
-                        or not _count(entry.get("sessions"))):
-                    continue
-                if entry.get("kind") == "listing" and entry.get("name") == "full":
-                    total += entry["sessions"]
-        out[surface] = total
+        if week_key(entry["week"]) >= counted:
+            out[entry["week"]] = out.get(entry["week"], 0) + entry["sessions"]
     return out
 
 
