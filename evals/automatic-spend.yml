@@ -54,13 +54,25 @@ categories:
 # 2026-11-15: security alert triage, the fleet health audit and the "work
 # locally" feature watch are not part of the continuous improvement system).
 # The fleet worker is the maintenance half of the split fleet worker
-# (_agent-guidance ADR 0046); its loop half is the loop worker.
+# (_agent-guidance ADR 0046); its loop half is the loop worker. Dependabot
+# work is the maintenance half's too (Adam, 2026-11-15), so Dependabot's own
+# runs and the auto-merge workflows stay out of the loop's Activity log.
 outside_loop:
   - "^fleet worker$"
+  - "dependabot"
   - "security alert triage"
   - "fleet health audit"
   - "work locally"
-inside_loop: []
+# Jobs inside the loop that no category names. skills-evals' own workflows
+# are the eval loop's machinery (fixture supply, scaffolds, gates, scope,
+# roster, rules, spend and arrival counts), except its CI, agent-checks and
+# site preview; _agent-guidance's impact report measures the targets' real-work
+# effect. These match a workflow's `<repo>/<file>` only, never a scheduled
+# task's name, so no task's cap share moves; none of them spends Claude
+# usage itself.
+inside_loop:
+  - "^skills-evals/(?!(?:ci|agent-checks|site-preview)\\.ya?ml$)[\\w.-]+\\.ya?ml$"
+  - "^_agent-guidance/impact-report\\.yml$"
 other_in_loop: false
 
 # Scheduled tasks with no cron of their own, fired by a GitHub workflow,

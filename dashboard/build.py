@@ -37,6 +37,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 from eval_facts import (add_costs, arm_model, cli_version, cost, fired_at, iso, judge,  # noqa: E402,F401
                         objective, scored_runs)
+import loop_activity  # noqa: E402
 
 PLACEHOLDER_ID = "none"
 HB_FIXED_WINDOW = timedelta(days=7)
@@ -369,9 +370,11 @@ PROBLEM_STATES = ("Failed", "Cancelled", "Needs approval")
 
 
 def run_stream(dump, now):
-    """Recent workflow runs and scheduled-task runs, newest first, for the console tab."""
+    """The loop's recent workflow runs and scheduled-task runs, newest first, for the
+    Activity log (scripts/loop_activity.py decides which runs are the loop's)."""
     cutoff = now - timedelta(days=STREAM_DAYS)
     seen = {}
+    names = dump.get("workflow_names") or {}
 
     def add(key, at, row):
         when = parse(at)
@@ -379,6 +382,9 @@ def run_stream(dump, now):
             seen[key] = {"key": key, "at": iso(when), **row}
 
     for w in dump.get("workflow_runs") or []:
+        workflow = names.get(f'{w.get("repo")}:{w.get("path")}')
+        if not loop_activity.workflow_in_loop(w.get("repo") or "", w.get("path"), workflow):
+            continue
         if w.get("status") == "completed":
             c = w.get("conclusion") or ""
             state = CONCLUSION_STATE.get(c, c.replace("_", " ").capitalize() or "Done")
@@ -388,10 +394,12 @@ def run_stream(dump, now):
             state = WORKFLOW_STATE.get(w.get("status"), str(w.get("status") or "").replace("_", " ").capitalize())
             dur = None
         add(w.get("html_url"), w.get("created_at"), {
-            "kind": "workflow", "source": (w.get("repo") or "").split("/")[-1], "name": w.get("workflow"),
+            "kind": "workflow", "source": (w.get("repo") or "").split("/")[-1], "name": workflow,
             "title": w.get("display_title") or w.get("workflow"), "state": state,
             "duration_s": max(dur, 0) if dur is not None else None, "link": w.get("html_url")})
     for r in dump.get("routine_runs") or []:
+        if not loop_activity.task_in_loop(r.get("name")):
+            continue
         status = str(r.get("status") or "").replace("ROUTINE_RUN_STATUS_", "")
         done = status not in ("PENDING", "RUNNING") and r.get("finished_at")
         dur = int((parse(r["finished_at"]) - parse(r["fired_at"])).total_seconds()) if done and r.get("fired_at") else None
@@ -406,7 +414,7 @@ def run_stream(dump, now):
     keep = {id(r) for r in problems} | {id(r) for r in [r for r in rows if r["state"] not in PROBLEM_STATES][:STREAM_CAP]}
     rows = [r for r in rows if id(r) in keep]
     return rows or [{"key": PLACEHOLDER_ID, "at": None, "kind": None, "source": None,
-                     "name": "No workflow runs in the last 7 days", "title": None, "state": None,
+                     "name": "No loop runs in the last 7 days", "title": None, "state": None,
                      "duration_s": None, "link": None}]
 
 
