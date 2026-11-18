@@ -7,14 +7,14 @@ import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, 
 import { h } from '../core/h.js';
 import { fmtPoints } from '../core/points.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, fold, srcLine, tile, badge, navLink, foldSummary } from '../views/bits.js';
+import { table, panel, fold, srcLine, tile, navLink, foldSummary } from '../views/bits.js';
 import { alertText, alertHref } from '../views/alerts.js';
 import { problemsToggle, PROBLEMS_PANEL, runName } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
 import { isTrending, alertKindLabel } from '../core/stats.js';
-import { LOOP_BRANCH, LIST_CAP, repoNumber } from '../views/loop.js';
+import { LIST_CAP, repoNumber } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
@@ -38,7 +38,6 @@ function pill(text, label) {
   return h('span', { class: 'st ' + kind }, clean(label || t));
 }
 const src = (id) => P.srcSnapshot(id);
-const isLoopBranch = (b) => LOOP_BRANCH.test(String(b || ''));
 
 /* "Monday noon ET": the weekday and clock time of a reset, in US Eastern,
    read from the reset itself rather than assumed. */
@@ -548,7 +547,7 @@ export function makeExt(dash, opts) {
       const merged = some(dash, 'merged_prs') || [];
       return panel(P.prsHeading, [srcLine(P.srcLive, NaN), open.length ? [h('h3', null, P.openPrs), table([
         { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => repoNumber(p.repo, p.number, p.url) },
-        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
+        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
           p.labels ? [' ', h('span', { class: 'sub' }, clean(p.labels))] : null] },
         col(P.colOpened, 'created_at', at)], open, { tall: true, cap: LIST_CAP })] : null,
       merged.length ? [h('h3', null, P.mergedPrs), prRows(merged.map((p) => Object.assign({ state: 'merged' }, p)))] : null]);

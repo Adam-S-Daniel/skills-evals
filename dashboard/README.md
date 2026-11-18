@@ -73,16 +73,22 @@ to the procedure is a pull request here, never an edit to the task.
 
 ### Every run, in order
 
-**Keep the big listings out of the main session.** Steps 1, 2, 3 and 5 (with its fire cost
-ledger) call tools whose output is large: every thread, every thread's messages, every
-session and every scheduled task. Hand each of those steps to a subagent with
-`model: "haiku"`. The subagent makes the calls, writes the result straight to the file or
-helper script the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the
-run list for step 6 to `$REFRESH_WORK/runs.json`), and returns one line: its counts, or the
-`STOP:` text a helper printed. The main session never reads the raw listings; it runs steps
-4 and 6 to 11 from those files (`"$(cat "$REFRESH_WORK/arg1.json")"` as arg 1) and handles
-every `STOP:` itself. Why: on 2026-11-15 a run that made these calls itself grew to 324k
-tokens and cost $5.43, for a task that fires twice a day.
+**Main session (the scheduled task's own thread): stop reading here and follow
+`tasks/refresh.md` "Run".** It starts the subagents that do the steps below; you do none of
+them yourself. The task's stored prompt still points at this section, and agents cannot edit
+a project task's prompt (2026-11-18), so this line is the entry point.
+
+**Who runs what.** The main session only dispatches, as `tasks/refresh.md` "Run" says: it
+runs on Opus whatever the task page says, and each of its calls re-reads a context that starts
+near 100k tokens. Steps 1 and 3, step 2, and step 5 (with its fire cost ledger) run in three
+Haiku subagents at once; their tool output is large (every thread, the owner's new messages,
+every session and every scheduled task). Each writes its result straight to the file or helper
+the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the run list for
+step 6 to `$REFRESH_WORK/runs.json`) and returns one line: its counts, or the `STOP:` text.
+Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those files
+(`"$(cat "$REFRESH_WORK/arg1.json")"` as arg 1) and handles every `STOP:` itself. Why: on
+2026-11-15 a run that made the listing calls itself grew to 324k tokens and cost $5.43, and on
+2026-11-18 a run that kept steps 0, 4 and 6 to 12 in the Opus session made 47 Opus calls.
 
 0. **Setup.** In a skills-evals checkout run `git fetch origin main && git checkout --detach origin/main`
    before anything else (helpers are read from that commit; `refresh.sh` never checks out),
@@ -91,16 +97,31 @@ tokens and cost $5.43, for a task that fires twice a day.
    adam-agentskills-private when `page/datasets.json` defines `explorer_private` (cloned beside
    skills-evals, or at `AGENTSKILLS_PRIVATE`), and every repo named in `site.json`
    `run_console_repos`, `loop_pr_repos`, `environment_review_repos` and `extra_workflows`.
-1. **Threads.** Rebuild `inputs/threads.json` from the FULL `list_threads` listing, every page,
-   never a patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`.
+1. **Threads.** Note the current time, call `list_threads` with no `since` or `state` filter and
+   follow `next_cursor` through every page, then run
+   `python3 -I dashboard/refresh/threads_from_transcripts.py --since <the time you noted>`. It reads
+   those results from the session's transcripts and rebuilds `inputs/threads.json` (never a
+   patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`), and stops
+   when a page is missing. Never retype the listing.
    For each new thread, `get_session` it and add its branch suffix to `inputs/thread_branches.json`.
-2. **Owner messages (ledger).** Read `inputs/owner_messages_read.json` `read_through`. Note the
-   current time, then `read_project_chat` and `read_thread` every thread active since
-   `read_through` (`list_threads since`). Pass the owner's own messages, ids and times only, to
-   `python3 -I dashboard/refresh/append_owner_messages.py --read-through <the time you noted> '<json>'`
-   (or `@file`). It skips ids already present.
+2. **Owner messages (ledger).** Read `inputs/owner_messages_read.json` `read_through` and
+   `chat_cursor`. Note the current time, then:
+   - `read_project_chat` pages oldest first. Start from `cursor: <chat_cursor>` when it is set
+     (a refused cursor means start with none) and follow `cursor` until `has_more` is false.
+     Keep the cursor that fetched the LAST page (the saved one when only one page came back).
+     Without it, every run paged the whole chat, 20 pages and about 370k characters on
+     2026-11-18, to find six new messages.
+   - `read_thread` every thread active since `read_through` (`list_threads since`), with
+     `order: "newest_first"`, `limit: 20`, stopping once a page reaches messages older than
+     `read_through`.
+
+   Pass the owner's own messages, ids and times only, and the time you noted at the START
+   (never the old `read_through`, even when nothing new came back), to
+   `python3 -I dashboard/refresh/append_owner_messages.py --read-through <the time you noted> --chat-cursor <the cursor you kept> '<json>'`
+   (or `@file`). It skips ids already present and keeps the saved cursor when `--chat-cursor` is left out.
 3. **Session costs (ledger).** For every thread session active since the last refresh,
-   `get_session` and append with `python3 -I dashboard/refresh/append_session_costs.py '<json list>'`
+   `get_session` (its id with the `session_` prefix: `list_threads` gives `cse_`, and the
+   2026-11-18 run lost 19 of 26 calls to errors) and append with `python3 -I dashboard/refresh/append_session_costs.py '<json list>'`
    (fields in that script; `cost_usd` is `external_metadata.usage.cost_usd`, a 404 is error `not_found`).
 4. **Loop PRs.** `bash dashboard/refresh/loop_prs.sh`.
 5. **Scheduled tasks.** `list_triggers` (every page; it pages early by size) plus `get_trigger`
@@ -130,8 +151,9 @@ tokens and cost $5.43, for a task that fires twice a day.
      Only `last_run` is visible, so a task that fires more than once between refreshes loses
      the fires in between. acsi-kit's plan model and `scripts/automatic_spend.py` read this ledger.
 6. **Run console.** `python3 -I dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
-   It keeps 7 days of workflow runs from `site.json` `run_console_repos` and of scheduled-task
-   runs in `inputs/run_stream.json`.
+   It keeps 7 days of workflow runs from `site.json` `run_console_repos` (with each workflow's
+   own name) and of scheduled-task runs in `inputs/run_stream.json`. The build keeps only the
+   improvement loop's runs (`scripts/loop_activity.py`).
 7. **Build.** `bash dashboard/refresh/refresh.sh '<arg 1>' '{}'`, with `ROUTINE_FIRES_LEDGER` and
    `WORKFLOWS_ROOT` exported from step 5 (it stops without them). It runs `half_built.sh`, reads
    workflow runs and states, builds every dataset into `$REFRESH_WORK/ds_now` (default

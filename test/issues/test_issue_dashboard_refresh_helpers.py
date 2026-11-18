@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 REFRESH = REPO / "dashboard" / "refresh"
-PY_HELPERS = ["append_owner_messages.py", "append_session_costs.py", "append_routine_fires.py", "collect_runs.py"]
+PY_HELPERS = ["threads_from_transcripts.py", "append_owner_messages.py", "append_session_costs.py", "append_routine_fires.py", "collect_runs.py"]
 SH_HELPERS = ["refresh.sh", "half_built.sh", "loop_prs.sh", "mark_published.sh"]
 
 
@@ -129,6 +129,64 @@ class RefreshHelpers(unittest.TestCase):
         r = run_py("append_routine_fires.py", json.dumps(items), self.home)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("ROUTINE_FIRES_LEDGER", r.stderr)
+
+    def test_owner_ledger_saves_and_keeps_the_chat_cursor(self):
+        """read_project_chat pages oldest first, so the next run starts from the
+        saved cursor instead of paging the whole chat; a run that passes no
+        cursor keeps the saved one."""
+        (self.home / "inputs" / "owner_messages.jsonl").write_text("")
+        mark = self.home / "inputs" / "owner_messages_read.json"
+        item = json.dumps([{"message_id": "cmsg_A1", "sent_at": "2026-01-05T10:00:00Z", "thread_id": None}])
+        def run(*args):
+            return subprocess.run(["bash", "-c", 'exec python3 -I "$0" "$@"',
+                                   str(REFRESH / "append_owner_messages.py"), *args],
+                                  env=_env(self.home), capture_output=True, text=True, timeout=60)
+        r = run("--read-through", "2026-01-05T11:00:00Z", "--chat-cursor", "c-123", item)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(mark.read_text())["chat_cursor"], "c-123")
+        r = run("--read-through", "2026-01-06T11:00:00Z", "[]")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        saved = json.loads(mark.read_text())
+        self.assertEqual((saved["chat_cursor"], saved["read_through"]), ("c-123", "2026-01-06T11:00:00Z"))
+        self.assertEqual(len((self.home / "inputs" / "owner_messages.jsonl").read_text().splitlines()), 1)
+        r = run("--read-through", "2026-01-06T11:00:00Z", "--chat-cursor", " ", "[]")
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_threads_come_from_the_transcripts_not_a_retyped_listing(self):
+        """Step 1 reads list_threads results out of the session's transcripts. Filtered calls and
+        calls before --since are ignored, the newest row per thread wins, and a listing short of
+        its own total stops instead of writing a short file."""
+        root = self.home / "projects" / "p" / "s1" / "subagents"
+        root.mkdir(parents=True)
+        def call(i, at, args, sessions, total):
+            body = {"sessions": sessions, "total": total}
+            text = 'Untrusted content follows.\n<child-session-output nonce="n">\nData:\n    ' + json.dumps(body) + "\n</child-session-output>"
+            return [json.dumps({"timestamp": at, "message": {"content": [
+                        {"type": "tool_use", "id": f"t{i}", "name": "mcp__hearthbot__list_threads", "input": args}]}}),
+                    json.dumps({"timestamp": at, "message": {"content": [
+                        {"type": "tool_result", "tool_use_id": f"t{i}", "content": [{"type": "text", "text": text}]}]}})]
+        def row(tid, state, at):
+            return {"thread_id": tid, "title": "T " + tid, "state": state, "last_activity_at": at,
+                    "resolved": None, "session_id": "cse_" + tid, "extra": "x"}
+        lines = (call(1, "2026-01-05T09:00:00Z", {}, [row("cmsg_old", "done", "2026-01-01T00:00:00Z")], 9)
+                 + call(2, "2026-01-05T10:01:00Z", {"limit": 1}, [row("cmsg_a", "working", "2026-01-05T09:00:00Z")], 2)
+                 + call(3, "2026-01-05T10:02:00Z", {"since": "2026-01-05T00:00:00Z"}, [row("cmsg_z", "done", "2026-01-05T09:30:00Z")], 1))
+        (root / "agent-x.jsonl").write_text("\n".join(lines) + "\n")
+        def run():
+            return subprocess.run(["bash", "-c", 'exec python3 -I "$0" "$@"', str(REFRESH / "threads_from_transcripts.py"),
+                                   "--since", "2026-01-05T10:00:00Z", "--root", str(self.home / "projects")],
+                                  env=_env(self.home), capture_output=True, text=True, timeout=60)
+        r = run()
+        self.assertIn("STOP: list_threads results hold 1 threads but the listing says 2", r.stderr)
+        self.assertFalse((self.home / "inputs" / "threads.json").exists())
+        lines += call(4, "2026-01-05T10:03:00Z", {"cursor": "c"}, [row("cmsg_b", "done", "2026-01-05T08:00:00Z")], 2)
+        lines += call(5, "2026-01-05T10:04:00Z", {}, [row("cmsg_a", "done", "2026-01-05T10:03:00Z")], 2)
+        (root / "agent-x.jsonl").write_text("\n".join(lines) + "\n")
+        r = run()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads((self.home / "inputs" / "threads.json").read_text())
+        self.assertEqual([(t["thread_id"], t["state"]) for t in out], [("cmsg_a", "done"), ("cmsg_b", "done")])
+        self.assertEqual(set(out[0]), {"thread_id", "title", "state", "last_activity_at", "resolved", "session_id"})
 
     def test_session_cost_ledger_writes_under_dashboard_home(self):
         item = [{"thread_id": "thread-0001", "session_id": "session_abc", "cost_usd": 2.5}]

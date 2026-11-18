@@ -2,19 +2,21 @@
 
 **Fires:** weekly, Tuesday 2:23 PM US Eastern (`CRON_TZ=America/New_York 23 14 * * 2`:
 19:23 UTC in winter, 18:23 UTC in summer), from a claude.ai scheduled task in
-Adam's account named `Weekly git hook block review`
-(`trig_01EdhriC21o7QigCHktTTaBx`). Each fire starts a new thread in the
-"Automatic Continuous Self Improvement and Evals" project, with that
-project's repositories and settings, and push-notifies Adam. Its prompt
-is one line pointing here, so the procedure is reviewed as a pull request
-rather than as an edit to a trigger nobody can diff.
+Adam's account named `git hook block review`
+(`trig_013sHYLtrzMS3TYeSncKvDyQ`), made on the Routines page (account level,
+not in a project), with the GitHub connector and push notifications on. Each
+fire starts a fresh session. Its prompt is one line pointing here, so the
+procedure is reviewed as a pull request rather than as an edit to a trigger
+nobody can diff.
 
-**Why it exists.** In the week of 2026-10-26 one scheduled job on the owner's
-machine retried a refused push about 60 times an hour for eight hours: 497 of
-the week's 499 blocked local hook runs. The hooks did their job, but nobody
-looked at the counts until a dashboard showed them. This routine looks every
-week, finds what is driving the blocks, and fixes it. Adam asked for it on
-2026-10-29, including that it merge its own fixes.
+**Model.** Sonnet 5.5, set on the task. Keep it set: a blank model runs the
+account default, Fable 5.2. Until 2026-11-18 this was a project task,
+`Weekly git hook block review` (`trig_01EdhriC21o7QigCHktTTaBx`, now
+deleted), and project tasks run as project threads on Opus 5.5 whatever their
+model setting says (its 2026-11-10 and 2026-11-17 runs both served Opus,
+about 0.07 weekly-allowance points each). Nothing in the procedure needs the
+project, so Adam moved it to the account level on Sonnet, which weighs about
+40% less for the same tokens. The first run on Sonnet is 2026-11-24.
 
 ## Privacy
 

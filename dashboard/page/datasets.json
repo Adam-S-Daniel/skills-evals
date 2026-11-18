@@ -106,7 +106,7 @@
   "title": "Half-built and broken features, summary"
  },
  "merged_prs": {
-  "description": "The 30 most recently updated merged pull requests in the same four repos. Reads GitHub pull request search.",
+  "description": "The improvement loop's pull requests among the 30 most recently updated merged ones in the same four repos (head branch rule in skills-evals evals/loop-activity.json). Reads GitHub pull request search, then each PR's head branch.",
   "source": {
    "args": {
     "fields": [
@@ -129,7 +129,7 @@
   "title": "Recently merged PRs"
  },
  "open_issues": {
-  "description": "Open issues in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map. Reads GitHub issue lists, one call per repo.",
+  "description": "The improvement loop's open issues in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map (title and label rule in skills-evals evals/loop-activity.json). Reads GitHub issue lists, one call per repo.",
   "source": {
    "args": {
     "fields": [
@@ -151,7 +151,7 @@
   "title": "Open issues"
  },
  "open_prs": {
-  "description": "Open pull requests in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map. Reads GitHub pull request search, then each PR's head branch, check runs and commit statuses.",
+  "description": "The improvement loop's open pull requests in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map (head branch rule in skills-evals evals/loop-activity.json). Reads GitHub pull request search, then each PR's head branch, check runs and commit statuses.",
   "source": {
    "args": {
     "fields": [
@@ -199,7 +199,7 @@
   "title": "Routines"
  },
  "run_stream": {
-  "description": "GitHub Actions runs in the attached repos and scheduled-task runs from the last 7 days, gathered by Claude's watcher every hour.",
+  "description": "The improvement loop's GitHub Actions runs in the attached repos and its scheduled-task runs from the last 7 days (jobs evals/automatic-spend.yml marks in_loop), gathered by Claude's watcher every hour.",
   "schedule": "Rebuilt on every refresh",
   "source": {
    "kind": "file",

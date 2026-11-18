@@ -33,10 +33,12 @@ field again before the document is written.
     repository. The verdicts follow evals/hook-policy.yml.
   * `lesson_funnel`: how lessons ended (a check, a skill, guidance, nothing,
     still open), counted over public issues and pull requests only.
-  * `activity`: the last ACTIVITY_DAYS of pull requests (open, or merged in the
-    window), open issues and workflow runs in the fleet owners' public
-    repositories, from `--activity`, leaving out explorer-data.yml's own runs. Never a body; a title only when
-    `safe_text` accepts it.
+  * `activity`: the continuous improvement loop's own activity
+    (scripts/loop_activity.py) in the last ACTIVITY_DAYS: its pull requests
+    (open, or merged in the window), open issues and workflow runs in the
+    fleet owners' public repositories, from `--activity`, leaving out
+    explorer-data.yml's own runs. Never a body; a title only when `safe_text`
+    accepts it.
   * `spend`: weekly totals from `spend/weekly.json`, only with
     `include_spend: true` (SPEND_WEEK_KEYS; never a per-session or per-thread
     row).
@@ -54,6 +56,7 @@ import yaml
 
 import eval_facts
 import improve_outcomes
+import loop_activity
 import skill_usage
 import timeweeks  # harness/, put on sys.path by explorer_data's imports
 
@@ -647,10 +650,13 @@ def safe_head_ref(value) -> str | None:
 def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
                    wall_clock: datetime) -> dict | None:
     """The document's `activity` from `--activity` ({"fetched_at", "pulls",
-    "issues", "runs"}, already reduced by explorer-data.yml), or None: no
-    file, no visibility list, or a `fetched_at` past the wall clock plus
-    FETCH_SKEW or before `as_of` minus FETCH_MAX_LAG. Every row's repository
-    must be on the visibility list; URLs are built here, never copied."""
+    "issues", "runs", "workflows"}, already reduced by explorer-data.yml), or
+    None: no file, no visibility list, or a `fetched_at` past the wall clock
+    plus FETCH_SKEW or before `as_of` minus FETCH_MAX_LAG. Every row's
+    repository must be on the visibility list, and only the loop's rows are
+    kept (scripts/loop_activity.py); a run's workflow is named from
+    `workflows` (its definition), never from the run's own title. URLs are
+    built here, never copied."""
     doc = _read_json(path)
     if public is None or not isinstance(doc, dict) or not all(
             isinstance(doc.get(k), list) for k in ("pulls", "issues", "runs")):
@@ -666,6 +672,9 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
             return None
         return row["repo"]
 
+    names = {(w.get("repo"), w.get("path")): w.get("name") for w in doc.get("workflows") or []
+             if isinstance(w, dict) and isinstance(w.get("name"), str)}
+
     pulls, seen = [], set()
     for row in doc["pulls"]:
         repo, number = base(row), row.get("number") if isinstance(row, dict) else None
@@ -674,7 +683,8 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
             continue
         merged = _stamp(row.get("merged_at"))
         state = "merged" if merged else row.get("state")
-        if state not in ("open", "merged") or (state == "merged" and merged < since_text):
+        if state not in ("open", "merged") or (state == "merged" and merged < since_text) \
+                or not loop_activity.pull_in_loop(row.get("head_ref")):
             continue
         seen.add((repo, number))
         pulls.append({"repo": repo, "number": number, "title": safe_text(row.get("title")),
@@ -686,7 +696,8 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
     for row in doc["issues"]:
         repo, number = base(row), row.get("number") if isinstance(row, dict) else None
         if repo is None or type(number) is not int or not 0 < number < 10 ** 9 \
-                or row.get("state") != "open" or (repo, number) in seen:
+                or row.get("state") != "open" or (repo, number) in seen \
+                or not loop_activity.issue_in_loop(row.get("title"), row.get("labels")):
             continue
         seen.add((repo, number))
         issues.append({"repo": repo, "number": number, "title": safe_text(row.get("title")),
@@ -702,9 +713,12 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
             continue
         if (repo, row.get("path")) == OWN_WORKFLOW:
             continue  # this document's own builds would change it on every run
+        workflow = names.get((repo, row.get("path")))
+        if not loop_activity.workflow_in_loop(repo, row.get("path"), workflow):
+            continue
         seen.add((repo, run_id))
         event, status, conclusion = row.get("event"), row.get("status"), row.get("conclusion")
-        runs.append({"repo": repo, "run_id": run_id, "workflow": safe_text(row.get("workflow"), 100),
+        runs.append({"repo": repo, "run_id": run_id, "workflow": safe_text(workflow, 100),
                      "title": safe_text(row.get("title")),
                      "event": event if isinstance(event, str) and _EVENT_RE.fullmatch(event) else None,
                      "state": status if status in _RUN_STATES else None,
