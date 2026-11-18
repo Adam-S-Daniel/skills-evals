@@ -130,6 +130,28 @@ class RefreshHelpers(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("ROUTINE_FIRES_LEDGER", r.stderr)
 
+    def test_owner_ledger_saves_and_keeps_the_chat_cursor(self):
+        """read_project_chat pages oldest first, so the next run starts from the
+        saved cursor instead of paging the whole chat; a run that passes no
+        cursor keeps the saved one."""
+        (self.home / "inputs" / "owner_messages.jsonl").write_text("")
+        mark = self.home / "inputs" / "owner_messages_read.json"
+        item = json.dumps([{"message_id": "cmsg_A1", "sent_at": "2026-01-05T10:00:00Z", "thread_id": None}])
+        def run(*args):
+            return subprocess.run(["bash", "-c", 'exec python3 -I "$0" "$@"',
+                                   str(REFRESH / "append_owner_messages.py"), *args],
+                                  env=_env(self.home), capture_output=True, text=True, timeout=60)
+        r = run("--read-through", "2026-01-05T11:00:00Z", "--chat-cursor", "c-123", item)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(mark.read_text())["chat_cursor"], "c-123")
+        r = run("--read-through", "2026-01-06T11:00:00Z", "[]")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        saved = json.loads(mark.read_text())
+        self.assertEqual((saved["chat_cursor"], saved["read_through"]), ("c-123", "2026-01-06T11:00:00Z"))
+        self.assertEqual(len((self.home / "inputs" / "owner_messages.jsonl").read_text().splitlines()), 1)
+        r = run("--read-through", "2026-01-06T11:00:00Z", "--chat-cursor", " ", "[]")
+        self.assertNotEqual(r.returncode, 0)
+
     def test_session_cost_ledger_writes_under_dashboard_home(self):
         item = [{"thread_id": "thread-0001", "session_id": "session_abc", "cost_usd": 2.5}]
         r = run_py("append_session_costs.py", json.dumps(item), self.home)

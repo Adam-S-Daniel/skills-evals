@@ -73,16 +73,17 @@ to the procedure is a pull request here, never an edit to the task.
 
 ### Every run, in order
 
-**Keep the big listings out of the main session.** Steps 1, 2, 3 and 5 (with its fire cost
-ledger) call tools whose output is large: every thread, every thread's messages, every
-session and every scheduled task. Hand each of those steps to a subagent with
-`model: "haiku"`. The subagent makes the calls, writes the result straight to the file or
-helper script the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the
-run list for step 6 to `$REFRESH_WORK/runs.json`), and returns one line: its counts, or the
-`STOP:` text a helper printed. The main session never reads the raw listings; it runs steps
-4 and 6 to 11 from those files (`"$(cat "$REFRESH_WORK/arg1.json")"` as arg 1) and handles
-every `STOP:` itself. Why: on 2026-11-15 a run that made these calls itself grew to 324k
-tokens and cost $5.43, for a task that fires twice a day.
+**Who runs what.** The main session only dispatches, as `tasks/refresh.md` "Run" says: it
+runs on Opus whatever the task page says, and each of its calls re-reads a context that starts
+near 100k tokens. Steps 1 and 3, step 2, and step 5 (with its fire cost ledger) run in three
+Haiku subagents at once; their tool output is large (every thread, the owner's new messages,
+every session and every scheduled task). Each writes its result straight to the file or helper
+the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the run list for
+step 6 to `$REFRESH_WORK/runs.json`) and returns one line: its counts, or the `STOP:` text.
+Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those files
+(`"$(cat "$REFRESH_WORK/arg1.json")"` as arg 1) and handles every `STOP:` itself. Why: on
+2026-11-15 a run that made the listing calls itself grew to 324k tokens and cost $5.43, and on
+2026-11-18 a run that kept steps 0, 4 and 6 to 12 in the Opus session made 47 Opus calls.
 
 0. **Setup.** In a skills-evals checkout run `git fetch origin main && git checkout --detach origin/main`
    before anything else (helpers are read from that commit; `refresh.sh` never checks out),
@@ -94,13 +95,23 @@ tokens and cost $5.43, for a task that fires twice a day.
 1. **Threads.** Rebuild `inputs/threads.json` from the FULL `list_threads` listing, every page,
    never a patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`.
    For each new thread, `get_session` it and add its branch suffix to `inputs/thread_branches.json`.
-2. **Owner messages (ledger).** Read `inputs/owner_messages_read.json` `read_through`. Note the
-   current time, then `read_project_chat` and `read_thread` every thread active since
-   `read_through` (`list_threads since`). Pass the owner's own messages, ids and times only, to
-   `python3 -I dashboard/refresh/append_owner_messages.py --read-through <the time you noted> '<json>'`
-   (or `@file`). It skips ids already present.
+2. **Owner messages (ledger).** Read `inputs/owner_messages_read.json` `read_through` and
+   `chat_cursor`. Note the current time, then:
+   - `read_project_chat` pages oldest first. Start from `cursor: <chat_cursor>` when it is set
+     (a refused cursor means start with none) and follow `cursor` until `has_more` is false.
+     Keep the cursor that fetched the LAST page (the saved one when only one page came back).
+     Without it, every run paged the whole chat, 20 pages and about 370k characters on
+     2026-11-18, to find six new messages.
+   - `read_thread` every thread active since `read_through` (`list_threads since`), with
+     `order: "newest_first"`, `limit: 20`, stopping once a page reaches messages older than
+     `read_through`.
+
+   Pass the owner's own messages, ids and times only, to
+   `python3 -I dashboard/refresh/append_owner_messages.py --read-through <the time you noted> --chat-cursor <the cursor you kept> '<json>'`
+   (or `@file`). It skips ids already present and keeps the saved cursor when `--chat-cursor` is left out.
 3. **Session costs (ledger).** For every thread session active since the last refresh,
-   `get_session` and append with `python3 -I dashboard/refresh/append_session_costs.py '<json list>'`
+   `get_session` (its id with the `session_` prefix: `list_threads` gives `cse_`, and the
+   2026-11-18 run lost 19 of 26 calls to errors) and append with `python3 -I dashboard/refresh/append_session_costs.py '<json list>'`
    (fields in that script; `cost_usd` is `external_metadata.usage.cost_usd`, a 404 is error `not_found`).
 4. **Loop PRs.** `bash dashboard/refresh/loop_prs.sh`.
 5. **Scheduled tasks.** `list_triggers` (every page; it pages early by size) plus `get_trigger`
