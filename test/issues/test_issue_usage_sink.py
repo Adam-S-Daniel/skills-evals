@@ -156,16 +156,6 @@ class SinkCase(unittest.TestCase):
         with open(path, "a", encoding="utf-8") as f:
             f.write("".join(line + "\n" for line in lines))
 
-    def events(self):
-        return sorted(str(p.relative_to(self.store))
-                      for p in (self.store / "events").rglob("*.jsonl")) \
-            if (self.store / "events").exists() else []
-
-
-# --- plan -------------------------------------------------------------------------
-
-class PlanTests(SinkCase):
-
     def listing(self, contents, raw=None):
         path = self.base / "listing.json"
         path.write_text(raw if raw is not None else json.dumps({"Contents": contents}),
@@ -180,6 +170,16 @@ class PlanTests(SinkCase):
         proc = self.run_cli("plan", "--listing", str(path), "--store", str(self.store),
                             *extra)
         return proc.returncode, proc.stdout.splitlines(), proc.stderr.splitlines()
+
+    def events(self):
+        return sorted(str(p.relative_to(self.store))
+                      for p in (self.store / "events").rglob("*.jsonl")) \
+            if (self.store / "events").exists() else []
+
+
+# --- plan -------------------------------------------------------------------------
+
+class PlanTests(SinkCase):
 
     def test_keeps_only_well_formed_ascii_keys(self):
         bad = ["drop/2026-09-02/" + "A" * 32 + ".json",
@@ -264,7 +264,7 @@ class PlanTests(SinkCase):
         listing = self.listing([self.item(k) for k in keys])
         self.assertEqual(len(self.plan(listing)[1]), 6)
         self.write_index("ingested", f"{keys[0]} {'0' * 64}",
-                         f"{keys[1]} {'0' * 64} partial=1")
+                         f"{keys[1]} {'0' * 64} v{sink.VALIDATOR_VERSION} partial=1")
         self.write_index("rejected", f"{keys[2]} unreadable v1", f"{keys[3]} bad-envelope v1",
                          f"{keys[4]} unreadable")
         _, out, err = self.plan(listing)
@@ -363,7 +363,8 @@ class ApplyTests(SinkCase):
         proc = self.apply(unreadable=[KEY, KEY3])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.index("rejected"),
-                         [f"{KEY3} unreadable v5", f"{KEY} unreadable v5"])
+                         [f"{KEY3} unreadable v{sink.VALIDATOR_VERSION}",
+                          f"{KEY} unreadable v{sink.VALIDATOR_VERSION}"])
         self.assertEqual(self.index("ingested"), [])
         self.assertIn("1 planned but missing", proc.stdout)
         self.assertIn("rejected by reason: unreadable 2", proc.stdout)
@@ -399,7 +400,7 @@ class EnvelopeTests(SinkCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.events(), [], "nothing from a rejected object is written")
         self.assertEqual(self.index("ingested"), [])
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v{sink.VALIDATOR_VERSION}"])
         self.assertIn("rejected by reason: bad-envelope 1", proc.stdout)
 
     def test_control_the_valid_object_is_accepted(self):
@@ -457,8 +458,58 @@ class PartialTests(SinkCase):
                          ["toolu_marker_01"])
         self.assertEqual(census.cloud_guidance_tally(self.store, NOW, 8)["records_scanned"], 1)
         self.assertEqual(self.index("ingested"),
-                         [f"{KEY} {hashlib.sha256(body).hexdigest()} partial=1"])
+                         [f"{KEY} {hashlib.sha256(body).hexdigest()} "
+                          f"v{sink.VALIDATOR_VERSION} partial=1"])
         self.assertEqual(self.index("rejected"), [])
+
+    def test_a_guidance_record_with_a_skill_listing_is_stored_whole(self):
+        # The hook has sent `listing` since _agent-guidance 7e0ba1a; the
+        # validator dropped every such record until version 6.
+        for value in ("full", "truncated"):
+            self.assertTrue(sink.guidance_record_ok(guidance(listing=value)))
+        self.put(KEY, drop([guidance(listing="truncated")], []))
+        proc = self.apply()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("1 ingested (0 partial", proc.stdout)
+        stored = (self.store / "events/2026-09/cloud-guidance.jsonl").read_text()
+        self.assertEqual(stored, json.dumps(guidance(listing="truncated"),
+                                            separators=(",", ":")) + "\n")
+
+    def test_a_listing_of_another_shape_is_invalid(self):
+        for value in ("partial", "", None, True, 1, ["full"]):
+            self.assertFalse(sink.guidance_record_ok(guidance(listing=value)), value)
+
+    def test_a_record_dropped_by_an_older_validator_comes_back(self):
+        record = guidance(listing="full")
+        body = self.put(KEY, drop([record])).read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
+        # What version 5 left behind: the skill lines stored, the record lost.
+        self.write_index("ingested", f"{KEY} {digest} partial=1")
+        path = self.store / f"events/2026-09/cloud-skills/{SID}.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text("".join(json.dumps(line, separators=(",", ":")) + "\n"
+                                for line in drop()["skills"]))
+        before = path.read_bytes()
+        listing = self.listing([self.item(KEY)])
+        self.assertEqual([line.split("\t")[0] for line in self.plan(listing)[1]], [KEY])
+        proc = self.apply()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("1 guidance lines", proc.stdout)
+        stored = (self.store / "events/2026-09/cloud-guidance.jsonl").read_text()
+        self.assertEqual(stored, json.dumps(record, separators=(",", ":")) + "\n")
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.index("ingested"),
+                         [f"{KEY} {digest} partial=1", f"{KEY} {digest}"])
+        self.assertEqual(self.plan(listing)[1], [])
+
+    def test_a_partial_key_is_planned_once_per_validator(self):
+        self.put(KEY, drop([guidance(note="x")]))
+        self.assertEqual(self.apply().returncode, 0)
+        listing = self.listing([self.item(KEY)])
+        self.assertEqual(self.plan(listing)[1], [])
+        with mock.patch.object(sink, "VALIDATOR_VERSION", sink.VALIDATOR_VERSION + 1):
+            planned, _ = sink.plan(listing, self.store)
+        self.assertEqual([key for key, _ in planned], [KEY])
 
     def test_a_bad_guidance_record_keeps_the_skill_lines(self):
         self.put(KEY, drop([guidance(note="x")]))
@@ -545,7 +596,7 @@ class VersionTests(SinkCase):
         self.assertEqual([line.split(" ")[0] for line in self.index("ingested")], [KEY])
         self.assertEqual(self.index("rejected"),
                          [f"{KEY} bad-skill-record", f"{KEY2} bad-envelope v1"])
-        self.assertEqual(sink.VALIDATOR_VERSION, 5)
+        self.assertEqual(sink.VALIDATOR_VERSION, 6)
 
 
 class DedupeTests(SinkCase):
@@ -745,7 +796,7 @@ class HookLineTests(SinkCase):
                 self.setUp()
                 self.put(KEY, drop(None, [], hooks=bad))
                 self.assertEqual(self.apply().returncode, 0)
-                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v{sink.VALIDATOR_VERSION}"])
                 self.assertEqual(self.events(), [])
 
     def test_hooks_beyond_the_cap_are_dropped(self):
@@ -881,7 +932,7 @@ class SetupRecordTests(SinkCase):
     def test_more_than_one_setup_rejects_the_envelope(self):
         self.put(KEY, self.setup_only(setup(), setup(id="1" * 32)))
         self.assertEqual(self.apply().returncode, 0)
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v{sink.VALIDATOR_VERSION}"])
         self.assertEqual(self.events(), [])
 
     def test_setups_must_be_a_list(self):
@@ -890,7 +941,7 @@ class SetupRecordTests(SinkCase):
                 self.setUp()
                 self.put(KEY, drop([], [], setups=bad))
                 self.assertEqual(self.apply().returncode, 0)
-                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v5"])
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v{sink.VALIDATOR_VERSION}"])
                 self.assertEqual(self.events(), [])
 
     def test_an_empty_setups_list_is_valid(self):

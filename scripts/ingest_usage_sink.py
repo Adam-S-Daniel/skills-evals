@@ -59,7 +59,8 @@ anything under `drop/`, with any key, date part and content. So:
     that sends `setups` must only be deployed after the version that accepts
     them is live. A skill line of kind `skill-read` was an invalid record
     before version 5; an invalid record is dropped from an object recorded as
-    ingested, so it too is lost for good if sent before version 5 is live.
+    ingested, so it is held back only until the version that accepts it:
+    see `partial=` under THE STORE LAYOUT.
   * EACH RECORD is checked on its own. A skill line must pass the census's
     own reader (`_cloud_line_ok`, the ADR 0036 shape); a guidance record
     must pass `guidance_record_ok`; a hook line must pass `hook_line_ok`:
@@ -70,8 +71,9 @@ anything under `drop/`, with any key, date part and content. So:
     value ASCII and in the shape the setup script builds it, `ts` near
     LastModified like the others; a guidance record
     must pass `guidance_record_ok`: exactly the keys the hook's phase 1
-    uploads (GUIDANCE_KEYS), each value in the shape the hook builds it. The
-    hook's local copy of a record carries one more key, `uploaded`; the line
+    uploads (GUIDANCE_KEYS, plus the optional `listing`, `full` or
+    `truncated`, which is stored), each value in the shape the hook builds
+    it. The hook's local copy of a record carries one more key, `uploaded`; the line
     it uploads does not. A record with `uploaded` (true, false or null) is
     accepted and stored without it. Records in the hook's older shapes (no
     `check_*`, no `sources`) are invalid. Invalid records are dropped and
@@ -91,14 +93,18 @@ THE STORE LAYOUT (relative to `--store`):
   events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl  skill lines (append only)
   events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl   hook lines (append only)
   events/<YYYY-MM>/cloud-setup.jsonl            setup records (append only)
-  sink/ingested/<YYYY-MM>.txt                   `<key> <sha256 of body>[ partial=<k>]`
+  sink/ingested/<YYYY-MM>.txt                   `<key> <sha256 of body>[ v<version> partial=<k>]`
   sink/rejected/<YYYY-MM>.txt                   `<key> <reason> v<version>`
 
 The two index files take the month of the key's own date. A rejected line
-without a version (written before versions existed) reads as version 1. A key
-ingested, or rejected for good, is never planned or applied again, so a
-re-run is IDEMPOTENT: the second `apply` over the same objects changes no
-byte. Data lines are written before the index line, so an interrupted run is
+without a version (written before versions existed) reads as version 1, and so
+does a `partial=` line without one. A key ingested whole, or rejected for good,
+is never planned or applied again. A key ingested with `partial=` under an older
+validator is planned again while S3 still holds the object, so a record lost to
+drift comes back once the validator accepts it; the dedupe below keeps the
+records already stored from doubling, and the new index line closes the key for
+this version. So a re-run is IDEMPOTENT: the second `apply` over the same objects
+changes no byte. Data lines are written before the index line, so an interrupted run is
 finished by the next one, whose dedupe (session, id) keeps the data from
 doubling.
 
@@ -152,8 +158,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import model_usage_census as census  # noqa: E402
 
 #: Bumped whenever validation accepts more than before, so that keys rejected
-#: by an older version (except for good: PERMANENT_REASONS) are planned again.
-VALIDATOR_VERSION = 5
+#: by an older version (except for good: PERMANENT_REASONS), and keys ingested
+#: with dropped records under one, are planned again.
+VALIDATOR_VERSION = 6
 
 #: The hook's object key: `drop/<UTC day of send>/<32 hex from os.urandom>.json`.
 KEY_RE = re.compile(r"drop/([0-9]{4}-[0-9]{2})-[0-9]{2}/[0-9a-f]{32}\.json", re.ASCII)
@@ -205,6 +212,10 @@ GUIDANCE_KEYS = frozenset({
     "sources", "sources_dropped"})
 #: The hook's local copy adds this one; it is dropped before storing.
 UPLOADED_KEY = "uploaded"
+#: Optional, and stored: how the session's first skill listing read. The hook
+#: omits it when the transcript holds no such listing.
+LISTING_KEY = "listing"
+LISTING_STATES = ("full", "truncated")
 #: The transcript's `entrypoint` (remote_projects, remote_trigger, cli, ...).
 SURFACE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", re.ASCII)
 GUIDANCE_VERSION_RE = re.compile(r"[0-9a-f]{8}", re.ASCII)
@@ -264,8 +275,11 @@ def guidance_record_ok(record, modified: datetime | None = None) -> bool:
     (with or without `uploaded`), stamped near `modified` when given."""
     if not isinstance(record, dict):
         return False
-    keys = set(record)
-    if keys != GUIDANCE_KEYS and keys != GUIDANCE_KEYS | {UPLOADED_KEY}:
+    keys = set(record) - {UPLOADED_KEY, LISTING_KEY}
+    if keys != GUIDANCE_KEYS:
+        return False
+    if LISTING_KEY in record and not (isinstance(record[LISTING_KEY], str)
+                                      and record[LISTING_KEY] in LISTING_STATES):
         return False
     ts, state, expected = record["ts"], record["state"], record["check_expected"]
     sources, dropped = record["sources"], record["sources_dropped"]
@@ -430,10 +444,18 @@ def _index_lines(store: Path, sub: str):
 
 
 def _done_keys(store: Path) -> set:
-    """Keys that are never planned or applied again: every ingested key, and
-    every key rejected under the current validator or for a permanent reason.
-    A rejected line `<key> <reason>` with no version token is version 1."""
-    done = {line.split(" ", 1)[0] for line in _index_lines(store, INGESTED)}
+    """Keys that are never planned or applied again: every key ingested whole
+    or with `partial=` under the current validator, and every key rejected
+    under the current validator or for a permanent reason. A line with no
+    version token is version 1."""
+    done = set()
+    for line in _index_lines(store, INGESTED):
+        parts = line.split(" ")
+        partial = any(part.startswith("partial=") for part in parts[2:])
+        found = _VERSION_TOKEN_RE.fullmatch(parts[2]) if len(parts) > 2 else None
+        version = int(found.group(1)) if found else 1
+        if not partial or version >= VALIDATOR_VERSION:
+            done.add(parts[0])
     for line in _index_lines(store, REJECTED):
         parts = line.split(" ")
         reason = parts[1] if len(parts) > 1 else ""
@@ -715,7 +737,7 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
                       else "hooks_added" if census.CLOUD_HOOKS_DIR in rel
                       else "skills_added"] += len(lines)
             _append(targets[rel], lines)
-        note = f" partial={dropped}" if dropped else ""
+        note = f" v{VALIDATOR_VERSION} partial={dropped}" if dropped else ""
         _append(targets[index], [f"{key} {hashlib.sha256(body).hexdigest()}{note}"])
         done.add(key)
         stats["ingested"] += 1
