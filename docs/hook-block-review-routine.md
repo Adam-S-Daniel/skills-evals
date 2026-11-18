@@ -9,6 +9,15 @@ project's repositories and settings, and push-notifies Adam. Its prompt
 is one line pointing here, so the procedure is reviewed as a pull request
 rather than as an edit to a trigger nobody can diff.
 
+**Model.** The task page says Sonnet 5.5, but each run is a project thread,
+and project threads run on Opus 5.5 whatever the page says (the 2026-11-10
+and 2026-11-17 runs both served Opus, about 0.07 weekly-allowance points
+each). Nothing in the procedure needs the project, so a task made on the
+claude.ai Routines page with Sonnet 5.5 set, and `skills-evals` plus
+`adam-agentskills-private` attached, would do the same work for about 40%
+less. That move is Adam's call (recommended 2026-11-18, not yet made); delete
+the project task once the new one has run.
+
 **Why it exists.** In the week of 2026-10-26 one scheduled job on the owner's
 machine retried a refused push about 60 times an hour for eight hours: 497 of
 the week's 499 blocked local hook runs. The hooks did their job, but nobody

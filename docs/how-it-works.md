@@ -1468,6 +1468,14 @@ other cells remove a subject the paused fixture showed helped,
 automatically. A pause by itself never makes a subject `ceiling` (see
 *Paused fixtures* above).
 
+The half of the scope call that needs judgment (new subjects against the five
+criteria, rechecking three earlier calls, removal candidates) is a claude.ai
+scheduled task, `eval scope review`, Wednesdays at 3:47 PM US Eastern (daily
+until 2026-11-14). Its prompt holds the procedure. It runs on Opus 5.5 on
+purpose: Adam kept it there on 2026-11-08 for the judgment calls, so do not
+propose moving it to a cheaper model. A run weighs about 0.06 to 0.11
+weekly-allowance points.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected
