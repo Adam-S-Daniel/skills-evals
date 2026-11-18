@@ -1906,14 +1906,14 @@ yet" must stay distinguishable.)
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `sync-skills` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
 | `ocr-pdfs` | defer (rechecked 2026-11-06) | no recorded local use since 2026-09-14; the machine-bound reason no longer fits (since adam-agentskills [#26](https://github.com/Adam-S-Daniel/adam-agentskills/issues/26) the skill calls the OCRmyPDF CLI directly, which a container can run), so reopen it if it is used |
-| `sync-cc-settings-between-wsl-and-windows` | defer (rechecked 2026-11-05) | no recorded local use since 2026-09-14, and it needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply |
+| `sync-cc-settings-between-wsl-and-windows` | defer (rechecked 2026-11-18) | no recorded local use since 2026-09-14, and it needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply |
 | `migrate-claude-memory`, `compare-pdfpairs` | defer (rechecked 2026-11-05) | at most one recorded local use since 2026-09-14; the machine-bound reason no longer fits (a fake HOME, or PowerShell 7 and poppler in a container, can stand in for the surface), so reopen either one if it is used |
 | `launch-top-level-claude-session` | gap (call reversed 2026-11-03) | the defer row is withdrawn: it is the most-used skill in the local census (13 uses in the weeks of 2026-09-28 and 2026-10-05), and `windows-elevation-from-wsl` shows its surface is cheap to fake with logging `wt.exe`/`wsl.exe` shims on `PATH`, so a fixture can score the launch command; it needs one |
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
 | `fastmail` bundle | defer (rechecked 2026-11-06) | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own. `fastmail` itself has one recorded local use since 2026-09-14 (week of 2026-09-14) |
 | `aws-bootstrap`, `preview-environments` | freshness lint (rechecked 2026-11-07) | staleness is the failure mode, not procedure quality; the lint now exists (cms-platform's `e2e/skill-references-fresh.test.js` and adam-agentskills' scheduled `scripts/check_skill_freshness.py`), and neither skill has recorded use |
 | `admin-config-render`, `browser-testing`, `code-quality`, `editorial-label-audit` | freshness lint (rechecked 2026-11-10 and 2026-11-11) | reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval (scope decision 2026-11-03). The lint now exists: cms-platform's `e2e/skill-references-fresh.test.js` checks every `skills/*/SKILL.md`, and none of the four has recorded use |
-| `finding-unknowns`, `adam-writing-style` | owner review | process/taste skill; owner review replaces the eval (scope decision 2026-11-03) |
+| `finding-unknowns`, `adam-writing-style` | owner review (rechecked 2026-11-18) | process/taste skill; owner review replaces the eval (scope decision 2026-11-03) |
 
 ### Budget
 
