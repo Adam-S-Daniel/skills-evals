@@ -111,8 +111,9 @@ doubling.
 
 `health` READS THE STORE AND NOTHING ELSE, and exits 1 when the last
 HEALTH_WINDOW shows records going missing: HEALTH_MIN_PARTIAL or more objects
-ingested with dropped records under the current validator, or, with at least
-HEALTH_MIN_SESSIONS cloud sessions that sent skill or hook lines, fewer than
+from its last two UTC days ingested with dropped records under the current
+validator, or, with at least HEALTH_MIN_SESSIONS cloud sessions that sent a
+skill or hook line no other session sent, fewer than
 HEALTH_MIN_COVERAGE of them with a guidance record. It prints counts only. The
 private workflow runs it on every ingest, so the daily scheduled run turns red
 for the health audit while either condition lasts. On the history of the store
@@ -782,10 +783,10 @@ def _summary(stats: dict) -> str:
 
 # --- health ---------------------------------------------------------------------
 
-def _recent_sessions(store: Path, folder: str, start: datetime, end: datetime) -> set:
-    """The `session` of every line in events/*/<folder>/*.jsonl stamped in
-    [start, end), READ-ONLY; links are skipped, as the census skips them."""
-    sessions = set()
+def _recent_line_sessions(store: Path, folder: str, start: datetime, end: datetime) -> dict:
+    """{line id: its sessions} for the lines in events/*/<folder>/*.jsonl stamped
+    in [start, end), READ-ONLY; links are skipped, as the census skips them."""
+    found: dict = {}
     for path in store.glob(f"{census.EVENTS_DIR}/*/{folder}/*.jsonl"):
         if path.parent.parent.is_symlink() or path.parent.is_symlink() \
                 or path.is_symlink() or not path.is_file():
@@ -793,9 +794,10 @@ def _recent_sessions(store: Path, folder: str, start: datetime, end: datetime) -
         for record in census._jsonl_dicts(path):
             when = census.parse_ts(record.get("ts")) if isinstance(record.get("ts"), str) else None
             if when is not None and start <= when.astimezone(timezone.utc) < end \
-                    and isinstance(record.get("session"), str):
-                sessions.add(record["session"])
-    return sessions
+                    and isinstance(record.get("session"), str) \
+                    and isinstance(record.get("id"), str):
+                found.setdefault(record["id"], set()).add(record["session"])
+    return found
 
 
 def health(store, now: datetime) -> dict:
@@ -809,11 +811,14 @@ def health(store, now: datetime) -> dict:
         key = KEY_RE.fullmatch(parts[0])
         day = _key_date(parts[0]) if key else None
         if found and int(found.group(1)) >= VALIDATOR_VERSION and day is not None \
-                and start.date() <= day <= now.date() \
+                and start.date() < day <= now.date() \
                 and any(part.startswith("partial=") for part in parts[2:]):
             partial += 1
-    sessions = (_recent_sessions(store, census.CLOUD_SKILLS_DIR, start, now)
-                | _recent_sessions(store, census.CLOUD_HOOKS_DIR, start, now))
+    # One run-log line reported under many sessions (seen: 19) says nothing
+    # about any of them, so only a line unique to its session makes it active.
+    lines = {**_recent_line_sessions(store, census.CLOUD_SKILLS_DIR, start, now),
+             **_recent_line_sessions(store, census.CLOUD_HOOKS_DIR, start, now)}
+    sessions = {sid for owners in lines.values() if len(owners) == 1 for sid in owners}
     covered = len(sessions & _guidance_sessions(store))
     problems = []
     if partial >= HEALTH_MIN_PARTIAL:

@@ -604,11 +604,12 @@ class HealthTests(SinkCase):
 
     AT = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
 
-    def lines(self, folder, sessions):
+    def lines(self, folder, sessions, line_id=None):
         for sid in sessions:
             path = self.store / f"events/2026-09/{folder}/{sid}.jsonl"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"ts": "2026-09-03T10:00:00Z", "session": sid}) + "\n")
+            path.write_text(json.dumps({"ts": "2026-09-03T10:00:00Z", "session": sid,
+                                        "id": line_id or f"line-{sid}"}) + "\n")
 
     def guided(self, sessions):
         path = self.store / "events/2026-09/cloud-guidance.jsonl"
@@ -649,6 +650,16 @@ class HealthTests(SinkCase):
         self.assertEqual(len(report["problems"]), 1)
         self.guided(sids[:4])
         self.assertEqual(sink.health(self.store, self.AT)["problems"], [])
+
+    def test_a_line_shared_by_many_sessions_makes_none_of_them_active(self):
+        self.lines("cloud-hooks", [f"{i:016x}" for i in range(9)], line_id="shared")
+        report = sink.health(self.store, self.AT)
+        self.assertEqual((report["sessions"], report["problems"]), (0, []))
+
+    def test_drops_replayed_from_before_yesterday_do_not_count(self):
+        self.write_index("ingested", *[f"drop/2026-09-01/{i:032x}.json {'0' * 64} "
+                                       f"v{sink.VALIDATOR_VERSION} partial=1" for i in range(9)])
+        self.assertEqual(sink.health(self.store, self.AT)["partial"], 0)
 
     def test_too_few_sessions_prove_nothing(self):
         self.lines("cloud-hooks", [f"{i:016x}" for i in range(sink.HEALTH_MIN_SESSIONS - 1)])
