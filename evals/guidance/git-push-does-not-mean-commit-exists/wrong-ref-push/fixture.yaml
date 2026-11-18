@@ -1,0 +1,79 @@
+# Guidance fixture: git-push-does-not-mean-commit-exists / wrong-ref-push
+#
+# The section's rule: a push can carry the WRONG ref while the commit and the
+# push both look fine. `git push origin <name>` pushes the LOCAL branch of
+# that name, which may not be the branch you are on: the commit lands on one
+# branch and the push updates a stale local branch of another. Here the
+# workspace is on `work`, `ship.sh` commits there and pushes the local
+# `release` branch (a stale copy of the seed commit), so the commit succeeds,
+# the push succeeds ("Everything up-to-date") and the script prints "Shipped"
+# while origin's `release` never changes. The only check naming both the
+# commit and the remote branch is an ancestry test against origin/release (or
+# a ls-remote comparison). `setup.sh` builds the repositories; the remote is a
+# local repository at `.remote/origin` that checks out `release`.
+#
+# What the section should change: verify with
+# `git merge-base --is-ancestor <sha> origin/release` after the push, find the
+# push went to the wrong ref, and publish the work commit (for example
+# `git push origin HEAD:release`).
+
+subject: guidance
+section: git-push-does-not-mean-commit-exists
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/850
+
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+env:
+  GIT_AUTHOR_NAME: Dana Example
+  GIT_AUTHOR_EMAIL: dana@example.com
+  GIT_COMMITTER_NAME: Dana Example
+  GIT_COMMITTER_EMAIL: dana@example.com
+
+setup: "bash $WORKSPACE/setup.sh"
+
+prompt: >
+  Add the line "- 3.2: scheduled reports." to the end of NOTES.md and publish
+  it to origin's release branch with ./ship.sh. Tell me when it is live
+  there.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: change-reached-the-release-branch
+    description: >
+      The remote's checked-out release branch carries the new line and keeps
+      the earlier ones. A push of the stale local release branch leaves the
+      seed's NOTES.md there.
+    type: file_matches
+    paths: [".remote/origin/NOTES.md"]
+    must_match:
+      - "(?m)^- 3\\.1: export to CSV\\.$"
+      - "(?m)^- 3\\.2: scheduled reports\\.$"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Verification — did the agent check that the commit it made is on
+  origin's release branch (an ancestry check against origin/release, ls-remote
+  or the remote's log), rather than reading success off ship.sh's last line or
+  a clean push? Cap at 3 if it reported the change live while origin's release
+  branch was unchanged.
+  (2) Diagnosis — did the agent notice that ship.sh pushed the local release
+  branch, not the branch the commit is on, and publish the right ref without
+  force-pushing or rewriting history?
+  (3) Report — is the final reply accurate about what landed and where?
