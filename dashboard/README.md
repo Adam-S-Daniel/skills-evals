@@ -73,6 +73,11 @@ to the procedure is a pull request here, never an edit to the task.
 
 ### Every run, in order
 
+**Main session (the scheduled task's own thread): stop reading here and follow
+`tasks/refresh.md` "Run".** It starts the subagents that do the steps below; you do none of
+them yourself. The task's stored prompt still points at this section, and agents cannot edit
+a project task's prompt (2026-11-18), so this line is the entry point.
+
 **Who runs what.** The main session only dispatches, as `tasks/refresh.md` "Run" says: it
 runs on Opus whatever the task page says, and each of its calls re-reads a context that starts
 near 100k tokens. Steps 1 and 3, step 2, and step 5 (with its fire cost ledger) run in three
