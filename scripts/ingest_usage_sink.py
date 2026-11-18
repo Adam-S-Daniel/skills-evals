@@ -59,7 +59,8 @@ anything under `drop/`, with any key, date part and content. So:
     that sends `setups` must only be deployed after the version that accepts
     them is live. A skill line of kind `skill-read` was an invalid record
     before version 5; an invalid record is dropped from an object recorded as
-    ingested, so it too is lost for good if sent before version 5 is live.
+    ingested, so it is held back only until the version that accepts it:
+    see `partial=` under THE STORE LAYOUT.
   * EACH RECORD is checked on its own. A skill line must pass the census's
     own reader (`_cloud_line_ok`, the ADR 0036 shape); a guidance record
     must pass `guidance_record_ok`; a hook line must pass `hook_line_ok`:
@@ -69,9 +70,11 @@ anything under `drop/`, with any key, date part and content. So:
     pass `setup_record_ok`: exactly the keys SETUP_KEYS (any order), each
     value ASCII and in the shape the setup script builds it, `ts` near
     LastModified like the others; a guidance record
-    must pass `guidance_record_ok`: exactly the keys the hook's phase 1
-    uploads (GUIDANCE_KEYS), each value in the shape the hook builds it. The
-    hook's local copy of a record carries one more key, `uploaded`; the line
+    must pass `guidance_record_ok`: every key the hook's phase 1 uploads
+    (GUIDANCE_KEYS, plus the optional `listing`, `full` or `truncated`, which
+    is stored), each value in the shape the hook builds it. Up to
+    MAX_UNKNOWN_FIELDS other keys are ignored and never stored, so a field
+    the hook adds later costs that field and not the record. The hook's local copy of a record carries one more key, `uploaded`; the line
     it uploads does not. A record with `uploaded` (true, false or null) is
     accepted and stored without it. Records in the hook's older shapes (no
     `check_*`, no `sources`) are invalid. Invalid records are dropped and
@@ -91,16 +94,29 @@ THE STORE LAYOUT (relative to `--store`):
   events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl  skill lines (append only)
   events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl   hook lines (append only)
   events/<YYYY-MM>/cloud-setup.jsonl            setup records (append only)
-  sink/ingested/<YYYY-MM>.txt                   `<key> <sha256 of body>[ partial=<k>]`
+  sink/ingested/<YYYY-MM>.txt                   `<key> <sha256 of body>[ v<version> partial=<k>]`
   sink/rejected/<YYYY-MM>.txt                   `<key> <reason> v<version>`
 
 The two index files take the month of the key's own date. A rejected line
-without a version (written before versions existed) reads as version 1. A key
-ingested, or rejected for good, is never planned or applied again, so a
-re-run is IDEMPOTENT: the second `apply` over the same objects changes no
-byte. Data lines are written before the index line, so an interrupted run is
+without a version (written before versions existed) reads as version 1, and so
+does a `partial=` line without one. A key ingested whole, or rejected for good,
+is never planned or applied again. A key ingested with `partial=` under an older
+validator is planned again while S3 still holds the object, so a record lost to
+drift comes back once the validator accepts it; the dedupe below keeps the
+records already stored from doubling, and the new index line closes the key for
+this version. So a re-run is IDEMPOTENT: the second `apply` over the same objects
+changes no byte. Data lines are written before the index line, so an interrupted run is
 finished by the next one, whose dedupe (session, id) keeps the data from
 doubling.
+
+`health` READS THE STORE AND NOTHING ELSE, and exits 1 when the last
+HEALTH_WINDOW shows records going missing: HEALTH_MIN_PARTIAL or more objects
+ingested with dropped records under the current validator, or, with at least
+HEALTH_MIN_SESSIONS cloud sessions that sent skill or hook lines, fewer than
+HEALTH_MIN_COVERAGE of them with a guidance record. It prints counts only. The
+private workflow runs it on every ingest, so the daily scheduled run turns red
+for the health audit while either condition lasts. On the history of the store
+it stayed quiet through 2026-11-11 and fires from the 2026-11-12 listing drift.
 
 WRITES ARE APPEND ONLY: an existing line is never rewritten or deleted (a
 file that does not end in a newline gets one before the first appended
@@ -152,8 +168,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import model_usage_census as census  # noqa: E402
 
 #: Bumped whenever validation accepts more than before, so that keys rejected
-#: by an older version (except for good: PERMANENT_REASONS) are planned again.
-VALIDATOR_VERSION = 5
+#: by an older version (except for good: PERMANENT_REASONS), and keys ingested
+#: with dropped records under one, are planned again.
+VALIDATOR_VERSION = 6
 
 #: The hook's object key: `drop/<UTC day of send>/<32 hex from os.urandom>.json`.
 KEY_RE = re.compile(r"drop/([0-9]{4}-[0-9]{2})-[0-9]{2}/[0-9a-f]{32}\.json", re.ASCII)
@@ -172,6 +189,10 @@ ISO = "%Y-%m-%dT%H:%M:%SZ"
 #: The largest object the hook sends; a larger one is split.
 SIZE_CAP = 262144
 DEFAULT_MAX = 300
+HEALTH_WINDOW = timedelta(hours=48)
+HEALTH_MIN_PARTIAL = 3
+HEALTH_MIN_SESSIONS = 5
+HEALTH_MIN_COVERAGE = 0.8
 #: A record's `ts` must lie within this window around its object's LastModified.
 MAX_BEFORE = timedelta(hours=48)
 MAX_AFTER = timedelta(minutes=10)
@@ -205,6 +226,12 @@ GUIDANCE_KEYS = frozenset({
     "sources", "sources_dropped"})
 #: The hook's local copy adds this one; it is dropped before storing.
 UPLOADED_KEY = "uploaded"
+#: Optional, and stored: how the session's first skill listing read. The hook
+#: omits it when the transcript holds no such listing.
+LISTING_KEY = "listing"
+LISTING_STATES = ("full", "truncated")
+#: A record carrying more unknown keys than this is not a newer hook's.
+MAX_UNKNOWN_FIELDS = 8
 #: The transcript's `entrypoint` (remote_projects, remote_trigger, cli, ...).
 SURFACE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", re.ASCII)
 GUIDANCE_VERSION_RE = re.compile(r"[0-9a-f]{8}", re.ASCII)
@@ -260,12 +287,16 @@ def _ts_near(ts: str, modified: datetime | None) -> bool:
 
 
 def guidance_record_ok(record, modified: datetime | None = None) -> bool:
-    """Whether `record` has exactly the shape phase 1 of the hook uploads
-    (with or without `uploaded`), stamped near `modified` when given."""
+    """Whether `record` has the shape phase 1 of the hook uploads (with or
+    without `uploaded`, and at most MAX_UNKNOWN_FIELDS keys it does not know),
+    stamped near `modified` when given."""
     if not isinstance(record, dict):
         return False
-    keys = set(record)
-    if keys != GUIDANCE_KEYS and keys != GUIDANCE_KEYS | {UPLOADED_KEY}:
+    keys = set(record) - {UPLOADED_KEY, LISTING_KEY}
+    if not keys >= GUIDANCE_KEYS or len(keys - GUIDANCE_KEYS) > MAX_UNKNOWN_FIELDS:
+        return False
+    if LISTING_KEY in record and not (isinstance(record[LISTING_KEY], str)
+                                      and record[LISTING_KEY] in LISTING_STATES):
         return False
     ts, state, expected = record["ts"], record["state"], record["check_expected"]
     sources, dropped = record["sources"], record["sources_dropped"]
@@ -430,10 +461,18 @@ def _index_lines(store: Path, sub: str):
 
 
 def _done_keys(store: Path) -> set:
-    """Keys that are never planned or applied again: every ingested key, and
-    every key rejected under the current validator or for a permanent reason.
-    A rejected line `<key> <reason>` with no version token is version 1."""
-    done = {line.split(" ", 1)[0] for line in _index_lines(store, INGESTED)}
+    """Keys that are never planned or applied again: every key ingested whole
+    or with `partial=` under the current validator, and every key rejected
+    under the current validator or for a permanent reason. A line with no
+    version token is version 1."""
+    done = set()
+    for line in _index_lines(store, INGESTED):
+        parts = line.split(" ")
+        partial = any(part.startswith("partial=") for part in parts[2:])
+        found = _VERSION_TOKEN_RE.fullmatch(parts[2]) if len(parts) > 2 else None
+        version = int(found.group(1)) if found else 1
+        if not partial or version >= VALIDATOR_VERSION:
+            done.add(parts[0])
     for line in _index_lines(store, REJECTED):
         parts = line.split(" ")
         reason = parts[1] if len(parts) > 1 else ""
@@ -643,7 +682,8 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
     sessions = _guidance_sessions(store)
     stats = {"objects": 0, "ingested": 0, "partial": 0, "rejected": 0, "already": 0,
              "ignored": ignored + len(set(found) - set(manifest) - set(unreadable)),
-             "missing": 0, "records_dropped": 0, "guidance_added": 0,
+             "missing": 0, "records_dropped": 0, "guidance_fields_ignored": 0,
+             "guidance_added": 0,
              "skills_added": 0, "hooks_added": 0, "setups_added": 0, "reasons": {}}
 
     def reject(key, reason):
@@ -681,7 +721,10 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
         guidance, skills, hooks, setups, dropped = split_records(doc, manifest[key])
         writes: dict = {}
         for record in guidance:
-            record = {k: v for k, v in record.items() if k != UPLOADED_KEY}
+            stored = {k: v for k, v in record.items()
+                      if k in GUIDANCE_KEYS or k == LISTING_KEY}
+            stats["guidance_fields_ignored"] += len(set(record) - set(stored) - {UPLOADED_KEY})
+            record = stored
             rel = (census.EVENTS_DIR, record["ts"][:7], census.CLOUD_GUIDANCE_FILE)
             writes.setdefault(rel, []).append(record)
         for record in skills:
@@ -715,7 +758,7 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
                       else "hooks_added" if census.CLOUD_HOOKS_DIR in rel
                       else "skills_added"] += len(lines)
             _append(targets[rel], lines)
-        note = f" partial={dropped}" if dropped else ""
+        note = f" v{VALIDATOR_VERSION} partial={dropped}" if dropped else ""
         _append(targets[index], [f"{key} {hashlib.sha256(body).hexdigest()}{note}"])
         done.add(key)
         stats["ingested"] += 1
@@ -732,8 +775,62 @@ def _summary(stats: dict) -> str:
             f"{stats['missing']} planned but missing, {stats['ignored']} other entries ignored; "
             f"{stats['guidance_added']} guidance lines, {stats['skills_added']} skill "
             f"lines and {stats['hooks_added']} hook lines added, "
-            f"{stats['setups_added']} setup records added"
+            f"{stats['setups_added']} setup records added; "
+            f"{stats['guidance_fields_ignored']} unknown guidance fields ignored"
             + (f"; rejected by reason: {reasons}" if reasons else ""))
+
+
+# --- health ---------------------------------------------------------------------
+
+def _recent_sessions(store: Path, folder: str, start: datetime, end: datetime) -> set:
+    """The `session` of every line in events/*/<folder>/*.jsonl stamped in
+    [start, end), READ-ONLY; links are skipped, as the census skips them."""
+    sessions = set()
+    for path in store.glob(f"{census.EVENTS_DIR}/*/{folder}/*.jsonl"):
+        if path.parent.parent.is_symlink() or path.parent.is_symlink() \
+                or path.is_symlink() or not path.is_file():
+            continue
+        for record in census._jsonl_dicts(path):
+            when = census.parse_ts(record.get("ts")) if isinstance(record.get("ts"), str) else None
+            if when is not None and start <= when.astimezone(timezone.utc) < end \
+                    and isinstance(record.get("session"), str):
+                sessions.add(record["session"])
+    return sessions
+
+
+def health(store, now: datetime) -> dict:
+    """Counts over the HEALTH_WINDOW ending at `now`, and `problems`, a list of
+    fixed strings that is empty when the store looks healthy."""
+    store, start = Path(store), now - HEALTH_WINDOW
+    partial = 0
+    for line in _index_lines(store, INGESTED):
+        parts = line.split(" ")
+        found = _VERSION_TOKEN_RE.fullmatch(parts[2]) if len(parts) > 2 else None
+        key = KEY_RE.fullmatch(parts[0])
+        day = _key_date(parts[0]) if key else None
+        if found and int(found.group(1)) >= VALIDATOR_VERSION and day is not None \
+                and start.date() <= day <= now.date() \
+                and any(part.startswith("partial=") for part in parts[2:]):
+            partial += 1
+    sessions = (_recent_sessions(store, census.CLOUD_SKILLS_DIR, start, now)
+                | _recent_sessions(store, census.CLOUD_HOOKS_DIR, start, now))
+    covered = len(sessions & _guidance_sessions(store))
+    problems = []
+    if partial >= HEALTH_MIN_PARTIAL:
+        problems.append("objects are losing records to the validator")
+    if len(sessions) >= HEALTH_MIN_SESSIONS and covered < HEALTH_MIN_COVERAGE * len(sessions):
+        problems.append("sessions are missing their guidance records")
+    return {"partial": partial, "sessions": len(sessions), "covered": covered,
+            "problems": problems}
+
+
+def _now_arg(value: str) -> datetime:
+    if not _ascii_match(SECOND_TS_RE, value):
+        raise argparse.ArgumentTypeError("--now takes YYYY-MM-DDTHH:MM:SSZ")
+    try:
+        return datetime.strptime(value, ISO).replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise argparse.ArgumentTypeError("--now takes a real UTC time") from None
 
 
 def _max_arg(value: str) -> int:
@@ -754,7 +851,18 @@ def main(argv=None) -> int:
     a.add_argument("--store", required=True)
     a.add_argument("--manifest", required=True)
     a.add_argument("--unreadable")
+    h = sub.add_parser("health", help="exit 1 when records are going missing")
+    h.add_argument("--store", required=True)
+    h.add_argument("--now", type=_now_arg, help="the end of the window (default: now)")
     args = parser.parse_args(argv)
+    if args.command == "health":
+        report = health(args.store, args.now or datetime.now(timezone.utc))
+        print(f"usage-sink health: {report['partial']} objects with dropped records, "
+              f"{report['covered']} of {report['sessions']} active sessions have a "
+              f"guidance record")
+        for problem in report["problems"]:
+            print(f"::error::usage-sink health: {problem}")
+        return 1 if report["problems"] else 0
     if args.command == "plan":
         try:
             planned, counts = plan(args.listing, args.store, args.max)
