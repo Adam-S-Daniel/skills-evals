@@ -27,13 +27,13 @@ fixtures:
   - path: evals/editorial-label-audit
     reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval. Rechecked 2026-11-11, holds: fails criterion 2 (cms-platform's e2e/skill-references-fresh.test.js now lints every skills/*/SKILL.md, editorial-label-audit's included) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02); the fixture is unchanged since 2026-11-02."
   - path: evals/adam-writing-style/proposal-bio
-    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval. Rechecked 2026-11-18, holds: fails criterion 3 (whether a draft sounds like Adam is writing taste, which no objective check scores; the skill and its results live in the private registry, and the local census does not track it by name, so its use is unknown and evals/usage-unknown.yml keeps it)."
   - path: evals/adam-writing-style/recruiter-reply
-    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval. Rechecked 2026-11-18, holds: fails criterion 3 (whether a draft sounds like Adam is writing taste, which no objective check scores; the skill and its results live in the private registry, and the local census does not track it by name, so its use is unknown and evals/usage-unknown.yml keeps it)."
   - path: evals/adam-writing-style/self-appraisal-opening
-    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval. Rechecked 2026-11-18, holds: fails criterion 3 (whether a draft sounds like Adam is writing taste, which no objective check scores; the skill and its results live in the private registry, and the local census does not track it by name, so its use is unknown and evals/usage-unknown.yml keeps it)."
   - path: evals/finding-unknowns
-    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval. Rechecked 2026-11-18, holds: fails criterion 3 (its four objective checks only see cited file paths and untouched sources, and none of its 13 runs carries judge figures) and criterion 4 (the fixture is unchanged since 2026-11-03 03:23 UTC, and its without arm averages 0.875 of checks over those runs, 2026-10-25 to 2026-11-03). The guidance section that points at it, finding-your-unknowns, stays scheduled."
   - path: evals/review-bash-ci-reliability/empty-repo-discovery
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-12, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and both runs after that, 20261103T051307Z-9a6eba on Sonnet 5.5 and 20261103T093214Z-20145d on Opus 5.5, have the without arm at 7/7 checks)."
   - path: evals/skills-doctor/one-row-rejects-the-lock
