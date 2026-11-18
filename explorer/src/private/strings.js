@@ -66,7 +66,7 @@ export const P = {
   colRunsWeek: 'Runs a week', colPtsRun: 'Points a run', colPtsWeek: 'Points a week',
   taskCost: (all, inLoop, out, ev, none) => 'Scheduled tasks: ' + all + ' a week (' + inLoop + ' in the loop, ' + out + ' outside)' + (ev ? '; eval runner ' + ev + ', in eval runs' : '') + (none ? '; ' + none + ' unmeasured' : '') + '.',
   routinesTable: 'Routines', checkinsHeading: 'Scheduled check-ins',
-  runsHeading: 'Workflow and routine runs', runsNote: (every) => 'Every GitHub Actions run in the attached repos and every scheduled-task run from the last 7 days, newest first. Only problems are shown until you clear the box. Each dashboard refresh (every ' + every + ' hours) adds the newest runs.', colTook: 'Took',
+  runsHeading: 'Workflow and routine runs', runsNote: (every) => 'The loop\'s GitHub Actions runs in the attached repos and its scheduled-task runs from the last 7 days, newest first. Only problems are shown until you clear the box. Each dashboard refresh (every ' + every + ' hours) adds the newest runs.', colTook: 'Took',
   prsHeading: 'Pull requests', openPrs: 'Open', mergedPrs: 'Recently merged', colOpened: 'Opened', colMerged: 'Merged', colTitle: 'Title', colNumber: '#',
   issuesHeading: 'Open issues', colUpdated: 'Updated',
   threadsHeading: 'Project threads', threadsNoneOpen: 'No thread is still going.', threadsDone: (n) => 'Done (' + n + ')',

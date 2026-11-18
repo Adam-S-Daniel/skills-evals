@@ -474,7 +474,8 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_run_stream_maps_states_windows_dedupes_and_sorts(self):
         def wf(url, at, status="completed", conclusion="success", end=None):
-            return {"repo": "o/skills-evals", "workflow": "ci.yml", "event": "push", "status": status,
+            return {"repo": "o/skills-evals", "workflow": "PR #4 a run title", "path": ".github/workflows/eval.yml",
+                    "event": "push", "status": status,
                     "conclusion": conclusion, "created_at": at, "updated_at": end or at, "html_url": url,
                     "display_title": "T " + url}
         cases = [("queued", None, "Queued"), ("waiting", None, "Queued"), ("in_progress", None, "Running"),
@@ -485,8 +486,10 @@ class DashboardBuildTests(unittest.TestCase):
         for status, conclusion, want in cases:
             with self.subTest(status=status, conclusion=conclusion):
                 row = build.run_stream({"workflow_runs": [wf("u", "2026-01-06T12:00:00Z", status, conclusion)]}, NOW)[0]
+                self.assertEqual(row["key"], "u")
                 self.assertEqual(row["state"], want)
         dump = {
+            "workflow_names": {"o/skills-evals:.github/workflows/eval.yml": "Real eval"},
             "workflow_runs": [
                 wf("old", "2025-12-30T12:59:59Z"),  # just outside 7 days
                 wf("edge", "2025-12-30T13:00:00Z"),
@@ -495,13 +498,13 @@ class DashboardBuildTests(unittest.TestCase):
                 wf("live", "2026-01-06T12:30:00Z", "in_progress", None),
             ],
             "routine_runs": [
-                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                {"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
                  "finished_at": "2026-01-06T09:10:30Z", "status": "ROUTINE_RUN_STATUS_FAILED"},
-                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                {"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
                  "finished_at": None, "status": "ROUTINE_RUN_STATUS_RUNNING"},
-                {"trigger_id": "t2", "name": "Sweep", "fired_at": "2026-01-06T12:45:00Z",
+                {"trigger_id": "t2", "name": "Prompt audit", "fired_at": "2026-01-06T12:45:00Z",
                  "finished_at": "2026-01-06T12:50:00Z", "status": "ROUTINE_RUN_STATUS_PENDING"},
-                {"trigger_id": "t3", "name": "Odd", "fired_at": "2026-01-06T08:00:00Z",
+                {"trigger_id": "t3", "name": "Memory curation", "fired_at": "2026-01-06T08:00:00Z",
                  "finished_at": None, "status": "ROUTINE_RUN_STATUS_SUCCEEDED"},
             ],
         }
@@ -512,21 +515,45 @@ class DashboardBuildTests(unittest.TestCase):
         by = {r["key"]: r for r in rows}
         self.assertEqual(by["new"]["duration_s"], 125)
         self.assertEqual((by["new"]["source"], by["new"]["name"], by["new"]["kind"]),
-                         ("skills-evals", "ci.yml", "workflow"))
+                         ("skills-evals", "Real eval", "workflow"))
         self.assertIsNone(by["live"]["duration_s"])
         r = by["t1@2026-01-06T09:00:00Z"]
         self.assertEqual((r["state"], r["duration_s"], r["kind"], r["source"], r["title"]),
-                         ("Failed", 630, "routine", "scheduled task", "Nightly"))
+                         ("Failed", 630, "routine", "scheduled task", "Eval runner"))
         self.assertEqual(r["link"], "https://claude.ai/scheduled-task/t1")
         pending = by["t2@2026-01-06T12:45:00Z"]
         self.assertEqual((pending["state"], pending["duration_s"]), ("Running", None))
 
+    def test_run_stream_keeps_only_the_loops_runs(self):
+        # Adam, 2026-11-18: the Activity log shows the improvement loop's runs only,
+        # judged by evals/automatic-spend.yml's in_loop marks on the workflow's own
+        # name and file, never on a run's title.
+        def wf(url, repo, path, title):
+            return {"repo": repo, "workflow": title, "path": path, "status": "queued",
+                    "created_at": "2026-01-06T12:00:00Z", "html_url": url}
+        dump = {"workflow_names": {"o/_agent-guidance:.github/workflows/sync.yml": "Sync AGENTS.md",
+                                   "o/_agent-guidance:.github/workflows/ci.yml": "CI"},
+                "workflow_runs": [wf("sync", "o/_agent-guidance", ".github/workflows/sync.yml", "push"),
+                                  wf("ci", "o/_agent-guidance", ".github/workflows/ci.yml", "Fleet improve eval"),
+                                  wf("site", "o/adamdaniel.ai", ".github/workflows/deploy.yml", "Deploy"),
+                                  wf("bot", "o/skills-evals", "dynamic/dependabot/dependabot-updates", "npm")],
+                "routine_runs": [{"trigger_id": "t1", "name": "Eval runner", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"},
+                                 {"trigger_id": "t2", "name": "Morning brief", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"},
+                                 {"trigger_id": "t3", "name": "Fleet worker", "fired_at": "2026-01-06T09:00:00Z",
+                                  "status": "ROUTINE_RUN_STATUS_RUNNING"}]}
+        rows = build.run_stream(dump, NOW)
+        self.assertEqual([(r["key"], r["name"]) for r in rows],
+                         [("sync", "Sync AGENTS.md"), ("t1@2026-01-06T09:00:00Z", "Eval runner")])
+
     def test_run_stream_caps_rows_and_has_a_placeholder(self):
-        runs = [{"repo": "o/r", "workflow": "w", "status": "queued", "created_at": "2026-01-06T12:00:00Z",
-                 "html_url": f"u{i}"} for i in range(600)]
+        runs = [{"repo": "o/skills-evals", "workflow": "w", "path": ".github/workflows/eval.yml", "status": "queued",
+                 "created_at": "2026-01-06T12:00:00Z", "html_url": f"u{i}"} for i in range(600)]
         self.assertEqual(len(build.run_stream({"workflow_runs": runs}, NOW)), 500)
         # An older failure past the cap is still listed: the cap trims only runs that went fine.
-        failed = {"repo": "o/r", "workflow": "w", "status": "completed", "conclusion": "failure",
+        failed = {"repo": "o/skills-evals", "workflow": "w", "path": ".github/workflows/eval.yml",
+                  "status": "completed", "conclusion": "failure",
                   "created_at": "2026-01-01T12:00:00Z", "updated_at": "2026-01-01T12:01:00Z", "html_url": "old-fail"}
         rows = build.run_stream({"workflow_runs": runs + [failed]}, NOW)
         self.assertEqual(len(rows), 501)

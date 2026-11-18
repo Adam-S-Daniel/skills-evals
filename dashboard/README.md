@@ -151,8 +151,9 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
      Only `last_run` is visible, so a task that fires more than once between refreshes loses
      the fires in between. acsi-kit's plan model and `scripts/automatic_spend.py` read this ledger.
 6. **Run console.** `python3 -I dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
-   It keeps 7 days of workflow runs from `site.json` `run_console_repos` and of scheduled-task
-   runs in `inputs/run_stream.json`.
+   It keeps 7 days of workflow runs from `site.json` `run_console_repos` (with each workflow's
+   own name) and of scheduled-task runs in `inputs/run_stream.json`. The build keeps only the
+   improvement loop's runs (`scripts/loop_activity.py`).
 7. **Build.** `bash dashboard/refresh/refresh.sh '<arg 1>' '{}'`, with `ROUTINE_FIRES_LEDGER` and
    `WORKFLOWS_ROOT` exported from step 5 (it stops without them). It runs `half_built.sh`, reads
    workflow runs and states, builds every dataset into `$REFRESH_WORK/ds_now` (default

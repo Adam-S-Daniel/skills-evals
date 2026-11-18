@@ -630,11 +630,11 @@ function buildStrings(you) {
   colEvalRuns: 'Eval runs', colApi: 'API credit', colSchedPoints: 'Scheduled task points', colRunPoints: 'Eval run points',
 
   opsRuns: 'Workflow and routine runs',
-  opsRunsNote: (since) => 'GitHub Actions runs in the public repos since ' + since + ', newest first. Only problems are shown until you clear the box.',
+  opsRunsNote: (since) => 'The loop\'s GitHub Actions runs in the public repos since ' + since + ', newest first. Only problems are shown until you clear the box.',
   problemsOnly: 'Problems only',
   colRun: 'Workflow run', colRepoNumber: 'Repo and #', colNumber: '#', colTitle: 'Title', colUpdated: 'Updated',
   opsPrs: 'Pull requests',
-  opsPrsNote: 'Open and recently merged pull requests in the public repos.',
+  opsPrsNote: 'The loop\'s open and recently merged pull requests in the public repos.',
   opsIssues: 'Open issues',
   prStates: { open: 'open', merged: 'merged' },
 
