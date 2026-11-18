@@ -97,8 +97,12 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
    adam-agentskills-private when `page/datasets.json` defines `explorer_private` (cloned beside
    skills-evals, or at `AGENTSKILLS_PRIVATE`), and every repo named in `site.json`
    `run_console_repos`, `loop_pr_repos`, `environment_review_repos` and `extra_workflows`.
-1. **Threads.** Rebuild `inputs/threads.json` from the FULL `list_threads` listing, every page,
-   never a patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`.
+1. **Threads.** Note the current time, call `list_threads` with no `since` or `state` filter and
+   follow `next_cursor` through every page, then run
+   `python3 -I dashboard/refresh/threads_from_transcripts.py --since <the time you noted>`. It reads
+   those results from the session's transcripts and rebuilds `inputs/threads.json` (never a
+   patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`), and stops
+   when a page is missing. Never retype the listing.
    For each new thread, `get_session` it and add its branch suffix to `inputs/thread_branches.json`.
 2. **Owner messages (ledger).** Read `inputs/owner_messages_read.json` `read_through` and
    `chat_cursor`. Note the current time, then:
@@ -111,7 +115,8 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
      `order: "newest_first"`, `limit: 20`, stopping once a page reaches messages older than
      `read_through`.
 
-   Pass the owner's own messages, ids and times only, to
+   Pass the owner's own messages, ids and times only, and the time you noted at the START
+   (never the old `read_through`, even when nothing new came back), to
    `python3 -I dashboard/refresh/append_owner_messages.py --read-through <the time you noted> --chat-cursor <the cursor you kept> '<json>'`
    (or `@file`). It skips ids already present and keeps the saved cursor when `--chat-cursor` is left out.
 3. **Session costs (ledger).** For every thread session active since the last refresh,

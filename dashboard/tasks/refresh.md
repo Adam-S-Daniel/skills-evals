@@ -44,8 +44,10 @@ output small: no README reads, no listings, no `add_repo` other than the first.
    below with its steps: A = README steps 1 and 3, B = step 2, C = step 5
    (with its fire cost ledger).
 4. Then one Agent call, `model: "sonnet"`, `run_in_background: false`, with
-   the worker brief for README steps 0 (every attach and clone not yet done),
-   4 and 6 to 12.
+   the worker brief for README steps 0 (every attach and clone not yet done,
+   including adam-agentskills-private's `persistent/eval-results` branch beside
+   the checkout, which the build reads; on 2026-11-18 a worker missed it and the
+   first build stopped), 4 and 6 to 12.
 5. A worker that returns `NEEDS-MAIN: <step>` could not reach a tool that step
    needs: do that step yourself, following the README, then rerun the Sonnet
    worker for the steps after it. A worker that returns `STOP:` it could not
