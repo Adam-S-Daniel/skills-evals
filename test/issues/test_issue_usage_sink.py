@@ -475,6 +475,14 @@ class PartialTests(SinkCase):
         self.assertEqual(stored, json.dumps(guidance(listing="truncated"),
                                             separators=(",", ":")) + "\n")
 
+    def test_the_summary_counts_dropped_guidance_records_apart(self):
+        # The private ingest workflow turns red on this count: a validator
+        # drifting from the hook must not pass as a green run again.
+        self.put(KEY, drop([guidance(note="x")], [skill(machine="box")]))
+        self.assertIn("guidance_dropped=1", self.apply().stdout)
+        self.put(KEY2, drop([guidance(session=SID2)], [skill(machine="box")]))
+        self.assertIn("guidance_dropped=0", self.apply().stdout)
+
     def test_a_listing_of_another_shape_is_invalid(self):
         for value in ("partial", "", None, True, 1, ["full"]):
             self.assertFalse(sink.guidance_record_ok(guidance(listing=value)), value)

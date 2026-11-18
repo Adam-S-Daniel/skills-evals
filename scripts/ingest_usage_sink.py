@@ -665,7 +665,8 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
     sessions = _guidance_sessions(store)
     stats = {"objects": 0, "ingested": 0, "partial": 0, "rejected": 0, "already": 0,
              "ignored": ignored + len(set(found) - set(manifest) - set(unreadable)),
-             "missing": 0, "records_dropped": 0, "guidance_added": 0,
+             "missing": 0, "records_dropped": 0, "guidance_dropped": 0,
+             "guidance_added": 0,
              "skills_added": 0, "hooks_added": 0, "setups_added": 0, "reasons": {}}
 
     def reject(key, reason):
@@ -743,6 +744,7 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
         stats["ingested"] += 1
         stats["partial"] += bool(dropped)
         stats["records_dropped"] += dropped
+        stats["guidance_dropped"] += len(doc["guidance"]) - len(guidance)
     return stats
 
 
@@ -754,7 +756,8 @@ def _summary(stats: dict) -> str:
             f"{stats['missing']} planned but missing, {stats['ignored']} other entries ignored; "
             f"{stats['guidance_added']} guidance lines, {stats['skills_added']} skill "
             f"lines and {stats['hooks_added']} hook lines added, "
-            f"{stats['setups_added']} setup records added"
+            f"{stats['setups_added']} setup records added; "
+            f"guidance_dropped={stats['guidance_dropped']}"
             + (f"; rejected by reason: {reasons}" if reasons else ""))
 
 
