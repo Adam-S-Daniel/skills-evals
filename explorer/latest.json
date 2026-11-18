@@ -1,7 +1,25 @@
 {
  "activity": {
-  "fetched_at": "2026-11-18T17:41:11Z",
+  "fetched_at": "2026-11-18T18:25:18Z",
   "issues": [
+   {
+    "created_at": "2026-11-18T18:16:17Z",
+    "number": 1049,
+    "repo": "Adam-S-Daniel/cms-platform",
+    "state": "open",
+    "title": "Typed work is lost when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:16:17Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/issues/1049"
+   },
+   {
+    "created_at": "2026-10-02T14:15:21Z",
+    "number": 516,
+    "repo": "Adam-S-Daniel/cms-platform",
+    "state": "open",
+    "title": "Evaluate a GitHub App for /admin sign-in so the browser token is limited to the site repo",
+    "updated_at": "2026-11-18T18:01:21Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/issues/516"
+   },
    {
     "created_at": "2026-11-03T16:39:51Z",
     "number": 689,
@@ -471,15 +489,6 @@
     "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/933"
    },
    {
-    "created_at": "2026-10-02T14:15:21Z",
-    "number": 516,
-    "repo": "Adam-S-Daniel/cms-platform",
-    "state": "open",
-    "title": "Evaluate a GitHub App for /admin sign-in so the browser token is limited to the site repo",
-    "updated_at": "2026-11-09T19:05:53Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/issues/516"
-   },
-   {
     "created_at": "2026-10-02T15:16:57Z",
     "number": 523,
     "repo": "Adam-S-Daniel/cms-platform",
@@ -761,15 +770,37 @@
   ],
   "pulls": [
    {
-    "created_at": "2026-11-18T17:09:24Z",
+    "created_at": "2026-11-18T18:22:31Z",
     "head_ref": "claude/project-thread-oiafak",
     "merged_at": null,
-    "number": 4983,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "number": 1051,
+    "repo": "Adam-S-Daniel/cms-platform",
     "state": "open",
-    "title": "TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
-    "updated_at": "2026-11-18T17:37:05Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4983"
+    "title": "Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:36Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/1051"
+   },
+   {
+    "created_at": "2026-11-18T18:16:50Z",
+    "head_ref": "claude/project-thread-oiafak",
+    "merged_at": "2026-11-18T18:20:31Z",
+    "number": 1050,
+    "repo": "Adam-S-Daniel/cms-platform",
+    "state": "merged",
+    "title": "Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:20:32Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/1050"
+   },
+   {
+    "created_at": "2026-11-18T18:15:41Z",
+    "head_ref": "claude/project-thread-uk02i0",
+    "merged_at": "2026-11-18T18:20:20Z",
+    "number": 602,
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "state": "merged",
+    "title": "Stop the fleet worker skipping its issue pass",
+    "updated_at": "2026-11-18T18:20:28Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/pull/602"
    },
    {
     "created_at": "2026-11-18T17:20:15Z",
@@ -6965,17 +6996,6 @@
     "url": "https://github.com/Adam-S-Daniel/repo-settings/pull/171"
    },
    {
-    "created_at": "2026-11-08T13:48:07Z",
-    "head_ref": "claude/project-thread-mpeiqq",
-    "merged_at": "2026-11-08T13:53:55Z",
-    "number": 470,
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "state": "merged",
-    "title": "Refuse workflow expressions pasted into run: scripts (zizmor check in agent-checks)",
-    "updated_at": "2026-11-08T13:54:05Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/pull/470"
-   },
-   {
     "created_at": "2026-11-07T16:53:50Z",
     "head_ref": "claude/project-thread-okdz8b",
     "merged_at": "2026-11-08T13:51:30Z",
@@ -7486,6 +7506,726 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022506,
+    "state": "completed",
+    "title": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:25:14Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022506",
+    "workflow": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:22:32Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369014531,
+    "state": "completed",
+    "title": "PR #1051",
+    "updated_at": "2026-11-18T18:23:31Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369014531",
+    "workflow": "PR #1051"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:34Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44368647360,
+    "state": "completed",
+    "title": "push \u2014 main Adam-S-Daniel",
+    "updated_at": "2026-11-18T18:23:25Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44368647360",
+    "workflow": "push \u2014 main Adam-S-Daniel"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:34Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44368647336,
+    "state": "completed",
+    "title": "push \u2014 main Adam-S-Daniel",
+    "updated_at": "2026-11-18T18:23:11Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44368647336",
+    "workflow": "push \u2014 main Adam-S-Daniel"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022548,
+    "state": "completed",
+    "title": "PR #1051 opened \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:51Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022548",
+    "workflow": "PR #1051 opened \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022496,
+    "state": "in_progress",
+    "title": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:49Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022496",
+    "workflow": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022539,
+    "state": "completed",
+    "title": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:48Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022539",
+    "workflow": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022551,
+    "state": "completed",
+    "title": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:47Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022551",
+    "workflow": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:33Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44368646066,
+    "state": "completed",
+    "title": "Push on main",
+    "updated_at": "2026-11-18T18:22:39Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44368646066",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:22:38Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44369030593,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:22:39Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44369030593",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:22:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44369022651,
+    "state": "completed",
+    "title": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends",
+    "updated_at": "2026-11-18T18:22:36Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44369022651",
+    "workflow": "PR #1051 \u2014 Release v0.1.179: sign in again in the same tab when the sign-in ends"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:24Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368615545,
+    "state": "completed",
+    "title": "Merge pull request #602 from Adam-S-Daniel/claude/project-thread-uk02i0",
+    "updated_at": "2026-11-18T18:22:35Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368615545",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968361,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:22:01Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968361",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:22Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368612200,
+    "state": "completed",
+    "title": "Push on main",
+    "updated_at": "2026-11-18T18:21:23Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368612200",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:34Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44368647725,
+    "state": "completed",
+    "title": "push \u2014 main Adam-S-Daniel",
+    "updated_at": "2026-11-18T18:20:49Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44368647725",
+    "workflow": "push \u2014 main Adam-S-Daniel"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:20:38Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368660288,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:20:48Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368660288",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:34Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44368647417,
+    "state": "completed",
+    "title": "push \u2014 main",
+    "updated_at": "2026-11-18T18:20:43Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44368647417",
+    "workflow": "push \u2014 main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:20:24Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368615560,
+    "state": "completed",
+    "title": "push \u2014 main",
+    "updated_at": "2026-11-18T18:20:33Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368615560",
+    "workflow": "push \u2014 main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:55Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367968934,
+    "state": "completed",
+    "title": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:20:29Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367968934",
+    "workflow": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:19:25Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368430841,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:19:26Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368430841",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:48Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367949652,
+    "state": "completed",
+    "title": "Stop the fleet worker skipping its issue pass",
+    "updated_at": "2026-11-18T18:19:21Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367949652",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:56Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367971569,
+    "state": "completed",
+    "title": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:18:42Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367971569",
+    "workflow": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:18:15Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44368212711,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:18:23Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44368212711",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:53Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367963830,
+    "state": "completed",
+    "title": "PR #1050",
+    "updated_at": "2026-11-18T18:18:14Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367963830",
+    "workflow": "PR #1050"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:15:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367758886,
+    "state": "completed",
+    "title": "Stop the fleet worker skipping its issue pass",
+    "updated_at": "2026-11-18T18:18:10Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367758886",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:44Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367939208,
+    "state": "completed",
+    "title": "PR #602",
+    "updated_at": "2026-11-18T18:17:30Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367939208",
+    "workflow": "PR #602"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:55Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367968682,
+    "state": "completed",
+    "title": "PR #1050 opened \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:17:09Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367968682",
+    "workflow": "PR #1050 opened \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:55Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367968711,
+    "state": "completed",
+    "title": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:17:07Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367968711",
+    "workflow": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:55Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367968939,
+    "state": "completed",
+    "title": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:17:06Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367968939",
+    "workflow": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:17:01Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367987876,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:17:02Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367987876",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:16:48Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367949641,
+    "state": "completed",
+    "title": "PR #602 \u2014 Stop the fleet worker skipping its issue pass",
+    "updated_at": "2026-11-18T18:16:57Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367949641",
+    "workflow": "PR #602 \u2014 Stop the fleet worker skipping its issue pass"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:16:55Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44367968783,
+    "state": "completed",
+    "title": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit",
+    "updated_at": "2026-11-18T18:16:56Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44367968783",
+    "workflow": "PR #1050 \u2014 Keep typed work when the GitHub sign-in ends mid-edit"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:15:44Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367749370,
+    "state": "completed",
+    "title": "PR #602",
+    "updated_at": "2026-11-18T18:16:50Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367749370",
+    "workflow": "PR #602"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:16:03Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367810406,
+    "state": "completed",
+    "title": "Vendor changelog merge",
+    "updated_at": "2026-11-18T18:16:13Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367810406",
+    "workflow": "Vendor changelog merge"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:15:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 44367759109,
+    "state": "completed",
+    "title": "PR #602 \u2014 Stop the fleet worker skipping its issue pass",
+    "updated_at": "2026-11-18T18:16:00Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44367759109",
+    "workflow": "PR #602 \u2014 Stop the fleet worker skipping its issue pass"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:14:21Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44367490168,
+    "state": "completed",
+    "title": "Rules consistency",
+    "updated_at": "2026-11-18T18:14:43Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44367490168",
+    "workflow": "Rules consistency"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968655,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:10:12Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968655",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:05:24Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 44365839178,
+    "state": "completed",
+    "title": "scheduled \u2014 17 9 * * *",
+    "updated_at": "2026-11-18T18:06:09Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44365839178",
+    "workflow": "scheduled \u2014 17 9 * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968371,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:04:41Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968371",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968335,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:03:46Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968335",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:01:25Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44365097630,
+    "state": "completed",
+    "title": "PR #4983 \u2014 teardown",
+    "updated_at": "2026-11-18T18:01:44Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44365097630",
+    "workflow": "PR #4983 \u2014 teardown"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:41Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364954505,
+    "state": "completed",
+    "title": "PR #4983",
+    "updated_at": "2026-11-18T18:01:44Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364954505",
+    "workflow": "PR #4983"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968140,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:34Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968140",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:01:25Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44365097863,
+    "state": "completed",
+    "title": "reap PR #4983 (closed)",
+    "updated_at": "2026-11-18T18:01:33Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44365097863",
+    "workflow": "reap PR #4983 (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:01:17Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44365072287,
+    "state": "completed",
+    "title": "scheduled \u2014 */5 * * * *",
+    "updated_at": "2026-11-18T18:01:32Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44365072287",
+    "workflow": "scheduled \u2014 */5 * * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968330,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:31Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968330",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968833,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:18Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968833",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968166,
+    "state": "completed",
+    "title": "TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:13Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968166",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968160,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:04Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968160",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:01:02Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44365022177,
+    "state": "completed",
+    "title": "chained \u2014 after PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy #16846",
+    "updated_at": "2026-11-18T18:01:03Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44365022177",
+    "workflow": "chained \u2014 after PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial "
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968333,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:01:01Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968333",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968483,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:00:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968483",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968259,
+    "state": "completed",
+    "title": "reap PR #4983 (synchronize)",
+    "updated_at": "2026-11-18T18:00:56Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968259",
+    "workflow": "reap PR #4983 (synchronize)"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-18T18:00:45Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44364968179,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T18:00:54Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44364968179",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T17:58:39Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44364585005,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-18T17:58:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44364585005",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T17:33:52Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 44360064742,
+    "state": "completed",
+    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
+    "updated_at": "2026-11-18T17:45:37Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44360064742",
+    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-18T17:38:06Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44360841900,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-18T17:45:14Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44360841900",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-18T17:44:51Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44362067423,
+    "state": "in_progress",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-18T17:45:13Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44362067423",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-18T17:27:48Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44358941104,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-18T17:45:09Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44358941104",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-18T17:44:32Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44362008963,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-18T17:44:47Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44362008963",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-18T17:33:50Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -7495,18 +8235,6 @@
     "updated_at": "2026-11-18T17:38:36Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44360060994",
     "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-18T17:38:06Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44360841900,
-    "state": "in_progress",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-18T17:38:10Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44360841900",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "success",
@@ -7797,18 +8525,6 @@
     "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-18T17:33:52Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44360064742,
-    "state": "in_progress",
-    "title": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy",
-    "updated_at": "2026-11-18T17:33:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44360064742",
-    "workflow": "PR #4983 \u2014 TRIAL, do not merge: preview admin signs in through the GitHub App trial proxy"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-18T17:33:46Z",
     "event": "pull_request",
@@ -7915,18 +8631,6 @@
     "updated_at": "2026-11-18T17:28:02Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44357827199",
     "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-18T17:27:48Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44358941104,
-    "state": "in_progress",
-    "title": "Routine eval watchdog",
-    "updated_at": "2026-11-18T17:27:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44358941104",
-    "workflow": "Routine eval watchdog"
    },
    {
     "conclusion": "success",
@@ -10582,54 +11286,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033564,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:30:01Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033564",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323034081,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:23:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323034081",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033953,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:21:18Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033953",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:40Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323025155,
-    "state": "completed",
-    "title": "PR #4981",
-    "updated_at": "2026-11-18T14:20:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323025155",
-    "workflow": "PR #4981"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-18T14:20:07Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -10651,54 +11307,6 @@
     "updated_at": "2026-11-18T14:20:17Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323088588",
     "workflow": "chained \u2014 after PR #4981 \u2014 Auto-publish 1 scheduled post(s) #16831"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033584,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:15Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033584",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033808,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:15Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033808",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033606,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:12Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033606",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:42Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033161,
-    "state": "completed",
-    "title": "Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:11Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033161",
-    "workflow": "Secrets scan"
    },
    {
     "conclusion": "cancelled",
@@ -10726,42 +11334,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033601,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:03Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033601",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323035755,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:03Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323035755",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323034310,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:20:01Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323034310",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-18T14:19:44Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -10771,66 +11343,6 @@
     "updated_at": "2026-11-18T14:20:00Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323037288",
     "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323036752,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:19:59Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323036752",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033652,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:19:57Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033652",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033425,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:19:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033425",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-18T14:19:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44323033712,
-    "state": "completed",
-    "title": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)",
-    "updated_at": "2026-11-18T14:19:52Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44323033712",
-    "workflow": "PR #4981 \u2014 Auto-publish 1 scheduled post(s)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T14:19:25Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44322982866,
-    "state": "completed",
-    "title": "manual \u2014 Adam-S-Daniel",
-    "updated_at": "2026-11-18T14:19:44Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44322982866",
-    "workflow": "manual \u2014 Adam-S-Daniel"
    },
    {
     "conclusion": "failure",
@@ -10855,30 +11367,6 @@
     "updated_at": "2026-11-18T14:04:33Z",
     "url": "https://github.com/Adam-S-Daniel/rss-inator/actions/runs/44320139831",
     "workflow": "feeds"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T13:47:34Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44317321447,
-    "state": "completed",
-    "title": "manual \u2014 Adam-S-Daniel",
-    "updated_at": "2026-11-18T13:47:50Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44317321447",
-    "workflow": "manual \u2014 Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T13:47:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 44317309908,
-    "state": "completed",
-    "title": "reap PR #4980 (closed)",
-    "updated_at": "2026-11-18T13:47:37Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/44317309908",
-    "workflow": "reap PR #4980 (closed)"
    },
    {
     "conclusion": "failure",
@@ -11047,54 +11535,6 @@
     "updated_at": "2026-11-18T12:41:39Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44306180528",
     "workflow": "Bump the fleet's skills pins"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T12:40:06Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44306106730,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-18T12:40:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44306106730",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T12:40:06Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44306107250,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-18T12:40:34Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44306107250",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T12:40:06Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44306107223,
-    "state": "completed",
-    "title": "Arm queued guidance improvements in the merge window",
-    "updated_at": "2026-11-18T12:40:23Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44306107223",
-    "workflow": "Arm queued guidance improvements in the merge window"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-18T12:40:06Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44306106655,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-18T12:40:17Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44306106655",
-    "workflow": "Follow drafted-skill fixtures"
    },
    {
     "conclusion": "success",
@@ -15249,18 +15689,6 @@
     "workflow": "Vendor changelog merge"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:16:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156810842,
-    "state": "completed",
-    "title": "Bound the hung-call Stop on a fake clock, not this machine's speed",
-    "updated_at": "2026-11-17T19:19:28Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156810842",
-    "workflow": "CI"
-   },
-   {
     "conclusion": "skipped",
     "created_at": "2026-11-17T19:17:45Z",
     "event": "workflow_run",
@@ -15271,30 +15699,6 @@
     "updated_at": "2026-11-17T19:17:46Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44157033283",
     "workflow": "Vendor changelog merge"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:15:00Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156538363,
-    "state": "completed",
-    "title": "Merge pull request #578 from Adam-S-Daniel/docs/adr-0043-status",
-    "updated_at": "2026-11-17T19:17:42Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156538363",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:16:28Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156803237,
-    "state": "completed",
-    "title": "PR #593",
-    "updated_at": "2026-11-17T19:17:30Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156803237",
-    "workflow": "PR #593"
    },
    {
     "conclusion": "skipped",
@@ -15319,78 +15723,6 @@
     "updated_at": "2026-11-17T19:16:42Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156810843",
     "workflow": "PR #593 \u2014 Bound the hung-call Stop on a fake clock, not this machine's speed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:14:59Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156536775,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-17T19:16:06Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156536775",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-17T19:15:16Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156589124,
-    "state": "completed",
-    "title": "Vendor changelog merge",
-    "updated_at": "2026-11-17T19:15:17Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156589124",
-    "workflow": "Vendor changelog merge"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:15:00Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44156538387,
-    "state": "completed",
-    "title": "push \u2014 main",
-    "updated_at": "2026-11-17T19:15:12Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44156538387",
-    "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:10:28Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155714223,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-17T19:13:10Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155714223",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "failure",
-    "created_at": "2026-11-17T19:12:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44156058950,
-    "state": "completed",
-    "title": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:13:02Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156058950",
-    "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:10:30Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155718641,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-17T19:12:56Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155718641",
-    "workflow": "Push on main"
    },
    {
     "conclusion": "failure",
@@ -15418,18 +15750,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-17T19:12:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44156040259,
-    "state": "completed",
-    "title": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:12:43Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156040259",
-    "workflow": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-17T19:12:22Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -15439,18 +15759,6 @@
     "updated_at": "2026-11-17T19:12:38Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156059010",
     "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:12:21Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44156056255,
-    "state": "completed",
-    "title": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:12:38Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156056255",
-    "workflow": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
    },
    {
     "conclusion": "success",
@@ -15475,186 +15783,6 @@
     "updated_at": "2026-11-17T19:12:32Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156059146",
     "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:12:21Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44156055171,
-    "state": "completed",
-    "title": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:12:30Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156055171",
-    "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:12:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44156040227,
-    "state": "completed",
-    "title": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:12:26Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44156040227",
-    "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:11:05Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155822435,
-    "state": "completed",
-    "title": "npm_and_yarn in /e2e for immutable - Update #1712662922",
-    "updated_at": "2026-11-17T19:12:13Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155822435",
-    "workflow": "npm_and_yarn in /e2e for immutable - Update #1712662922"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:09:09Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155471872,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-17T19:11:38Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155471872",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:09:20Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155506742,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-17T19:11:37Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155506742",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:11:07Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155828207,
-    "state": "completed",
-    "title": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:11:20Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155828207",
-    "workflow": "PR #1039 \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:11:07Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44155828078,
-    "state": "completed",
-    "title": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e",
-    "updated_at": "2026-11-17T19:11:20Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44155828078",
-    "workflow": "PR #1039 edited \u2014 build(deps-dev): bump immutable from 5.1.9 to 5.1.10 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:05:39Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154845296,
-    "state": "completed",
-    "title": "PR #1040 \u2014 build(deps-dev): bump serve from 14.2.6 to 14.2.7 in /e2e",
-    "updated_at": "2026-11-17T19:10:05Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154845296",
-    "workflow": "PR #1040 \u2014 build(deps-dev): bump serve from 14.2.6 to 14.2.7 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975284,
-    "state": "completed",
-    "title": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:09:58Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975284",
-    "workflow": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch grou"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975252,
-    "state": "completed",
-    "title": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:09:39Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975252",
-    "workflow": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch grou"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:05:39Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154845346,
-    "state": "completed",
-    "title": "PR #1040 \u2014 build(deps-dev): bump serve from 14.2.6 to 14.2.7 in /e2e",
-    "updated_at": "2026-11-17T19:08:46Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154845346",
-    "workflow": "PR #1040 \u2014 build(deps-dev): bump serve from 14.2.6 to 14.2.7 in /e2e"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975297,
-    "state": "completed",
-    "title": "PR #1041 opened \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:06:52Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975297",
-    "workflow": "PR #1041 opened \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-pat"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975413,
-    "state": "completed",
-    "title": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:06:47Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975413",
-    "workflow": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch grou"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975306,
-    "state": "completed",
-    "title": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:06:46Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975306",
-    "workflow": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch grou"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T19:06:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 44154975290,
-    "state": "completed",
-    "title": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch group",
-    "updated_at": "2026-11-17T19:06:37Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44154975290",
-    "workflow": "PR #1041 \u2014 build(deps): bump ruby/setup-ruby from 1.336.0 to 1.338.0 in the actions-minor-patch grou"
    },
    {
     "conclusion": "success",
@@ -15727,18 +15855,6 @@
     "updated_at": "2026-11-17T18:01:56Z",
     "url": "https://github.com/Adam-S-Daniel/claude-memory-map/actions/runs/44143389688",
     "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T17:54:57Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44142173011,
-    "state": "completed",
-    "title": "scheduled \u2014 47 8 * * *",
-    "updated_at": "2026-11-17T17:55:38Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44142173011",
-    "workflow": "scheduled \u2014 47 8 * * *"
    },
    {
     "conclusion": "success",
@@ -15838,18 +15954,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-17T17:37:13Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44138986154,
-    "state": "completed",
-    "title": "scheduled \u2014 13 8 * * *",
-    "updated_at": "2026-11-17T17:37:31Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44138986154",
-    "workflow": "scheduled \u2014 13 8 * * *"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-17T17:35:41Z",
     "event": "schedule",
     "repo": "jodidaniel/jodidaniel.com",
@@ -15862,18 +15966,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-17T16:57:17Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44131580521,
-    "state": "completed",
-    "title": "scheduled \u2014 29 7 * * *",
-    "updated_at": "2026-11-17T16:58:17Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44131580521",
-    "workflow": "scheduled \u2014 29 7 * * *"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-17T16:56:46Z",
     "event": "schedule",
     "repo": "jodidaniel/jodidaniel.com",
@@ -15883,18 +15975,6 @@
     "updated_at": "2026-11-17T16:57:02Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/44131489992",
     "workflow": "scheduled \u2014 23 7 * * *"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T16:31:17Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44126700467,
-    "state": "completed",
-    "title": "scheduled \u2014 53 6 * * *",
-    "updated_at": "2026-11-17T16:38:38Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44126700467",
-    "workflow": "scheduled \u2014 53 6 * * *"
    },
    {
     "conclusion": "success",
@@ -15967,18 +16047,6 @@
     "updated_at": "2026-11-17T16:07:41Z",
     "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/44121771052",
     "workflow": "PR #69"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T16:06:46Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44122001672,
-    "state": "completed",
-    "title": "Fire fleet worker",
-    "updated_at": "2026-11-17T16:06:59Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44122001672",
-    "workflow": "Fire fleet worker"
    },
    {
     "conclusion": "success",
@@ -16102,18 +16170,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-17T15:57:29Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44120236564,
-    "state": "completed",
-    "title": "scheduled \u2014 17 6 * * *",
-    "updated_at": "2026-11-17T15:57:36Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44120236564",
-    "workflow": "scheduled \u2014 17 6 * * *"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-17T15:56:11Z",
     "event": "schedule",
     "repo": "Adam-S-Daniel/fastmail-actions",
@@ -16123,18 +16179,6 @@
     "updated_at": "2026-11-17T15:56:20Z",
     "url": "https://github.com/Adam-S-Daniel/fastmail-actions/actions/runs/44119999158",
     "workflow": "scheduled \u2014 17 6 * * *"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T15:36:59Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44116368975,
-    "state": "completed",
-    "title": "Nightly drift report",
-    "updated_at": "2026-11-17T15:39:32Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44116368975",
-    "workflow": "Nightly drift report"
    },
    {
     "conclusion": "success",
@@ -16171,30 +16215,6 @@
     "updated_at": "2026-11-17T12:34:23Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/44084369042",
     "workflow": "Sweep stale CMS PRs"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T12:02:05Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44079360302,
-    "state": "completed",
-    "title": "Fire fleet worker",
-    "updated_at": "2026-11-17T12:02:16Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44079360302",
-    "workflow": "Fire fleet worker"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-17T11:10:01Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 44071516971,
-    "state": "completed",
-    "title": "Anthropic article watch",
-    "updated_at": "2026-11-17T11:10:08Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/44071516971",
-    "workflow": "Anthropic article watch"
    },
    {
     "conclusion": "success",
@@ -27669,7 +27689,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-11-04T17:41:11Z"
+  "since": "2026-11-04T18:25:18Z"
  },
  "agent_made": {
   "items": [
@@ -64254,7 +64274,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-18T17:40:11Z",
+  "generated_at": "2026-11-18T18:24:16Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -64330,7 +64350,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-18T17:38:56Z",
+ "generated_at": "2026-11-18T17:44:21Z",
  "guidance": {
   "removed": [
    {
@@ -100328,7 +100348,7 @@
   "unknown": 0
  },
  "lessons": {
-  "date": "2026-11-17",
+  "date": "2026-11-18",
   "issues": [
    {
     "count": 1,
@@ -129961,7 +129981,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "b9c296285a2078d56f29bbf92645640121c03296",
-  "results_commit": "c0dd9b0c890b41271448df17885e9d473d369363"
+  "results_commit": "b115671d499cb0d6d13679251755ef3b2c6fb815"
  },
  "spend": {
   "generated_at": "2026-11-18T16:24:33Z",
