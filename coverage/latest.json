@@ -14,15 +14,15 @@
   ],
   "problems": [],
   "publication": {
-    "as_of": "2026-11-18T17:21:23Z",
-    "guidance_revision": "d8e87ea7f3c3e9fa23b791f17c3051753692fcab",
+    "as_of": "2026-11-19T17:27:08Z",
+    "guidance_revision": "d75dec92f6850e8b4006c88ef907592db03786c3",
     "public_registry_revisions": {
-      "adam-agentskills": "6d059b7f268419b6f1e9edd9bec5e94b81c813f4",
-      "adamdaniel.ai": "4f7a6da686013a480880ed25438e0b8886e2b7be",
-      "cms-platform": "9f736a3aabaef9076e578a9ed07d71db45d2cf93"
+      "adam-agentskills": "72e900f2670b9ff39cfdc7b894ac86b13eab0902",
+      "adamdaniel.ai": "07c3d4ef482ee7d7d1b6b33d787286b653bd059f",
+      "cms-platform": "1d619a7b3b53ced911739b1f4b9e9873e9ea387d"
     },
-    "repository_revision": "b9c296285a2078d56f29bbf92645640121c03296",
-    "run_id": "44357622058"
+    "repository_revision": "39d03754c6c1f3a0dfe3469c4e43956f700f29a5",
+    "run_id": "44577214731"
   },
   "registries": [
     {
@@ -144,7 +144,7 @@
         {
           "bundle": "adam-coding-local",
           "fixtures": 0,
-          "reason": "rechecked 2026-11-05, holds: fails criterion 1 (no recorded local use since 2026-09-14) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply)",
+          "reason": "rechecked 2026-11-18, holds: fails criterion 1 (no recorded local use since 2026-09-14; the 2026-11-18 local census, from 2026-09-28, still counts none) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply)",
           "registry": "adam-agentskills",
           "skill": "sync-cc-settings-between-wsl-and-windows",
           "status": "skipped"
