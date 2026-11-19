@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-18T18:53:47Z",
-  "generated_at": "2026-11-18T18:53:57Z",
+  "as_of": "2026-11-19T19:03:26Z",
+  "generated_at": "2026-11-19T19:03:40Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -708,10 +708,10 @@
       "added_per_week": 3.25,
       "complete": true,
       "eligible_share": null,
-      "from": "2026-10-21T18:53:47Z",
+      "from": "2026-10-22T19:03:26Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-18T18:53:47Z",
+      "to": "2026-11-19T19:03:26Z",
       "weeks": 4.0
     },
     "guidance-section": {
@@ -719,10 +719,10 @@
       "added_per_week": 1.25,
       "complete": true,
       "eligible_share": 0.4,
-      "from": "2026-10-21T18:53:47Z",
+      "from": "2026-10-22T19:03:26Z",
       "removed": 1,
       "removed_per_week": 0.25,
-      "to": "2026-11-18T18:53:47Z",
+      "to": "2026-11-19T19:03:26Z",
       "weeks": 4.0
     },
     "skill": {
@@ -730,10 +730,10 @@
       "added_per_week": 1.5,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-21T18:53:47Z",
+      "from": "2026-10-22T19:03:26Z",
       "removed": 4,
       "removed_per_week": 1.0,
-      "to": "2026-11-18T18:53:47Z",
+      "to": "2026-11-19T19:03:26Z",
       "weeks": 4.0
     }
   },
