@@ -129,11 +129,13 @@ jobs:
           python-version: '3.12'
 
       # The only install cost: one pinned wheel and Chromium alone. No cache
-      # step, because actions/cache is not in actions.lock.
+      # step, because actions/cache is not in actions.lock. ubuntu-latest is
+      # Ubuntu 26.04 now, and Playwright before 1.65 has no dependency list
+      # for it (`--with-deps` exits 1), so the pin stays at 1.65 or later.
       - name: Install Playwright and Chromium
         if: steps.site.outputs.skip != 'true'
         run: |
-          python3 -m pip install --quiet playwright==1.55.0 &&
+          python3 -m pip install --quiet playwright==1.65.1 &&
             python3 -m playwright install --with-deps chromium >/dev/null
 
       - name: Load the live page
