@@ -146,6 +146,10 @@ RESOLVERS = {
 }
 
 
+IDENTITY = ("-c", "user.name=skills-evals loop refresh",
+            "-c", "user.email=skills-evals@users.noreply.github.com")
+
+
 def git(repo: Path, *args: str, check: bool = True) -> str:
     done = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
     if check and done.returncode != 0:
@@ -165,8 +169,12 @@ def merge(repo: Path, base: str) -> str:
                       capture_output=True).returncode == 0:
         return "up-to-date"
     fork = git(repo, "merge-base", base, head).strip()
-    done = subprocess.run(["git", "-C", str(repo), "merge", "--no-ff", "--no-commit", base],
-                          capture_output=True, text=True)
+    # The identity rides on the merge too: git checks it before it merges,
+    # even with --no-commit, and a runner with none configured (the
+    # ubuntu-26.04 image cannot auto-detect one) fails before any conflict
+    # is written, which read as "failed without a conflict".
+    done = subprocess.run(["git", "-C", str(repo), *IDENTITY, "merge", "--no-ff", "--no-commit",
+                           base], capture_output=True, text=True)
     conflicted = [p for p in git(repo, "diff", "--name-only", "--diff-filter=U").splitlines() if p]
     if done.returncode != 0 and not conflicted:
         git(repo, "merge", "--abort", check=False)
@@ -187,9 +195,7 @@ def merge(repo: Path, base: str) -> str:
         git(repo, "merge", "--abort", check=False)
         raise
     names = ", ".join(conflicted) or "none"
-    git(repo, "-c", "user.name=skills-evals loop refresh",
-        "-c", "user.email=skills-evals@users.noreply.github.com",
-        "commit", "-q", "-m",
+    git(repo, *IDENTITY, "commit", "-q", "-m",
         f"Merge {base} into this loop pull request\n\n"
         f"Re-resolved the append-only paths both sides added to: {names} "
         "(scripts/refresh_loop_prs.py, skills-evals#623).")
