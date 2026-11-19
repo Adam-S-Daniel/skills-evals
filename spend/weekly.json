@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated_at": "2026-11-18T16:24:33Z",
+ "generated_at": "2026-11-19T12:41:25Z",
  "weeks": [
   {
    "week": "2026-10-19",
@@ -16,7 +16,7 @@
    "eval_runs": 56,
    "plan_meter_points": 5.0,
    "run_usd": 17.184334,
-   "scheduled_usd": null,
+   "scheduled_usd": 106.09776382000001,
    "api_usd": 0,
    "thread_spend_usd": 1747.1519355771477
   },
@@ -25,7 +25,7 @@
    "eval_runs": 943,
    "plan_meter_points": 131.0,
    "run_usd": 579.569918645,
-   "scheduled_usd": 111.66262352000001,
+   "scheduled_usd": 106.09776382000001,
    "api_usd": 91.72496880500002,
    "thread_spend_usd": 1940.4022469269485
   },
@@ -34,7 +34,7 @@
    "eval_runs": 388,
    "plan_meter_points": 11.0,
    "run_usd": 138.280329115,
-   "scheduled_usd": 111.66262352000001,
+   "scheduled_usd": 106.09776382000001,
    "api_usd": 128.36016569999995,
    "thread_spend_usd": 1004.7223047623646
   },
@@ -43,30 +43,30 @@
    "eval_runs": 146,
    "plan_meter_points": 0,
    "run_usd": 53.285669635,
-   "scheduled_usd": 31.511088711240184,
+   "scheduled_usd": 42.748843889589104,
    "api_usd": 0,
-   "thread_spend_usd": 188.30239323965193
+   "thread_spend_usd": 253.25868627965193
   }
  ],
  "total": {
   "since": "2026-10-19",
-  "usd": 1524.7241506762402,
+  "usd": 1630.9299502745894,
   "run_usd": 1049.8026804200001,
-  "scheduled_usd": 254.8363357512402,
-  "scheduled_since": "2026-11-02",
+  "scheduled_usd": 361.04213534958916,
+  "scheduled_since": "2026-10-26",
   "api_usd": 220.08513450499998,
-  "thread_spend_usd": 5501.999105115,
+  "thread_spend_usd": 5566.955398155001,
   "verdicts": 9,
-  "cost_per_verdict": 169.41379451958224
+  "cost_per_verdict": 181.21443891939882
  },
  "rates": {
   "eval_usd_per_point": 6.67,
   "scheduled_task_usd_per_point": 6.67,
-  "thread_usd_per_point": 42.1337060577794
+  "thread_usd_per_point": 47.49587443863625
  },
  "loop_jobs": {
-  "as_of": "2026-11-18T16:24:33Z",
-  "points_per_week": 8.4241063905,
-  "usd_per_week": 56.160709270000005
+  "as_of": "2026-11-19T12:41:25Z",
+  "points_per_week": 8.927467158000002,
+  "usd_per_week": 59.51644772000001
  }
 }
