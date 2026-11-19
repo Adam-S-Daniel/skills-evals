@@ -175,7 +175,9 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
    "refresh did not land" banner reads it.
    For each changed file, run Artifact `publish` with the dashboard's `url`, `asset: true` and
    `file_path`, one file per call. Then run one ArtifactData `batch` of `update` writes on
-   `datasets/<id>`, pinned with `if_version`, that sets
+   `datasets/<id>`, pinned with `if_version` (read the versions with ArtifactData `list` on
+   collection `datasets` only; never list `files`, whose `index.html` doc carries the whole page,
+   254k characters on 2026-11-19, which every later call then re-reads), that sets
    `source: {kind: "file", url: "/_blob/<id>", name}` and `updated: {at, by}`. Delete any
    `datasets/<id>` doc that `page/datasets.json` no longer names.
    On `PAGE-CHANGED`, build the page in `explorer/` (`npm ci && npm run build`), smoke-test it with
