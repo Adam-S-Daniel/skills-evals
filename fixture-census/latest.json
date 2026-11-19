@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
     "context_declared": 73,
-    "context_missing": 100,
+    "context_missing": 102,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 173
+    "total": 175
   },
-  "generated_at": "2026-11-18T14:31:44Z",
+  "generated_at": "2026-11-19T14:40:15Z",
   "include_private_names": false,
   "paused_removed": [
     {
@@ -142,7 +142,7 @@
         {
           "bundle": "adam-coding-local",
           "fixtures": 0,
-          "reason": "rechecked 2026-11-05, holds: fails criterion 1 (no recorded local use since 2026-09-14) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply)",
+          "reason": "rechecked 2026-11-18, holds: fails criterion 1 (no recorded local use since 2026-09-14; the 2026-11-18 local census, from 2026-09-28, still counts none) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply)",
           "registry": "adam-agentskills",
           "skill": "sync-cc-settings-between-wsl-and-windows",
           "status": "skipped"
