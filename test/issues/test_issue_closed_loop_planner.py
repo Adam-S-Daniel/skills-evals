@@ -233,6 +233,8 @@ def measured_summary(run_dir: Path, delta: float, name="k/20261019T100000Z/with_
 class GuardImproveChargeTests(unittest.TestCase):
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1808,6 +1810,10 @@ class BareBaselineTests(unittest.TestCase):
     """ADR 0012's 2026-10-27 addendum: one bare fire per (scheduled in-place
     fixture, roster model), once, after every other band, reserved as one
     arm; never an empty fire of the cell's pair, and one run to the guard."""
+
+    def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
 
     def scheduled_in_place(self):
         committed = plan_week.schedule.committed_fixtures(ROOT)

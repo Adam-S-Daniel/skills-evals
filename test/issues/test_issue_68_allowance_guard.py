@@ -570,6 +570,8 @@ def usage_block(delta=0.02, *, reset=False, started="2026-10-19T10:00:00Z"):
 class GuardTests(unittest.TestCase):
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1071,6 +1073,8 @@ class PaceRoomTests(unittest.TestCase):
     under pace"); the fixed cap left stays a floor."""
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1254,6 +1258,161 @@ class PaceRoomTests(unittest.TestCase):
         shutil.rmtree(self.tree / "routine-results")
         self.assertTrue(guard.describe(self.state()).endswith(
             "; no recent account reading, so no pace room"))
+
+
+class PaceHoldTests(unittest.TestCase):
+    """Adam, 2026-11-20: "I am far ahead of usage pace", so put "the kibosh
+    on such runs". The loop's cap was a floor whatever the account's pace:
+    at 74% with 57.5% of the week gone the guard still let two fires go. Now
+    a reading above the pace line (stop times the share of the week gone,
+    from the top of the reading's range) refuses every fire, and no usable
+    reading refuses too (fail safe), but for one pace probe that brings one."""
+
+    #: The account's reset after NOW (Monday 2026-10-26 17:00 UTC).
+    RESET = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    def metered(self, week, *, at=NOW - timedelta(hours=1), reset=None):
+        stamp = "20261020T100000Z"
+        path = (self.tree / "routine-results" / f"{stamp}-a1b2c3" / "k" / stamp
+                / "with_skill" / "summary.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        block = usage_block(0.02)
+        snap = snapshot(week, at=at, resets_in=(reset or self.RESET) - NOW)
+        block["measured"]["meter"] = {"snapshots": [snap], "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+
+    def state(self, fires=(1, 1), eval_started=()):
+        started = None if eval_started is None else list(eval_started)
+        return guard.account(self.tree, LIMITS, NOW, fires, eval_started=started)
+
+    def elapsed(self):
+        return 1 - (self.RESET - NOW) / guard.WINDOW
+
+    def test_the_line_is_the_stop_times_the_week_gone_from_the_top_of_the_reading(self):
+        # 0.45 truncated may be up to 0.46: at a 0.46 line it is on pace.
+        self.assertFalse(guard.ahead_of_pace(0.45, 0.46 / 0.80, LIMITS))
+        self.assertTrue(guard.ahead_of_pace(0.46, 0.46 / 0.80, LIMITS))
+        # The 2026-11-20 shape: 74% with 57.5% of the week gone.
+        self.assertTrue(guard.ahead_of_pace(0.74, 0.575, LIMITS))
+        self.assertFalse(guard.ahead_of_pace(0.30, 0.575, LIMITS))
+        # No reading is ahead: fail safe.
+        self.assertTrue(guard.ahead_of_pace(None, None, LIMITS))
+
+    def test_ahead_of_pace_refuses_every_mode_with_the_cap_left(self):
+        # About 13% of the week gone (a 10.7% line); 20% used is ahead, while
+        # the 30-point cap is nearly untouched.
+        self.metered(0.20)
+        state = self.state()
+        self.assertTrue(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertGreater(state["cap"] - state["spent"], 7 * RESERVE)
+        self.assertLessEqual(guard.room(state), 0)
+        self.assertEqual(guard.fits(state), 0)
+        self.assertFalse(guard.refresh(state))
+        for mode in ("eval", "scaffold", "draft", *guard.IMPROVE_MODES):
+            with self.subTest(mode=mode):
+                self.assertEqual(guard.check(state, mode), guard.PACE_REFUSAL)
+        self.assertIn("PACE HOLD: no fire goes;", guard.describe(state))
+        self.assertNotIn("probe", guard.describe(state))
+
+    def test_ahead_of_pace_overrides_the_refresh_fire(self):
+        self.metered(0.20)
+        finished = NOW - guard.IMPROVE_MAX_RUN - timedelta(minutes=1)
+        state = guard.account(self.tree, LIMITS, NOW, (2, 0), (1, 0),
+                              improve_started=[finished])
+        self.assertTrue(state["improve_finished"])
+        self.assertFalse(guard.refresh(state))
+        self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+
+    def test_under_pace_leaves_the_cap_as_it_was(self):
+        self.metered(0.05)
+        state = self.state()
+        self.assertFalse(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertEqual(guard.fits(state), 7)
+        self.assertIsNone(guard.check(state, "eval"))
+        self.assertNotIn("PACE HOLD", guard.describe(state))
+
+    def test_the_hold_lifts_as_the_week_goes_on(self):
+        # The same 20% reading, taken late in the week: under the line.
+        late = self.RESET - timedelta(days=1)
+        self.metered(0.20, at=late - timedelta(hours=1))
+        state = guard.account(self.tree, LIMITS, late, (0, 0))
+        self.assertFalse(state["pace_hold"])
+        self.assertGreater(guard.fits(state), 0)
+
+    def test_no_reading_holds_but_allows_one_pace_probe(self):
+        self.metered(0.05, at=NOW + timedelta(hours=1))  # ahead of the clock: not read
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+        self.assertEqual(guard.fits(state), 0)
+        self.assertTrue(guard.refresh(state))
+        self.assertIsNone(guard.check(state, "eval"))
+        for mode in ("scaffold", "draft", *guard.IMPROVE_MODES):
+            with self.subTest(mode=mode):
+                self.assertEqual(guard.check(state, mode), guard.PACE_REFUSAL)
+        self.assertIn("but one pace probe", guard.describe(state))
+
+    def test_a_reading_from_before_the_reset_is_no_reading(self):
+        # Last week's snapshot (its window reset at the week's start) is not
+        # read, so the new week starts held, with a probe.
+        self.metered(0.10, at=NOW - timedelta(hours=2),
+                     reset=self.RESET - guard.WINDOW)
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+
+    def test_the_probe_waits_for_the_interval_and_for_pending_results(self):
+        self.metered(0.05, at=NOW + timedelta(hours=1))
+        just_inside = NOW - guard.PACE_PROBE_INTERVAL + timedelta(minutes=1)
+        just_outside = NOW - guard.PACE_PROBE_INTERVAL
+        cases = {
+            "an eval fire inside the interval": dict(fires=(1, 0), eval_started=[just_inside]),
+            "start times unknown": dict(fires=(0, 0), eval_started=None),
+            "a recent fire without results": dict(fires=(1, 1),
+                                                  eval_started=[NOW - timedelta(minutes=5)]),
+        }
+        for name, given in cases.items():
+            with self.subTest(name):
+                state = self.state(**given)
+                self.assertTrue(state["pace_hold"])
+                self.assertFalse(state["pace_probe"])
+                self.assertFalse(guard.refresh(state))
+                self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+        state = self.state(fires=(1, 0), eval_started=[just_outside])
+        self.assertTrue(state["pace_probe"])
+
+    def main(self, eval_starts):
+        budget_path = self.tree / "budget.yml"
+        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        quiet = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"}
+        with mock.patch.dict(os.environ, quiet, clear=True), \
+             contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", str(self.tree),
+                               "--budget", str(budget_path)], now=NOW,
+                              fire_count=lambda now: (0, 0),
+                              improve_count=lambda now: (0, 0),
+                              eval_starts=lambda now: eval_starts)
+        return code, out.getvalue()
+
+    def test_main_refuses_ahead_of_pace_with_exit_3(self):
+        self.metered(0.20)
+        code, out = self.main([])
+        self.assertEqual(code, guard.REFUSED_EXIT, out)
+        self.assertIn(guard.PACE_REFUSAL, out)
+
+    def test_main_lets_the_pace_probe_go(self):
+        code, out = self.main([])
+        self.assertEqual(code, 0, out)
+        self.assertIn("allowed as the pace probe", out)
 
 
 class ImproveCoverageTests(unittest.TestCase):
@@ -1530,6 +1689,8 @@ class ReadingBoundTests(unittest.TestCase):
     WIDE = {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 1.0}
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1799,6 +1960,8 @@ class ImproveCapTests(unittest.TestCase):
     kind per account week."""
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 

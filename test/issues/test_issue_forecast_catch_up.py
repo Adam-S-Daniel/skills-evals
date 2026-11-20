@@ -145,6 +145,45 @@ class Forecast(unittest.TestCase):
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
         self.assertEqual(doc["inputs"]["automatic_unmeasured_jobs"], 1)
 
+    def test_each_scheduled_task_is_listed_in_points(self):
+        # Adam, 2026-11-20: "add individual scheduled tasks".
+        automatic = {"categories": [{"id": "dash", "label": "Dashboard",
+                                     "meter_points_per_week": 9.0},
+                                    {"id": "personal", "label": "Personal",
+                                     "meter_points_per_week": 4.0}],
+                     "jobs": [
+                         {"kind": "scheduled task", "name": "Small job", "category": "dash",
+                          "in_loop": True, "lane": "meter", "model": "m",
+                          "fires_per_week": 7.0, "points_per_week": 1.0},
+                         {"kind": "scheduled task", "name": "Dashboard refresh",
+                          "category": "dash", "in_loop": True, "lane": "meter", "model": "m",
+                          "fires_per_week": 7.0, "points_per_week": 8.0},
+                         {"kind": "scheduled task", "name": "Private errand",
+                          "category": "personal", "in_loop": False, "lane": "meter",
+                          "model": "m", "fires_per_week": 1.0, "points_per_week": 4.0},
+                         {"kind": "scheduled task", "name": "Priced in dollars",
+                          "category": "dash", "in_loop": True, "lane": "meter",
+                          "fires_per_week": 1.0, "points_per_week": None,
+                          "usd_per_week": 3 / 0.15},
+                         {"kind": "scheduled task", "name": "Unmeasured", "category": "dash",
+                          "in_loop": True, "lane": "meter", "points_per_week": None},
+                         {"kind": "scheduled task", "name": "Eval fire", "category": "dash",
+                          "in_loop": True, "lane": "eval_cap", "points_per_week": 5.0},
+                         {"kind": "workflow", "name": "A workflow", "category": "dash",
+                          "in_loop": True, "lane": "meter", "points_per_week": 2.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0}, frozenset({"skipped-one"}),
+                              None, automatic)
+        tasks = doc["inputs"]["scheduled_tasks"]
+        self.assertEqual([(t["task"], t["points_per_week"]) for t in tasks], [
+            ("Dashboard refresh", 8.0), ("Personal (outside the loop)", 4.0),
+            ("Priced in dollars", 3.0), ("Small job", 1.0), ("Unmeasured", None)])
+        # Nothing outside the loop is named, nor its model.
+        self.assertNotIn("Private errand", json.dumps(doc))
+        self.assertIsNone(tasks[1]["model"])
+
     def test_loop_jobs_spend_from_the_eval_cap(self):
         # Adam, 2026-11-15: the loop's automatic jobs fit in the same 25 points.
         automatic = {"loop_meter_usd_per_week": 15 / 0.15,
@@ -374,7 +413,8 @@ class EvalsRunFirst(unittest.TestCase):
     def test_heavy_other_use_still_leaves_evals_the_cap_and_squeezes_the_owner(self):
         # 25 points at 1 an hour take 25 hours; 168 other points a week accrue
         # 25 meanwhile; 50 < 80, so the whole cap runs.
-        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0)
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0,
+                                pace_hold=0.0)
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
         sq = doc["inputs"]["owner_squeeze"]
         self.assertAlmostEqual(sq["week_total_points"], 193.0)
@@ -382,8 +422,17 @@ class EvalsRunFirst(unittest.TestCase):
 
     def test_slow_evals_meet_the_stop_part_way(self):
         # At 0.1 an hour, E + 168 * E / 16.8 = 80, so E = 80 / 11.
-        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1)
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1,
+                                pace_hold=0.0)
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 80 / 11)
+
+    def test_the_pace_hold_takes_the_stop_off_the_whole_week(self):
+        # allowance_guard.py's pace hold (2026-11-20): evals no longer run
+        # first, so 70 points of other use leave them 80 - 70, not the cap.
+        doc = self.run_forecast(non_eval_points_per_week=70.0, eval_points_per_hour=1.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertIsNone(doc["inputs"]["owner_squeeze"])
+        self.assertIs(doc["inputs"]["assumptions"]["pace_hold"], True)
 
     def test_without_a_pace_the_stop_comes_off_the_whole_week(self):
         doc = self.run_forecast(non_eval_points_per_week=70.0)

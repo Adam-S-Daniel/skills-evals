@@ -192,7 +192,7 @@ loop's calls report no tokens, so a record with them stays a floor, as before.
 A weekly-meter reading is a whole percent, so it is a range, not a value
 (`allowance_points.reading_range` and `delta_range`, from the package's
 `reading_bounds`): the CLI that run_eval reads truncates, so 40% means 40 to
-41; the usage endpoint the owner's ai-usage-dashboard collector stores rounds, so 40% means 39.5 to
+41; the usage endpoint the dev box's collector stores rounds, so 40% means 39.5 to
 40.5. A delta between two readings is the later range less the earlier one,
 so a one-run delta of 0 or 1 point says almost nothing about that run's own
 use. The guard's pace room is taken from the top of the reading's range, and
@@ -201,6 +201,18 @@ a clean bracket's ceiling on an improve run is the top of its delta's range.
 The switch did not change any cap. It changed what a run is charged: about
 half of what the flat rate charged, so the same 25% cap holds roughly twice
 as many eval runs.
+
+That made the cap's floor matter more: the guard let the loop spend its whole
+share whatever the account's own pace. Since 2026-11-20 (Adam: "I am far ahead
+of usage pace") a **pace hold** in
+[`scripts/allowance_guard.py`](../scripts/allowance_guard.py) refuses every
+fire, in every mode, while the newest account reading (top of its range) is
+above the pace line, `stop_when_account_above` times the share of the week
+gone; the weekly planner, the draft-skill lane and the scaffold supply read
+the same zero room. No usable reading holds too (fail safe), except for one
+eval fire, the pace probe, at most every six hours, whose results bring the
+reading that decides the hold. The module docstring's "Pace hold" section has
+the details.
 
 ### The weekly allowance guard
 
