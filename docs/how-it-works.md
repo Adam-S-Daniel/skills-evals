@@ -181,6 +181,23 @@ point. API-credit runs stay in dollars. See
 [`dashboard/README.md`](../dashboard/README.md), "Points, not dollars, for
 allowance spend".
 
+Improve runs get the same pricing. Their cost records
+([`scripts/improve_cost.py`](../scripts/improve_cost.py), schema 2) carry
+`points`, the estimate for every trial whose roles all have token counts and
+for the proposal call (whose record keeps its cache tokens since this change),
+with the dollars those parts cost. The guard charges those points plus the
+record's other dollars at `legacy_usd_per_point`. The skill-creator trigger
+loop's calls report no tokens, so a record with them stays a floor, as before.
+
+A weekly-meter reading is a whole percent, so it is a range, not a value
+(`allowance_points.reading_range` and `delta_range`, from the package's
+`reading_bounds`): the CLI that run_eval reads truncates, so 40% means 40 to
+41; the usage endpoint BOXY's collector stores rounds, so 40% means 39.5 to
+40.5. A delta between two readings is the later range less the earlier one,
+so a one-run delta of 0 or 1 point says almost nothing about that run's own
+use. The guard's pace room is taken from the top of the reading's range, and
+a clean bracket's ceiling on an improve run is the top of its delta's range.
+
 The switch did not change any cap. It changed what a run is charged: about
 half of what the flat rate charged, so the same 25% cap holds roughly twice
 as many eval runs.
