@@ -202,6 +202,18 @@ The switch did not change any cap. It changed what a run is charged: about
 half of what the flat rate charged, so the same 25% cap holds roughly twice
 as many eval runs.
 
+That made the cap's floor matter more: the guard let the loop spend its whole
+share whatever the account's own pace. Since 2026-11-20 (Adam: "I am far ahead
+of usage pace") a **pace hold** in
+[`scripts/allowance_guard.py`](../scripts/allowance_guard.py) refuses every
+fire, in every mode, while the newest account reading (top of its range) is
+above the pace line, `stop_when_account_above` times the share of the week
+gone; the weekly planner, the draft-skill lane and the scaffold supply read
+the same zero room. No usable reading holds too (fail safe), except for one
+eval fire, the pace probe, at most every six hours, whose results bring the
+reading that decides the hold. The module docstring's "Pace hold" section has
+the details.
+
 ### The weekly allowance guard
 
 Since 2026-10-06 the scheduled evals run as Claude Code routines on the
