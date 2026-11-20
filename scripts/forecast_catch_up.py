@@ -105,6 +105,10 @@ ASSUMPTION_KEYS = {
     "eval_points_per_hour": (None, "meter points an hour evals spend from the weekly reset until "
                                    "the cap; when set, evals run first in the week and the account "
                                    "stop binds only on other use that accrues meanwhile"),
+    "pace_hold": (True, "allowance_guard.py's pace hold (2026-11-20): no loop fire while the "
+                        "account is ahead of its pace line, so evals no longer run first in the "
+                        "week and get at most the account stop less other use; 0 models the "
+                        "guard before it"),
     "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
                                           "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
@@ -479,6 +483,28 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             breakdown["Interactive threads and local sessions"] = a["interactive_points_per_week"]
             if a["non_eval_points_per_week"] is None:
                 a["non_eval_points_per_week"] = sum(breakdown.values())
+    # Each scheduled task on the meter, in points a week (Adam, 2026-11-20:
+    # "add individual scheduled tasks"). A task outside the loop is named
+    # by its category only: personal tasks' names can be private, and this
+    # document is committed to a public repository.
+    tasks = None
+    if automatic is not None:
+        labels = {c.get("id"): c.get("label") for c in automatic.get("categories") or []}
+        tasks = []
+        for job in automatic.get("jobs") or []:
+            if job.get("kind") != "scheduled task" or job.get("lane") != "meter":
+                continue
+            points = job.get("points_per_week")
+            if points is None and job.get("usd_per_week") is not None:
+                points = job["usd_per_week"] / mid
+            in_loop = job.get("in_loop")
+            tasks.append({
+                "task": job.get("name") if in_loop else
+                f"{labels.get(job.get('category')) or 'Other'} (outside the loop)",
+                "in_loop": in_loop, "model": job.get("model") if in_loop else None,
+                "fires_per_week": job.get("fires_per_week"), "points_per_week": points})
+        tasks.sort(key=lambda t: (t["points_per_week"] is None, -(t["points_per_week"] or 0.0),
+                                  str(t["task"])))
     # The loop's own automatic jobs share the cap with evals (Adam,
     # 2026-11-15: all automated parts of the system fit in the 25%).
     loop_points = None
@@ -494,7 +520,10 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     if a["non_eval_points_per_week"] is not None and stop is not None:
         other = a["non_eval_points_per_week"]
         pace = a["eval_points_per_hour"]
-        if pace:
+        # The pace hold (allowance_guard.py, 2026-11-20) refuses every fire
+        # while the account is above stop * week gone, so evals no longer
+        # spend the cap first: over a week they get the stop less other use.
+        if pace and not a["pace_hold"]:
             # Evals run first: the guard's fixed cap is a floor
             # (allowance_guard.py `room`), so from the Monday reset they fire
             # until the cap is spent, and the stop binds only on the other
@@ -593,6 +622,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,
             "assumptions": a, "batch_rates": rates,
             "non_eval_points_breakdown": breakdown,
+            "scheduled_tasks": tasks,
             "loop_jobs_points_per_week": loop_points,
             "measured_non_eval": measured_non_eval,
             "owner_squeeze": squeeze,
@@ -765,6 +795,11 @@ def main(argv: list | None = None) -> int:
           f"(${doc['backlog_usd']['low']:.0f}-${doc['backlog_usd']['high']:.0f}), keep-up "
           f"${doc['keep_up_usd_per_week']:.0f}/wk, capacity ${s['capacity_usd']:.0f}/wk, "
           f"catch-up {s['weeks_central']:.1f} wk")
+    for task in doc["inputs"]["scheduled_tasks"] or []:
+        points = task["points_per_week"]
+        print(f"  scheduled task {task['task']}: "
+              + ("unmeasured" if points is None else f"{points:.1f} points/wk")
+              + ("" if task["in_loop"] else ", outside the loop"))
     return 0
 
 
