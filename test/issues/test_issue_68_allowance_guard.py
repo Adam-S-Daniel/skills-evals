@@ -1101,9 +1101,10 @@ class PaceRoomTests(unittest.TestCase):
         self.metered([snapshot(0.36)])
         state = self.state((1, 1))
         # Spent 0.025, nothing pending: the cap alone leaves 0.275, 7 fires.
-        # One day of seven left at 36%: 0.80 * 6/7 - 0.36 = 0.326, 9 fires.
+        # One day of seven left at 36%, which the CLI truncated, so up to
+        # 37%: 0.80 * 6/7 - 0.37 = 0.316, 9 fires.
         self.assertEqual(state["pending"], 0)
-        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.36, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.37, places=12)
         self.assertAlmostEqual(state["account_used"], 0.36, places=12)
         self.assertAlmostEqual(state["week_elapsed"], 6 / 7, places=12)
         self.assertEqual(guard.fits(state), 9)
@@ -1147,10 +1148,14 @@ class PaceRoomTests(unittest.TestCase):
         state = self.state()
         self.assertAlmostEqual(state["week_elapsed"], 1 / 3, places=9)
         self.assertEqual(state["pace_room"], 0)
-        # Just under pace, the gap is the room.
+        # Just under pace, the gap to the top of the reading's range is the room.
         shutil.rmtree(self.tree / "routine-results")
         self.metered([snapshot(0.20, resets_in=timedelta(days=7) * 2 / 3)])
-        self.assertAlmostEqual(self.state()["pace_room"], 0.80 / 3 - 0.20, places=9)
+        self.assertAlmostEqual(self.state()["pace_room"], 0.80 / 3 - 0.21, places=9)
+        # Within a point of pace, a truncated reading may already be at it.
+        shutil.rmtree(self.tree / "routine-results")
+        self.metered([snapshot(0.26, resets_in=timedelta(days=7) * 2 / 3)])
+        self.assertEqual(self.state()["pace_room"], 0)
 
     def test_at_or_over_pace_there_is_no_pace_room(self):
         for week in (0.80, 0.95, 1.0):
@@ -1231,7 +1236,7 @@ class PaceRoomTests(unittest.TestCase):
                      stamp="20261020T120000Z", suffix="d4e5f6")
         state = self.state()
         self.assertAlmostEqual(state["account_used"], 0.50, places=12)
-        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.50, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.51, places=12)
 
     def test_a_newest_snapshot_that_is_unusable_is_not_passed_over(self):
         # A fresh reading that cannot be read never falls back to an older,
@@ -1245,7 +1250,7 @@ class PaceRoomTests(unittest.TestCase):
         self.metered([snapshot(0.36)])
         line = guard.describe(self.state())
         self.assertIn("; account at 36.0% with 85.7% of its week gone, so pace "
-                      "allows 32.6 points", line)
+                      "allows 31.6 points", line)
         shutil.rmtree(self.tree / "routine-results")
         self.assertTrue(guard.describe(self.state()).endswith(
             "; no recent account reading, so no pace room"))

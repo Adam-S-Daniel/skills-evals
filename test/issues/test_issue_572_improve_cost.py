@@ -260,8 +260,11 @@ class ProposalAndRecordTests(TreeCase):
         with mock.patch.object(pse, "guarded_environment", env), \
                 mock.patch.object(pse.subprocess, "run", return_value=proc):
             self.assertEqual(runner.propose("prompt", "claude-x"), self.REPLY["result"])
+        # A cache count the reply leaves out is unknown, not zero.
         self.assertEqual(runner.last_usage, {"calls": 1, "usd": 0.0421,
-                                             "input_tokens": 1234, "output_tokens": 567})
+                                             "input_tokens": 1234, "output_tokens": 567,
+                                             "cache_read_input_tokens": 9,
+                                             "cache_creation_input_tokens": None})
         pse.write_proposal_usage(self.results, TS, runner)
         text = (self.results / f"proposal-{TS}.json").read_text()
         for word in (MARKER, "session", "result"):
@@ -325,6 +328,69 @@ class ProposalAndRecordTests(TreeCase):
                          "claude-a")
 
 
+def tokens(model="claude-opus-5-5", n=1000):
+    """A `usage.measured.<role>.models` entry the pinned table prices."""
+    return {model: {"input_tokens": n, "output_tokens": n, "cache_read_input_tokens": n,
+                    "cache_creation_input_tokens": n, "cost_usd": 0.5}}
+
+
+class AllowancePointsTests(TreeCase):
+    """Schema 2 (2026-11-20): `points` prices what has token counts by type."""
+
+    def with_tokens(self, doc: dict, model="claude-opus-5-5") -> dict:
+        doc["usage"]["measured"]["agent"]["models"] = tokens(model)
+        return doc
+
+    def expected(self, blocks) -> dict:
+        return improve_cost.allowance_points.estimate_blocks(blocks)
+
+    def test_trials_with_token_counts_are_priced_and_their_dollars_named(self):
+        first = self.with_tokens(summary(agent=(1, 0.5)))
+        self.skill_trial("baseline", 1, first)
+        self.skill_trial("candidate", 1, self.with_tokens(summary(agent=(1, 0.5))))
+        doc = self.summarize()
+        want = self.expected([first["usage"]["measured"]] * 2)
+        self.assertGreater(want["points"], 0)
+        self.assertEqual(doc["schema_version"], 2)
+        self.assertAlmostEqual(doc["points"]["points"], want["points"], places=12)
+        self.assertEqual(doc["points"]["usd"], 1.0)
+        self.assertTrue(doc["points"]["complete"])
+        improve_cost.check_record(doc)
+
+    def test_a_trial_without_token_counts_leaves_the_points_incomplete(self):
+        self.skill_trial("baseline", 1, self.with_tokens(summary(agent=(1, 0.5))))
+        self.skill_trial("candidate", 1, summary(agent=(1, 0.25)))
+        doc = self.summarize()
+        self.assertFalse(doc["points"]["complete"])
+        self.assertEqual(doc["points"]["usd"], 0.5)
+
+    def test_nothing_with_token_counts_is_null(self):
+        self.skill_trial("baseline", 1, summary(agent=(1, 0.5)))
+        self.assertIsNone(self.summarize()["points"])
+
+    def test_the_proposal_is_priced_from_its_tokens_and_model(self):
+        self.skill_trial("baseline", 1, self.with_tokens(summary(agent=(1, 0.5))))
+        usage = {"calls": 1, "usd": 0.2, "input_tokens": 1000, "output_tokens": 1000,
+                 "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 1000}
+        self.put(f"proposal-{TS}.json", usage)
+        self.put(f"improvements/demo/{TS}.json", {"models": {"proposal": "claude-opus-5-5"}})
+        doc = self.summarize()
+        self.assertTrue(doc["points"]["complete"])
+        self.assertAlmostEqual(doc["points"]["usd"], 0.7, places=12)
+        trial = self.expected([self.with_tokens(summary())["usage"]["measured"]])
+        self.assertAlmostEqual(doc["points"]["points"], 2 * trial["points"], places=12)
+
+    def test_a_proposal_from_before_cache_tokens_is_left_to_its_dollars(self):
+        self.skill_trial("baseline", 1, self.with_tokens(summary(agent=(1, 0.5))))
+        self.put(f"proposal-{TS}.json", {"calls": 1, "usd": 0.2, "input_tokens": 1,
+                                          "output_tokens": 2})
+        self.put(f"improvements/demo/{TS}.json", {"models": {"proposal": "claude-opus-5-5"}})
+        doc = self.summarize()
+        self.assertEqual(doc["proposal"]["cache_read_input_tokens"], None)
+        self.assertFalse(doc["points"]["complete"])
+        self.assertEqual(doc["points"]["usd"], 0.5)
+
+
 class CheckRecordTests(TreeCase):
 
     def good(self) -> dict:
@@ -344,7 +410,15 @@ class CheckRecordTests(TreeCase):
         good = self.good()
         cases = [
             ({"extra": 1}, "exactly the keys"),
-            ({"schema_version": 2}, "schema_version"),
+            ({"schema_version": 3}, "schema_version"),
+            ({"schema_version": 1}, "exactly the keys"),
+            ({"points": {"points": 1.0}}, "points"),
+            ({"points": {"points": 2.0, "low": 0.5, "high": 1.0, "usd": 0.1,
+                         "complete": True}}, "within low..high"),
+            ({"points": {"points": 1.0, "low": 0.5, "high": 1.5, "usd": 50.0,
+                         "complete": True}}, "points.usd"),
+            ({"points": {"points": 1.0, "low": 0.5, "high": 1.5, "usd": 0.1,
+                         "complete": 1}}, "points.complete"),
             ({"run_id": "x"}, "run_id"),
             ({"mode": "eval"}, "mode"),
             ({"target": "Bad Name"}, "target"),

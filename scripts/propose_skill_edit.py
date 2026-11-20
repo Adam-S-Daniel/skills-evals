@@ -350,9 +350,10 @@ class Runner:
             raise Refusal(f"skill-creator run_loop printed no JSON ({exc})") from exc
 
     #: The last proposal call's numbers (#572 part 1, 2026-11-02): calls,
-    #: usd, input_tokens and output_tokens, copied by name from the CLI's
+    #: usd and its token counts by type (`PROPOSAL_TOKENS`, the cache reads
+    #: and writes since 2026-11-20), copied by name from the CLI's
     #: JSON and type-checked, so no reply text or session id is ever kept.
-    #: None until a call printed all four. The caller writes it to
+    #: None until a call printed them all. The caller writes it to
     #: `$RESULTS/proposal-<ts>.json` for scripts/improve_cost.py.
     last_usage: dict | None = None
 
@@ -361,8 +362,9 @@ class Runner:
 
         Once the process has started the call is billed whatever happens
         next, so a timeout, a non-zero exit or output with no usable numbers
-        records `UNPRICED_CALL` (#577, the 2026-11-02 review). The proposal's
-        cache tokens are not recorded: `usd` already includes them."""
+        records `UNPRICED_CALL` (#577, the 2026-11-02 review). The cache
+        tokens are recorded so scripts/improve_cost.py can price the call in
+        allowance points from its token counts by type."""
         self.last_usage = None
         try:
             with guarded_environment() as env:
@@ -393,26 +395,31 @@ class Runner:
 
 #: A proposal call that ran but reported no usable numbers: one billed call,
 #: its dollars and tokens unknown.
-UNPRICED_CALL = {"calls": 1, "usd": None, "input_tokens": None, "output_tokens": None}
+#: The token counts a proposal record keeps, by the CLI's `usage` names.
+PROPOSAL_TOKENS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                   "cache_creation_input_tokens")
+UNPRICED_CALL = {"calls": 1, "usd": None, **{name: None for name in PROPOSAL_TOKENS}}
 
 
 def proposal_usage(result: dict) -> dict | None:
-    """{calls, usd, input_tokens, output_tokens} of one `claude -p` result,
-    numbers only, or None when any is missing or not a bounded number
+    """{calls, usd, <PROPOSAL_TOKENS>} of one `claude -p` result, numbers
+    only, or None when any is missing or not a bounded number
     (scripts/improve_cost.py's bounds). Built field by field: the CLI object
     also carries the reply and a session id, which must never be written."""
     usage = result.get("usage") if isinstance(result, dict) else None
     usd = result.get("total_cost_usd") if isinstance(result, dict) else None
     tokens = [usage.get(name) if isinstance(usage, dict) else None
-              for name in ("input_tokens", "output_tokens")]
+              for name in PROPOSAL_TOKENS]
     if isinstance(usd, bool) or not isinstance(usd, (int, float)) \
             or not math.isfinite(usd) or not 0 <= usd <= 1000:
         return None
-    if any(isinstance(t, bool) or not isinstance(t, int) or not 0 <= t <= 10 ** 9
-           for t in tokens):
+    # Input and output are required; a cache count the CLI left out is
+    # unknown (null), and the call is then priced from its dollars.
+    if any((t is not None or index < 2) and (
+            isinstance(t, bool) or not isinstance(t, int) or not 0 <= t <= 10 ** 9)
+           for index, t in enumerate(tokens)):
         return None
-    return {"calls": 1, "usd": usd, "input_tokens": tokens[0],
-            "output_tokens": tokens[1]}
+    return {"calls": 1, "usd": usd, **dict(zip(PROPOSAL_TOKENS, tokens))}
 
 
 def write_proposal_usage(results: Path, ts: str, runner) -> None:

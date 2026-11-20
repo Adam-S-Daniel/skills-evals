@@ -199,7 +199,9 @@ class MatchingTests(TreeCase):
         self.assertEqual(state["pending"], 0.0)
 
     def test_an_incomplete_measure_with_a_clean_bracket_takes_the_larger_of_dollars_and_delta(self):
-        for delta, expected in ((0.02, 0.02), (0.0, 2.25 / RATE / 100)):
+        # The CLI truncates each reading, so a delta of d is up to d plus a
+        # point: the top of that range is the ceiling (2026-11-20).
+        for delta, expected in ((0.02, 0.03), (0.0, 0.01)):
             with self.subTest(delta=delta):
                 shutil.rmtree(self.tree / "improve-costs", ignore_errors=True)
                 self.put(record(stamp(START), trigger_calls=60, busy=800.0,
@@ -210,10 +212,27 @@ class MatchingTests(TreeCase):
         doc = record(stamp(START), busy=100.0, span=900.0)
         doc["proposal"] = {"calls": 1, "usd": None, "input_tokens": None,
                            "output_tokens": None}
-        improve_cost.check_record(doc)
+        improve_cost.check_record(doc)  # a schema 1 record
         self.put(doc)
         state = self.account([fire()])
         self.assertAlmostEqual(state["spent"], state["improve_charge"], places=15)
+
+    def test_a_schema_2_record_is_charged_its_points_and_the_rest_of_its_dollars(self):
+        # 2026-11-20: points from token counts by type; only the dollars they
+        # do not cover are priced at the legacy rate.
+        doc = record(stamp(START))
+        doc.update(schema_version=2, points={"points": 3.0, "low": 2.5, "high": 3.5,
+                                             "usd": 1.5, "complete": False})
+        doc["proposal"].update(cache_read_input_tokens=None, cache_creation_input_tokens=None)
+        improve_cost.check_record(doc)
+        rest = 2.25 - 1.5
+        self.assertAlmostEqual(guard.record_charge(doc, LIMITS, 0.5),
+                               max((3.0 + rest / RATE) / 100, 0.01), places=15)
+        doc["points"].update(complete=True, usd=2.25)
+        self.assertAlmostEqual(guard.record_charge(doc, LIMITS, 0.5), 0.03, places=15)
+        # All of it priced from tokens: no rate is needed.
+        limits = {k: v for k, v in LIMITS.items() if k != "legacy_usd_per_point"}
+        self.assertAlmostEqual(guard.record_charge(doc, limits, 0.5), 0.03, places=15)
 
     def test_no_dollar_rate_means_no_matching(self):
         self.put(record(stamp(START)))
@@ -430,7 +449,8 @@ class ProposalGapTests(unittest.TestCase):
                 pass
         return runner
 
-    UNPRICED = {"calls": 1, "usd": None, "input_tokens": None, "output_tokens": None}
+    UNPRICED = {"calls": 1, "usd": None, "input_tokens": None, "output_tokens": None,
+                "cache_read_input_tokens": None, "cache_creation_input_tokens": None}
 
     def test_a_timed_out_call_is_recorded_as_one_unpriced_call(self):
         runner = self.run_propose(side_effect=subprocess.TimeoutExpired("claude", 600))
@@ -447,14 +467,18 @@ class ProposalGapTests(unittest.TestCase):
         runner = self.run_propose(side_effect=FileNotFoundError("claude"))
         self.assertIsNone(runner.last_usage)
 
-    def test_the_cache_tokens_are_not_kept_and_the_dollars_stay(self):
+    def test_the_cache_tokens_are_kept_beside_the_dollars(self):
+        # Since 2026-11-20: the call is priced in allowance points from them.
         reply = {"result": "x", "total_cost_usd": 0.5,
                  "usage": {"input_tokens": 3, "output_tokens": 4,
                            "cache_read_input_tokens": 99,
                            "cache_creation_input_tokens": 98}}
         usage = pse.proposal_usage(reply)
         self.assertEqual(usage, {"calls": 1, "usd": 0.5, "input_tokens": 3,
-                                 "output_tokens": 4})
+                                 "output_tokens": 4, "cache_read_input_tokens": 99,
+                                 "cache_creation_input_tokens": 98})
+        reply["usage"]["cache_read_input_tokens"] = -1
+        self.assertIsNone(pse.proposal_usage(reply))
 
     def test_the_unpriced_record_is_read_and_checked(self):
         results = Path(tempfile.mkdtemp())
@@ -464,6 +488,9 @@ class ProposalGapTests(unittest.TestCase):
         self.assertEqual(improve_cost.read_proposal(results), self.UNPRICED)
         doc = record(stamp(START), proposal=None)
         doc["proposal"] = dict(self.UNPRICED)
+        with self.assertRaises(improve_cost.Invalid):  # six keys need schema 2
+            improve_cost.check_record(doc)
+        doc.update(schema_version=2, points=None)
         improve_cost.check_record(doc)
         doc["proposal"]["usd"] = "x"
         with self.assertRaises(improve_cost.Invalid):

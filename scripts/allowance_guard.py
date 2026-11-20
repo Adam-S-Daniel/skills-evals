@@ -79,13 +79,18 @@ Measured improve cost (#577, 2026-11-13): ingest lands each improve run's
 cost record at `improve-costs/<run id>.json` (scripts/improve_cost.py). A
 fire is matched to one by mode, target and a run id stamp from 2 minutes
 before to 30 minutes after its `run_started_at`, one-to-one, oldest first,
-and is charged the record's dollars (agent + judge + guard + proposal) at
-`legacy_usd_per_point` in `spent` (the record keeps no token counts by type), like an ingested eval run; in the reading bound
+and is charged in `spent` like an ingested eval run: the record's `points`,
+priced from token counts by type (scripts/improve_cost.py schema 2, since
+2026-11-20), plus the rest of its dollars (agent + judge + guard + proposal)
+at `legacy_usd_per_point`; a record from before tokens were kept, all its
+dollars at that rate. In the reading bound
 it is inside the reading when it started `IMPROVE_MAX_RUN` before it and
-charged in full after. When the dollars are only a floor (the trigger loop's
-`claude -p` calls and a failed proposal call report none), the charge is the
-larger of the dollars and the meter delta of a clean bracket (busy/span at
-least `CLEAN_BRACKET`), else `improve_charge`. An unmatched fire, or no
+charged in full after. When that is only a floor (the trigger loop's
+`claude -p` calls report no tokens or dollars, and a failed proposal call no
+dollars), the charge is the larger of it and the top of the meter delta's
+range in a clean bracket (busy/span at least `CLEAN_BRACKET`; the CLI
+truncates each reading, so a delta of d is anything below d plus a point),
+else `improve_charge`. An unmatched fire, or dollars left to price with no
 `legacy_usd_per_point`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
 from the records by `allowance_guard.py units --results-tree <tree>`.
 
@@ -650,23 +655,39 @@ def bracket_clean(record: dict) -> bool:
 
 
 def record_charge(record: dict, limits: dict, unit_charge: float) -> float | None:
-    """What a matched fire is charged, or None without a rate. An improve
-    cost record keeps dollars, not token counts by type, so its dollars are
-    charged at `legacy_usd_per_point`; when they are only a floor, the
-    larger of that and the meter delta of a clean bracket (an account-wide
-    figure, so a ceiling on the run's own use), and with no clean bracket the
-    unit charge, today's rule."""
+    """What a matched fire is charged, as a fraction of the week, or None
+    when dollars are left to price and there is no rate. The record's
+    `points` (priced from token counts by type) plus its other dollars at
+    `legacy_usd_per_point`; when that is only a floor, the larger of it and
+    the top of a clean bracket's meter delta range (an account-wide figure,
+    so a ceiling on the run's own use; a sub-point delta alone never sets the
+    charge below it), and with no clean bracket the unit charge."""
     rate = limits.get(budget_file.LEGACY_RATE)
     if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
             or not math.isfinite(rate) or rate <= 0:
-        return None
+        rate = None
     dollars, complete = record_dollars(record)
-    points = dollars / rate / 100
+    tokens = record.get("points")
+    if tokens is not None:
+        rest = max(0.0, dollars - tokens["usd"])
+        if rest > EPSILON and rate is None:
+            return None
+        charge = (tokens["points"] + (rest / rate if rest > EPSILON else 0.0)) / 100
+        complete = tokens["complete"] and not record["trigger_calls"]
+    elif rate is None:
+        return None
+    else:
+        charge = dollars / rate / 100
     if complete:
-        return points
+        return charge
     if bracket_clean(record) and record["delta"] is not None:
-        return max(points, record["delta"])
-    return max(points, unit_charge)
+        # The CLI truncates each reading, so the true movement is below the
+        # delta plus one point (allowance_points.delta_range).
+        _, high = allowance_points.delta_range(
+            record["first"]["utilization"] * 100, record["last"]["utilization"] * 100,
+            allowance_points.CLI)
+        return max(charge, high / 100)
+    return max(charge, unit_charge)
 
 
 def match_fires(fires: list[dict], records: list[dict]) -> list[tuple]:
@@ -828,7 +849,9 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     `(0.0, None, None)` when there is none usable: how far the account is
     under pace, `stop_when_account_above` times the share of its week gone
     less utilization, never below zero (Adam, 2026-11-11: room only when
-    the account is under pace)."""
+    the account is under pace). The CLI truncates the reading, so the room
+    is taken from the top of its range (allowance_points.reading_range):
+    a reading of 0.40 may be up to 0.41 used."""
     found = newest_snapshot(runs)
     if found is None:
         return 0.0, None, None
@@ -846,7 +869,8 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
         return 0.0, None, None
     elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
-    room = max(0.0, limits["stop_when_account_above"] * elapsed - used)
+    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    room = max(0.0, limits["stop_when_account_above"] * elapsed - top / 100)
     return room, float(used), elapsed
 
 
