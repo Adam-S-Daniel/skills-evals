@@ -620,8 +620,8 @@ function buildStrings(you) {
   spendWeekHead: (which, start) => (which === 'this' ? 'This week' : which === 'last' ? 'Last week' : start),
   pointsApprox: (p) => '\u2248' + p + ' points',
   pointsTip: {
-    eval: (usd) => usd + ' of eval runs per point, measured',
-    scheduled: (usd) => usd + ' per point (the eval run rate); estimated',
+    eval: (usd) => usd + ' of eval runs per estimated point, measured',
+    scheduled: (usd) => usd + ' of scheduled tasks per estimated point, measured',
     thread: (usd) => usd + ' of threads per point, from the meter (upper bound)'
   },
   spendNoUse: (pct, noUse, total, causes) => 'In the last 30 days ' + pct + ' of eval run spend bought nothing (' + noUse + ' of ' + total + ')' + (causes ? ', mostly ' + causes : '') + '.',

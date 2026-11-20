@@ -154,6 +154,20 @@ class Forecast(unittest.TestCase):
             self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], cap)
             self.assertAlmostEqual(doc["inputs"]["loop_jobs_points_per_week"], 15.0)
 
+    def test_estimated_points_win_over_dollars_at_a_rate(self):
+        # A breakdown with points (from each fire's token counts) is read as points, its dollars ignored.
+        automatic = {"loop_meter_usd_per_week": 999.0, "loop_meter_points_per_week": 4.0,
+                     "categories": [{"label": "Dashboard", "meter_usd_per_week": 999.0,
+                                     "meter_points_per_week": 6.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "interactive_points_per_week": 1.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        self.assertEqual(doc["inputs"]["non_eval_points_breakdown"],
+                         {"Dashboard": 6.0, "Interactive threads and local sessions": 1.0})
+        self.assertAlmostEqual(doc["inputs"]["loop_jobs_points_per_week"], 4.0)
+
     def test_given_non_eval_points_win_over_the_breakdown(self):
         automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 3.0}]}
         with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \

@@ -3260,7 +3260,7 @@
      ]
     },
     "rates": {
-     "description": "Dollars per point of the weekly Max allowance that the pages convert allowance spend with: evals/points.yml for eval runs, derived from the account meter for project threads (null when the refresh could not derive it). API-credit spend is never converted. Null when the spend file predates it.",
+     "description": "Measured dollars per point of the weekly Max allowance that the pages convert a single run's dollars with: eval and scheduled-task dollars over their points estimated from token counts by type, derived from the account meter for project threads (null when the refresh could not derive it). Weekly and total figures use the estimated points themselves. API-credit spend is never converted. Null when the spend file predates it.",
      "anyOf": [
       {
        "type": "object",
@@ -3290,6 +3290,8 @@
     "usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "run_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "scheduled_usd": {"description": "scheduled-task runs (estimated), part of the system's use", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "run_points": {"description": "eval runs' approximate allowance points, estimated from token counts by type; null when the spend file predates it", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "scheduled_points": {"description": "scheduled-task runs' approximate allowance points, estimated from token counts by type", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "scheduled_since": {"description": "the first week with a scheduled-task figure", "anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}$"},{"type":"null"}]},
     "thread_spend_usd": {"description": "development (project threads), never part of usd", "anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
     "api_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
@@ -3317,7 +3319,7 @@
      "type": "string"
     },
     "rates": {
-     "description": "Dollars per point the pages convert allowance spend with (dashboard/build.py cost_benefit; the ingest refuses any other key here).",
+     "description": "Measured dollars per point the pages convert a single run's dollars with (dashboard/build.py cost_benefit; the ingest refuses any other key here).",
      "type": "object",
      "properties": {
       "eval_usd_per_point": { "type": "number", "exclusiveMinimum": 0 },
@@ -3345,6 +3347,8 @@
       "usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "run_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "scheduled_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "run_points": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "scheduled_points": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "scheduled_since": { "anyOf": [{ "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }, { "type": "null" }] },
       "thread_spend_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
       "api_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
@@ -3404,6 +3408,14 @@
          { "type": "number", "minimum": 0 },
          { "type": "null" }
         ]
+       },
+       "run_points": {
+        "description": "approximate allowance points of the week's eval runs, estimated from token counts by type",
+        "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+       },
+       "scheduled_points": {
+        "description": "approximate allowance points of the week's scheduled-task runs; null before the fire ledger",
+        "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
        },
        "plan": {
         "description": "the plan name; defaults to the top-level plan",
@@ -3477,6 +3489,8 @@
      ]
     },
     "scheduled_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+    "run_points": { "description": "eval runs' approximate allowance points, estimated from token counts by type; null when the spend file predates it", "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+    "scheduled_points": { "description": "scheduled-task runs' approximate allowance points, estimated from token counts by type", "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
     "plan": {
      "anyOf": [
       {

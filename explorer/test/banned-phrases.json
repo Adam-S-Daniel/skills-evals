@@ -107,7 +107,7 @@
     },
     {
       "phrase": "list price",
-      "why": "Allowance spend is shown as approximate points, never list-price dollars (evals/points.yml).",
+      "why": "Allowance spend is shown as approximate points, never list-price dollars (dashboard/README.md, Points, not dollars).",
       "use": "points, or API credit for API-billed eval runs"
     },
     {

@@ -217,3 +217,14 @@ def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None)
             "legacy_usd": legacy_usd,
             "unpriced_roles": unpriced,
             "complete": legacy_roles == 0 and unpriced == 0}
+
+
+def estimate_session(models, usd=None, legacy_usd_per_point=None,
+                     lock: Path | None = None) -> dict:
+    """The allowance estimate of one session's calls (a scheduled-task fire
+    in the fire ledger): `models` is its per-model token counts, in
+    `usage.measured.<role>.models`' shape, and `usd` its dollars, which price
+    it at `legacy_usd_per_point` when the token counts are missing. Same
+    result as `estimate_blocks`; with neither, `unpriced_roles` is 1."""
+    block = {"calls": 1, "models": models, "cost_usd": usd}
+    return estimate_blocks([{"agent": block}], legacy_usd_per_point, lock)
