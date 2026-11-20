@@ -61,6 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import allowance_guard as guard  # noqa: E402
 import budget as budget_file  # noqa: E402
+import cache_ttl  # noqa: E402
 
 SCHEMA = 1
 REPO = "Adam-S-Daniel/skills-evals"
@@ -356,7 +357,37 @@ def collect(args, now: datetime) -> dict:
     if not env_token:
         os.environ["GH_TOKEN"] = run(["gh", "auth", "token"]).strip()
     os.environ.setdefault("GITHUB_REPOSITORY", REPO)
-    return status_from_tree(tree, limits, now, args, forecast_path, forecast_error)
+    doc = status_from_tree(tree, limits, now, args, forecast_path, forecast_error)
+    doc["cache_ttl"] = cache_ttl_block(args.claude_settings, args.claude_projects)
+    return doc
+
+
+def cache_ttl_block(settings: Path | None = None, projects: Path | None = None) -> dict:
+    """The `cache_ttl` section: the locked table's verdict, the result of
+    applying it to `settings` (only with a path) and the observed cache writes
+    under `projects` (only with a path). An error is a fixed message."""
+    try:
+        doc = cache_ttl.locked_weights()
+        verdict = cache_ttl.subscription_ttl(doc)[0]
+        block = {"table": doc.get("id"), "subscription_ttl": verdict,
+                 "per_model": {m: v["ttl"] for m, v in
+                               cache_ttl.model_verdicts(doc).items()},
+                 "settings": "skipped", "verify": None}
+    except (ValueError, OSError, ImportError):
+        return {"table": None, "subscription_ttl": "5m", "per_model": {},
+                "settings": "error", "verify": None,
+                "error": "the weight table could not be read"}
+    if settings is not None:
+        try:
+            block["settings"] = cache_ttl.apply_settings(settings, verdict)
+        except (ValueError, OSError):
+            block["settings"] = "error"
+    if projects is not None:
+        try:
+            block["verify"] = cache_ttl.verify(projects, weights_doc=doc)
+        except (ValueError, OSError):
+            block["verify"] = {"ok": False, "reason": "the transcripts could not be read"}
+    return block
 
 
 def status_from_tree(tree: Path, limits: dict, now: datetime, args, forecast_path,
@@ -390,6 +421,10 @@ def main(argv: list[str] | None = None, now: datetime | None = None, **stand_ins
     p.add_argument("--week-resets", default=None, help="when that week resets (ISO)")
     p.add_argument("--results-every-minutes", type=float, default=10)
     p.add_argument("--forecast-every-minutes", type=float, default=60)
+    p.add_argument("--claude-settings", type=Path, default=None,
+                   help="collect: a Claude Code settings.json to set subagentPromptCacheTtl in")
+    p.add_argument("--claude-projects", type=Path, default=None,
+                   help="collect: ~/.claude/projects, to tally observed cache writes from")
     p.add_argument("--now", default=None, help=argparse.SUPPRESS)
     args = p.parse_args(argv)
     now = now or parse_iso(args.now) or datetime.now(timezone.utc)

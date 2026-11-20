@@ -27401,10 +27401,16 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                        (set(self.BASE_ENVIRONMENT) | set(self.PLANTED_FORWARDED)
                         | {"HOME", "TMPDIR", "XDG_CONFIG_HOME", "CLAUDE_BIN"})}
         fixture_env = set(run_eval.load_fixture(self.STUCK_DIR)["env"])
-        # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited.
+        seen_ttl = ({"FORCE_PROMPT_CACHING_5M"}
+                    if run_eval.guidance.cache_ttl.lane_bills_api(seen)
+                    else {"CLAUDE_CODE_PROMPT_CACHE_TTL",
+                          "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"})
+        # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited;
+        # so is the cache TTL policy (cache_ttl.ttl_env).
         # GIT_CEILING_DIRECTORIES is SET at the spawn too (#612): git must not
         # search the workspace's parents for a repository.
         expected = (allowlisted | fixture_env | set(run_eval.guidance.CLI_FORCED_ENV)
+                    | seen_ttl
                     | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN",
                        "GIT_CEILING_DIRECTORIES"})
         self.assertEqual(set(seen), expected,

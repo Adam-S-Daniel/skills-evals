@@ -106,6 +106,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cache_ttl  # noqa: E402
 import run_canary  # noqa: E402  — run_leg is the probe the guard reuses
 
 MODES = ("none", "stub", "section", "full", "full-minus-section")
@@ -393,15 +394,21 @@ def check_env_block(env_spec, where: str) -> None:
 # session and are left alone. The propagation probe builds its own scratch
 # HOME and allowlist (init_probe.build_env) and makes no model turn.
 #
-# CLAUDE_CODE_PROMPT_CACHE_TTL=5m (2026-11-08): on a Claude subscription the
-# CLI writes its prompt cache at the 1-hour rate unless told otherwise, and
-# 1-hour writes cost twice the base input price against 1.25x for 5-minute
-# ones. A measured week of routine fires put cache writes at 63% of nested
-# spend, while no trial ran past 300 seconds and 90-94% of calls came
-# within 5 minutes of the previous call on the same model, so the longer
-# cache bought nothing. An ambient value cannot turn the 1-hour rate back on.
-CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-                  "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}
+# Prompt-cache TTL (cache_ttl.ttl_env, applied last by cli_child_env). On
+# 2026-11-08 this was pinned to 5m on dollar-price reasoning (1-hour writes
+# cost 2x the base input price against 1.25x, and no trial outlived 5 minutes).
+# On 2026-11-20 it became lane-aware, decided by the locked meter weights:
+# Adam's rule is to use the 1-hour cache "Where it's cheaper or nominally the
+# same cost, since at the same cost it can only save money due to more cache
+# hits." Fable's 1h write weight is below its 5m weight and the other models'
+# are nominally equal (within the 3% measurement floor), so a subscription lane
+# gets 1h on both buckets (CLAUDE_CODE_PROMPT_CACHE_TTL and
+# CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL). An API-billed lane (any credential
+# or cloud-provider variable in the child's env) keeps 5m through
+# FORCE_PROMPT_CACHING_5M=1, because there dollars decide. An ambient value
+# cannot override either. If the weight table cannot be read, both buckets
+# fall back to 5m (fail cheap). See docs/cache-ttl.md.
+CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 
 # Removed from every CLI child. CLAUDE_CODE_SUBAGENT_MODEL (set in the cloud
 # environments on 2026-11-08) gives a subagent spawned without a model that
@@ -413,13 +420,18 @@ CLI_DROPPED_ENV = ("CLAUDE_CODE_SUBAGENT_MODEL",)
 
 def cli_child_env(env=None) -> dict:
     """A copy of `env` (default: this process's environment) with
-    `CLI_DROPPED_ENV` removed and `CLI_FORCED_ENV` applied last. The input
-    mapping is never mutated."""
+    `CLI_DROPPED_ENV` removed, `CLI_FORCED_ENV` applied and the cache TTL
+    policy (`cache_ttl.ttl_env`) applied last. The input mapping is never
+    mutated."""
     out = dict(os.environ if env is None else env)
     for name in CLI_DROPPED_ENV:
         out.pop(name, None)
     out.update(CLI_FORCED_ENV)
-    return out
+    try:
+        weights = cache_ttl.locked_weights()
+    except ValueError:  # allowance_points.LockError and the table loader's errors
+        weights = None  # no table: subscription_ttl({}) is "5m" (fail cheap)
+    return cache_ttl.ttl_env(out, weights)
 
 
 # ---------------------------------------------------------------------------
