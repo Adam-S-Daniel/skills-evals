@@ -321,8 +321,13 @@ an estimate. The harness cannot calibrate points, so its `points_per_usd` and
 `routine-results/<run id>/cost_estimate.json` beside it, once: each
 invocation's block with `points` = `usd` × the rate measured over the runs
 already ingested (their weekly meter movement, with no overrun added, over
-their `metered_usd`). The estimate is collected to size `per_run_overrun`;
-nothing charges from it.
+their `metered_usd`): the meter figure, a fraction of the week. `calibration`
+also carries the meter range (`meter_points_low`/`_high`, `points_per_usd_low`
+/`_high`), because a whole-percent reading is a range. Schema 2 adds
+`estimated_points` (`points`, `low`, `high`, `complete`, in points), on each
+invocation and summed on the document: the invocation's trial token counts
+priced by type, null when nothing is priced. The estimate is collected to size
+`per_run_overrun`; nothing charges from it.
 
 ### The weekly plan
 

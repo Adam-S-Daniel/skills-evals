@@ -155,6 +155,30 @@ class EvalFactsTests(unittest.TestCase):
         self.assertEqual(len(shared[1]), 1)
 
 
+    def test_a_seven_day_delta_also_reports_its_range_and_estimated_points(self):
+        t = Tree(self)
+        usage = {"meter_delta": {"windows": {"seven_day": {
+                     "delta": 0.02, "from": 0.40, "to": 0.42, "window_reset": False}}},
+                 "allowance_estimate": {"points": 1.75}}
+        base = t.tree / "routine-results" / "20261030T100000Z-aaaaaa" / "alpha" / "20261030T100000Z"
+        write(base / "report.md", "report\n")
+        write(base / "with_skill" / "summary.json", summary("with_skill", 3, 4, usage=usage))
+        write(base / "without_skill" / "summary.json", summary("without_skill", 2, 4))
+        row = eval_facts.scored_runs(str(t.tree), "https://example.com/r/")[0][0]
+        self.assertAlmostEqual(row["meter_points"], 2.0)
+        # 40 to 42 in the CLI's truncated whole percents: truly 1 to 3 points.
+        self.assertAlmostEqual(row["meter_points_low"], 1.0)
+        self.assertAlmostEqual(row["meter_points_high"], 3.0)
+        self.assertEqual(row["estimated_points"], 1.75)
+
+    def test_a_delta_with_no_readings_has_no_range_or_estimate(self):
+        t = Tree(self)
+        routine_pair(t.tree, "20261030T100000Z-aaaaaa", "alpha", 3, 2)
+        row = eval_facts.scored_runs(str(t.tree), "https://example.com/r/")[0][0]
+        self.assertEqual((row["meter_points_low"], row["meter_points_high"],
+                          row["estimated_points"]), (None, None, None))
+
+
 class EvalsSectionTests(unittest.TestCase):
 
     def setUp(self):

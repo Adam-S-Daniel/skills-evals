@@ -61,8 +61,12 @@ evals/public-export.yml's `include_spend`, read by explorer_data.py.
 `estimate` writes `routine-results/<run id>/cost_estimate.json` beside a run
 just placed (owner decision, 2026-11-01): each run_eval invocation's
 `usage.cost_estimate` with its `points` filled in, at the points-per-dollar
-rate the runs already on the tree measure (`calibrate`). It reads only the
-tree, never the branch, and never rewrites a file that is there.
+rate the runs already on the tree measure (`calibrate`, the meter figure,
+with its whole-percent range), and each invocation and the document carry
+`estimated_points` (points, low, high, complete): the invocation's trial token
+counts priced by type through `allowance_points.estimate_blocks`, null when
+nothing is priced. It reads only the tree, never the branch, and never
+rewrites a file that is there.
 """
 
 from __future__ import annotations
@@ -77,6 +81,10 @@ import subprocess
 from fractions import Fraction
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+import allowance_points  # noqa: E402
+import budget as budget_file  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Names and shapes.
@@ -1492,7 +1500,7 @@ def added_files(repo: str, base: str, tip: str,
 # The cost estimate's points (owner decision, 2026-11-01).
 
 ESTIMATE_NAME = "cost_estimate.json"
-ESTIMATE_SCHEMA_VERSION = 1
+ESTIMATE_SCHEMA_VERSION = 2
 CALIBRATION_BASIS = (
     "weekly meter points (usage.meter_delta seven_day, no overrun added) over "
     "the dollars of the calls that delta spans (cost_estimate.metered_usd), "
@@ -1500,12 +1508,15 @@ CALIBRATION_BASIS = (
     "one that measured both")
 
 
-def _invocations(run_dir: Path) -> list:
-    """One ingested run's run_eval invocations: each distinct run-level
-    `usage` block (every summary of an invocation carries the same one), in
-    summary path order. A symlink, an oversize summary or one that does not
-    parse is skipped."""
-    blocks = {}
+def _invocation_groups(run_dir: Path) -> list:
+    """One ingested run's run_eval invocations as (`usage`, trial `measured`
+    blocks): each distinct run-level `usage` block (every summary of an
+    invocation carries the same one), in summary path order, with the
+    `usage.measured` block of each trial summary under it (an arm aggregate's
+    is a sum of those, so it is not counted again), as allowance_guard files
+    them. A symlink, an oversize summary or one that does not parse is
+    skipped."""
+    groups = {}
     for path in sorted(run_dir.rglob("summary.json")):
         try:
             if path.is_symlink() or path.stat().st_size > SIZE_CAPS["summary.json"]:
@@ -1516,8 +1527,16 @@ def _invocations(run_dir: Path) -> list:
         usage = summary.get("usage") if isinstance(summary, dict) else None
         if isinstance(usage, dict):
             level = {key: value for key, value in usage.items() if key != "measured"}
-            blocks.setdefault(json.dumps(level, sort_keys=True), usage)
-    return list(blocks.values())
+            entry = groups.setdefault(json.dumps(level, sort_keys=True), (usage, []))
+            measured = usage.get("measured")
+            if isinstance(measured, dict) and measured.get("scope") == "trial":
+                entry[1].append(measured)
+    return list(groups.values())
+
+
+def _invocations(run_dir: Path) -> list:
+    """The run-level `usage` block of each of `_invocation_groups`."""
+    return [usage for usage, _ in _invocation_groups(run_dir)]
 
 
 def _week_moved(usage: dict):
@@ -1532,12 +1551,36 @@ def _week_moved(usage: dict):
     return max(0.0, float(moved))
 
 
+def _week_range(usage: dict):
+    """(low, high) points the weekly meter truly moved over one invocation:
+    its seven_day `from` and `to` fractions (0.63 is a reading of 63) as the
+    CLI's truncated whole percents, through `allowance_points.delta_range`,
+    with the low end held at zero (a week that did not reset never moves
+    down). The measured delta as both ends when `from` or `to` is missing.
+    None when `_week_moved` is None."""
+    moved = _week_moved(usage)
+    if moved is None:
+        return None
+    week = usage["meter_delta"]["windows"]["seven_day"]
+    before, after = week.get("from"), week.get("to")
+    if not (is_number(before) and is_number(after)):
+        return moved, moved
+    low, high = allowance_points.delta_range(
+        float(before) * 100, float(after) * 100, allowance_points.CLI)
+    return max(0.0, low), max(0.0, high)
+
+
 def calibrate(tree: Path, skip: str) -> dict:
     """The points-per-dollar rate measured over the ingested runs on `tree`
     other than `skip`: their weekly meter movement over the dollars of the
     calls it spans. No overrun is added: it is what these estimates are
-    collected to size. The rate is None until some invocation measured both."""
-    points = dollars = 0.0
+    collected to size. The rate is None until some invocation measured both.
+    A whole-percent reading is a range, so `meter_points_low` and
+    `meter_points_high` sum each invocation's `_week_range`, and
+    `points_per_usd_low` and `_high` are the rate at its ends. All of these
+    are fractions of the weekly allowance like `meter_points` (0.01 is one
+    point); `_week_range` itself is in points."""
+    points = low = high = dollars = 0.0
     used = 0
     root = tree / DEST_ROOT
     runs = sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()
@@ -1550,16 +1593,59 @@ def calibrate(tree: Path, skip: str) -> dict:
             if moved is None or not is_number(metered) or not 0 < metered <= MAX_USD:
                 continue
             points += moved
+            span = _week_range(usage)
+            low += span[0] / 100
+            high += span[1] / 100
             dollars += metered
             used += 1
-    return {"invocations": used, "meter_points": points, "metered_usd": dollars,
-            "points_per_usd": points / dollars if dollars and points else None}
+    return {"invocations": used, "meter_points": points,
+            "meter_points_low": low, "meter_points_high": high,
+            "metered_usd": dollars,
+            "points_per_usd": points / dollars if dollars and points else None,
+            "points_per_usd_low": low / dollars if dollars and low else None,
+            "points_per_usd_high": high / dollars if dollars and high else None}
+
+
+def _legacy_rate():
+    """evals/budget.yml's `legacy_usd_per_point` (dollars per point, for a
+    call with no token counts), None when the file cannot be read."""
+    try:
+        return budget_file.load_budget()[budget_file.LEGACY_RATE]
+    except (budget_file.BudgetError, KeyError):
+        return None
+
+
+def _estimated_points(blocks: list, legacy_rate):
+    """`usage.allowance_estimate`'s points, low, high and whether every role
+    was priced from tokens or the legacy rate, over trial `measured` blocks;
+    None when nothing was priced (no blocks, or no role with tokens or
+    dollars)."""
+    if not blocks:
+        return None
+    found = allowance_points.estimate_blocks(blocks, legacy_rate)
+    if not (found["roles_from_tokens"] or found["legacy_roles"]):
+        return None
+    return {key: found[key] for key in ("points", "low", "high", "complete")}
+
+
+def _sum_estimated(parts: list):
+    """The sum of `_estimated_points` results (None when none is priced);
+    complete only when every invocation is priced and complete."""
+    priced = [p for p in parts if p is not None]
+    if not priced:
+        return None
+    return {"points": sum(p["points"] for p in priced),
+            "low": sum(p["low"] for p in priced),
+            "high": sum(p["high"] for p in priced),
+            "complete": len(priced) == len(parts) and all(p["complete"] for p in priced)}
 
 
 def estimate(tree: Path, run_id: str) -> dict:
     """Write `cost_estimate.json` for the ingested run `run_id`, unless one
     is there or no invocation of it carries `usage.cost_estimate` (a run
-    from before it). Full precision; nothing is rounded."""
+    from before it). Full precision; nothing is rounded. `points` is the
+    meter-calibrated figure; `estimated_points` (schema 2) is the allowance
+    estimate priced from the invocation's token counts by type."""
     if not re.fullmatch(RUN_ID, run_id):
         raise Rejected("run id is not a routine run id")
     run_dir = tree / DEST_ROOT / run_id
@@ -1567,27 +1653,32 @@ def estimate(tree: Path, run_id: str) -> dict:
     if target.exists() or target.is_symlink() or not run_dir.is_dir() \
             or run_dir.is_symlink():
         return {"estimated": "false"}
-    found = [u["cost_estimate"] for u in _invocations(run_dir)
+    found = [(u["cost_estimate"], measured)
+             for u, measured in _invocation_groups(run_dir)
              if isinstance(u.get("cost_estimate"), dict)]
     if not found:
         return {"estimated": "false"}
     calibration = calibrate(tree, run_id)
     rate = calibration["points_per_usd"]
+    legacy_rate = _legacy_rate()
     why = ("no run ingested before this one measured both a weekly meter delta "
            "and the dollars it spans")
     invocations = []
-    for block in found:
+    for block, measured in found:
         reasons = {k: v for k, v in block["reasons"].items()
                    if k not in ("points_per_usd", "points")}
         if rate is None:
             reasons.update(points_per_usd=why, points=why)
         invocations.append({**block, "points_per_usd": rate,
                             "points": None if rate is None else block["usd"] * rate,
+                            "estimated_points": _estimated_points(measured, legacy_rate),
                             "reasons": reasons})
     doc = {"schema_version": ESTIMATE_SCHEMA_VERSION, "run_id": run_id,
            "calibration": {**calibration, "basis": CALIBRATION_BASIS},
            "usd": sum(i["usd"] for i in invocations),
            "points": None if rate is None else sum(i["points"] for i in invocations),
+           "estimated_points": _sum_estimated(
+               [i["estimated_points"] for i in invocations]),
            "invocations": invocations}
     target.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     return {"estimated": "true"}
