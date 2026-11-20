@@ -8,8 +8,10 @@ value is a fraction of the subscription's weekly allowance, read the way the
 CLI's meter reports it (`unifiedWindows.seven_day.utilization`, 0 to 1).
 
 Strict, because a typo here is a spending decision nobody made: exactly the
-four keys (plus the optional `points_per_usd`), no duplicates, each a
-finite number above 0 and at most 1 (a bool is not a number), and `per_run_cap` no larger than `weekly_cap`. A
+four fraction keys plus `legacy_usd_per_point` (and the optional
+`stop_when_session_above`), no duplicates, each fraction a finite number above
+0 and at most 1 (a bool is not a number), and `per_run_cap` no larger than
+`weekly_cap`. A
 problem is a BudgetError whose message names the key and the rule, never a
 value from the file.
 """
@@ -24,18 +26,19 @@ import yaml
 #: The committed budget, beside the roster and the schedule.
 DEFAULT_BUDGET = Path(__file__).resolve().parent.parent / "evals" / "budget.yml"
 KEYS = ("weekly_cap", "per_run_cap", "per_run_overrun", "stop_when_account_above")
-#: Keys a budget may leave out. `points_per_usd` is the allowance fraction one
-#: dollar of the CLI's own reported call cost moves the meter, measured with
-#: `scripts/run_costs.py` (2026-11-03). With it, run_eval charges
-#: `per_run_cap` with the run's own calls' dollars at that rate instead of
-#: the account-wide meter, which reads whole points and moves with Adam's
-#: other use too. Absent, `per_run_cap` reads the meter as before.
-#: `stop_when_session_above` (skills-evals#921) is the same kind of stop as
-#: `stop_when_account_above`, read from the CLI's 5-hour window
-#: (`unifiedWindows.five_hour.utilization`): a smaller plan's sweep can use up
-#: a whole 5-hour window long before the week's meter moves much. Absent, the
-#: 5-hour window is not read.
-OPTIONAL_KEYS = ("points_per_usd", "stop_when_session_above")
+#: Keys a budget may leave out. `stop_when_session_above` (skills-evals#921)
+#: is the same kind of stop as `stop_when_account_above`, read from the CLI's
+#: 5-hour window (`unifiedWindows.five_hour.utilization`): a smaller plan's
+#: sweep can use up a whole 5-hour window long before the week's meter moves
+#: much. Absent, the 5-hour window is not read.
+OPTIONAL_KEYS = ("stop_when_session_above",)
+#: The one key that is not a fraction of the week: dollars of API-equivalent
+#: spend per point, used only for calls recorded without token counts
+#: (harness/allowance_points.py prices everything else from tokens by type).
+#: Optional (absent, such a call is left unpriced and the run falls back to
+#: the meter, as before 2026-11-03); when present, a finite number above 0
+#: with no upper bound, as dollars per point. The committed budget sets it.
+LEGACY_RATE = "legacy_usd_per_point"
 
 
 class BudgetError(ValueError):
@@ -67,7 +70,7 @@ def parse_budget(text: str) -> dict:
         raise BudgetError("budget is not valid YAML") from None
     if not isinstance(document, dict):
         raise BudgetError("budget must be a mapping")
-    unknown = sorted(set(document) - set(KEYS) - set(OPTIONAL_KEYS))
+    unknown = sorted(set(document) - set(KEYS) - set(OPTIONAL_KEYS) - {LEGACY_RATE})
     if unknown:
         raise BudgetError(f"budget has unknown keys {unknown}")
     missing = [key for key in KEYS if key not in document]
@@ -80,6 +83,12 @@ def parse_budget(text: str) -> dict:
                 or not math.isfinite(value) or not 0 < value <= 1:
             raise BudgetError(f"budget {key} must be a number above 0 and at most 1")
         budget[key] = float(value)
+    if LEGACY_RATE in document:
+        rate = document[LEGACY_RATE]
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
+                or not math.isfinite(rate) or rate <= 0:
+            raise BudgetError(f"budget {LEGACY_RATE} must be a finite number above 0")
+        budget[LEGACY_RATE] = float(rate)
     if budget["per_run_cap"] > budget["weekly_cap"]:
         raise BudgetError("budget per_run_cap must not exceed weekly_cap")
     return budget

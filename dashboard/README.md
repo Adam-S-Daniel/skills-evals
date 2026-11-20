@@ -330,7 +330,8 @@ and never joins a points total. The rates:
 
 The rates travel in `spend/weekly.json` `rates` to the public document, where
 `explorer/src/core/points.js` converts every allowance figure. The allowance guard does not
-read `evals/points.yml`: it charges eval runs at `evals/budget.yml` `points_per_usd`.
+read `evals/points.yml`: it charges eval runs their estimated points from token counts
+by type (`harness/allowance_points.py`, the table `evals/usage-weights.lock` pins).
 
 ## What stays hand-maintained, and why
 

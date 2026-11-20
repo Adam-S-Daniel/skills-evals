@@ -79,6 +79,7 @@ import judge_policy  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
+import allowance_points  # noqa: E402
 import budget  # noqa: E402
 import workspace_git  # noqa: E402
 
@@ -4880,18 +4881,18 @@ def _five_hour(info) -> float | None:
 
 
 def budget_stop_reading(readings: list, limits: dict,
-                        own_usd: float | None = None,
+                        own: float | None = None,
                         session: float | None = None) -> dict | None:
     """The budget stop (#68) a run's weekly-window readings call for, oldest
     first, or None. `limits` is `budget.load_budget()`'s.
 
-    With `limits["points_per_usd"]` and `own_usd`, the dollars of every call
-    the run has made (None when any call's cost is unknown), `per_run_cap`
-    is charged the run's own spend, `own_usd * points_per_usd`, and that is
-    what `moved` records. The meter reads whole points and moves with the
-    account's other use too, so a tick during a run is not the run's: read
-    that way, one run in six lost its second arm on 2026-11-03. Without
-    either, `moved` is the meter's movement as below.
+    With `own`, the run's own estimated spend as a fraction of the week
+    (`usage.allowance_estimate` of every call the run has made, from token
+    counts by type; None when some call could not be priced), `per_run_cap`
+    is charged that, and it is what `moved` records. The meter reads whole
+    points and moves with the account's other use too, so a tick during a run
+    is not the run's: read that way, one run in six lost its second arm on
+    2026-11-03. Without it, `moved` is the meter's movement as below.
 
     `moved` is the latest reading less the first, rounded as `_meter_delta`
     rounds a window's delta so the two agree; when the window's reset time
@@ -4903,9 +4904,8 @@ def budget_stop_reading(readings: list, limits: dict,
         return None
     (start, start_reset), (latest, latest_reset) = readings[0], readings[-1]
     moved = round(latest - start, 6) if latest_reset == start_reset else latest
-    rate = limits.get("points_per_usd")
-    if rate is not None and own_usd is not None:
-        moved = round(own_usd * rate, 6)
+    if own is not None:
+        moved = round(own, 6)
     session_limit = limits.get("stop_when_session_above")
     if latest >= limits["stop_when_account_above"]:
         reason, limit = "account_above", limits["stop_when_account_above"]
@@ -4976,6 +4976,9 @@ class _RunTelemetry:
         self.snapshot_calls: list[int] = []
         # Each of the run's CLI calls' (role, dollar cost or None), in order.
         self.call_costs: list[tuple] = []
+        # Each flushed group of calls' `_role_usage` block, as
+        # `{role: block}`: what `usage.allowance_estimate` prices.
+        self.role_blocks: list[dict] = []
         self.unreadable = 0
         self.written: list[Path] = []
         # `git --version` (git_version), read once by main(); None for a
@@ -5023,17 +5026,32 @@ class _RunTelemetry:
             for event in call.get("events") or ()]
         readings = [r for r in map(_seven_day, infos) if r is not None]
         sessions = [r for r in map(_five_hour, infos) if r is not None]
-        own_usd = None
-        if self.budget.get("points_per_usd") is not None:
-            # Queued calls get their duration when flushed; cost ignores it.
-            costs = [cost for _, cost in self.call_costs] + [
-                cost for group in self.pending for cost in _call_costs(
-                    group["role"], [{**call, "duration_ms": 0}
-                                    for call in group["calls"]], group["results"])]
-            own_usd = None if None in costs else sum(costs)
-        self.stop = budget_stop_reading(readings, self.budget, own_usd,
+        # Queued calls get their duration when flushed; the estimate ignores it.
+        queued = [{group["role"]: _role_usage(
+            group["role"], [{**call, "duration_ms": 0} for call in group["calls"]],
+            group["results"])} for group in self.pending]
+        estimate = self.allowance_estimate(queued)
+        own = None if estimate["unpriced_roles"] else estimate["points"] / 100
+        self.stop = budget_stop_reading(readings, self.budget, own,
                                         session=sessions[-1] if sessions else None)
         return self.stop
+
+    def allowance_estimate(self, extra=()) -> dict:
+        """`usage.allowance_estimate`: every flushed call of the run (and
+        `extra` blocks) priced from its token counts by type, in points
+        (harness/allowance_points.py)."""
+        rate = (self.budget or {}).get(budget.LEGACY_RATE)
+        return allowance_points.estimate_blocks([*self.role_blocks, *extra], rate)
+
+    def _estimate_or_nothing(self) -> dict:
+        """`{"allowance_estimate": ...}`, or nothing when the lock cannot be
+        read: main() refuses to start a run then (a configuration error,
+        exit 2), and the summaries written on that way out must not turn
+        the named refusal into a traceback."""
+        try:
+            return {"allowance_estimate": self.allowance_estimate()}
+        except allowance_points.LockError:
+            return {}
 
     def _call_snapshots(self, events: list, role: str, index: int,
                         started: datetime) -> list:
@@ -5079,6 +5097,8 @@ class _RunTelemetry:
                                               call["started"])
             self.call_costs += [(group["role"], cost) for cost in _call_costs(
                 group["role"], group["calls"], group["results"])]
+            self.role_blocks.append({group["role"]: _role_usage(
+                group["role"], group["calls"], group["results"])})
         self.snapshots += shots
         kept = _cap_snapshots(shots)
         first = started or min((c["started"] for g in groups for c in g["calls"]),
@@ -5126,6 +5146,7 @@ class _RunTelemetry:
         self.call_costs += [(role, cost) for cost in _call_costs(role, [call], results)]
         measured["ended_at"] = _stamp(ended)
         measured[role] = _role_usage(role, [call], results)
+        self.role_blocks.append({role: measured[role]})
         new = self._call_snapshots(list(events), role, 0, started)
         self.snapshots += new
         if new and measured["meter"] is not None:
@@ -5194,7 +5215,7 @@ class _RunTelemetry:
                     self.call_costs, None if delta is None else
                     (self.snapshot_calls[0], self.snapshot_calls[-1]),
                     self._api_billed()),
-                "reasons": reasons, **stopped}
+                "reasons": reasons, **stopped, **self._estimate_or_nothing()}
 
     def usage(self, trials: list | None) -> dict:
         """A summary's `usage` block. `trials` are an arm aggregate's trial
@@ -5244,7 +5265,29 @@ class _RunTelemetry:
                          "guard call starts, "
                          f"so the {late} call(s) from the last reading on are "
                          f"not in it): {moved}, from {len(self.snapshots)} snapshots")
-        return [*lines, _cost_estimate_line(level["cost_estimate"])]
+        lines.append(_cost_estimate_line(level["cost_estimate"]))
+        if "allowance_estimate" in level:
+            lines.append(_allowance_estimate_line(level["allowance_estimate"]))
+        return lines
+
+
+def _allowance_estimate_line(estimate: dict) -> str:
+    """report.md's line for `usage.allowance_estimate`, the one place its
+    points are rounded (to hundredths)."""
+    fable = estimate["fable"]
+    gaps = []
+    if estimate["legacy_roles"]:
+        gaps.append(f"{estimate['legacy_roles']} role total(s) without token "
+                    f"counts priced from ${estimate['legacy_usd']:.2f} at the "
+                    "legacy rate")
+    if estimate["unpriced_roles"]:
+        gaps.append(f"{estimate['unpriced_roles']} role total(s) with neither "
+                    "tokens nor dollars, so this is a floor")
+    return ("- Estimated allowance (approximate, from token counts by type, "
+            f"weight table {estimate['table']}): {estimate['points']:.2f} points "
+            f"of the weekly meter ({estimate['low']:.2f} to {estimate['high']:.2f})"
+            f"; Fable meter {fable['points']:.2f} points"
+            + (f"; {'; '.join(gaps)}" if gaps else ""))
 
 
 def _cost_estimate_line(estimate: dict) -> str:
@@ -8709,8 +8752,9 @@ def main() -> int:
                         metavar="PATH",
                         help="the weekly allowance budget (#68): a run stops "
                              "starting trials and judge calls once its own "
-                             "calls have cost per_run_cap (at points_per_usd; "
-                             "without it, once the weekly meter has moved "
+                             "calls have cost per_run_cap (estimated from "
+                             "their token counts by type; when a call cannot "
+                             "be priced, once the weekly meter has moved "
                              "that much since its first reading), or the "
                              "meter reads stop_when_account_above "
                              "(default: evals/budget.yml)")
@@ -8723,7 +8767,8 @@ def main() -> int:
     _TELEMETRY.flags = args
     try:
         _TELEMETRY.budget = budget.load_budget(args.budget)
-    except budget.BudgetError as exc:
+        allowance_points.table()
+    except (budget.BudgetError, allowance_points.LockError) as exc:
         print(f"configuration error: {exc}")
         return 2
     try:

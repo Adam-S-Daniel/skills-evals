@@ -1,0 +1,33 @@
+# The pinned release of the usage-weights package vendored under
+# vendor/usage_weights/, and the one weight table every allowance estimate in
+# this repo uses. harness/allowance_points.py reads this file and nothing else
+# names a table: no reader has a default and none follows "latest". A missing
+# or unreadable lock, a missing `table`, or a vendored file whose sha256 differs
+# from the one below stops the reader with a message that names the problem
+# (test/issues/test_issue_usage_weights.py recomputes every checksum).
+#
+# To move to a new release: copy its usage_weights/ package (and LICENSE)
+# over vendor/usage_weights/, set `commit`, `tag` and `table`, and rewrite
+# `files`.
+# A new table is a spending decision (it changes what every run is charged).
+
+# The source repository and the commit the vendored files were copied from
+# (release v0.1.0, 2026-11-20). The commit is what is pinned; the tag names
+# it for people.
+repo: Adam-S-Daniel/claude-plan-usage-estimator
+commit: 990850e87b7ea19276dbeea631aaad9eba9f54e8
+tag: v0.1.0
+
+table: "2026-11-20"
+
+files:
+  usage_weights/LICENSE: c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
+  usage_weights/__init__.py: d4b93b7c21ae56e6986d617a0c93d3abddd790c58469aa3ac2f7acdd84f70458
+  usage_weights/__main__.py: 7c7c5eb49c8173db2f8f74a145dc03dc939f2eaea1dcb3dc4c289c55c0a3b219
+  usage_weights/data/prices/2026-11-20.json: a936df15625c3b82ad4d794529a7dec6745b83236e89469c81b4290971b4b742
+  usage_weights/data/weights/2026-11-20.json: 89c138959fa40c5aebadacdd8569ef51912f26b16c2e88f620dbcc814d754dd3
+  usage_weights/data/weights/atlas-2026-10-29.json: f9fd670949573c08accf01ca74121e46f5349d89aef4331ca1d06d86f54f4923
+  usage_weights/estimate.py: 5cc4dca28de3b328cdb6ddbe8a2e18426be59f1405cfb061399be043c304aa67
+  usage_weights/meter.py: ba401b9221f9dae6b7696b2f32bcf9955d93e5820c8aac65930702206068a5ac
+  usage_weights/records.py: f30ffbeb146601f33e04664af71d9e934668a7867661f01d353a2d3b436c80cc
+  usage_weights/table.py: 3a212b3d78bc9998f4c6deeb6537377646fe26c94593659f3e2c5cdcbe87e0db

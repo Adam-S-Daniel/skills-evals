@@ -956,8 +956,9 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, 
     """The `loop_jobs` block of spend/weekly.json: the loop's own automatic jobs'
     weekly meter use from task_breakdown's result (`tb`, else read here). None without one, so the
     block is omitted rather than guessed. `points_per_week` is meter points
-    (percent of the weekly allowance): dollars at the budget's `points_per_usd`,
-    as scripts/forecast_catch_up.py converts them."""
+    (percent of the weekly allowance): dollars at the budget's
+    `legacy_usd_per_point`, as scripts/forecast_catch_up.py converts them,
+    until the fire ledger's tokens by type are priced with the weight table."""
     import yaml
     import automatic_spend
     tb = tb or task_breakdown(inputs, config, workflows_root, now, ledger, window_days)
@@ -984,8 +985,8 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, 
         if per_fire is None:
             return None
         usd += j["fires_per_week"] * per_fire
-    ppu = yaml.safe_load(open(REPO / "evals" / "budget.yml"))["points_per_usd"]
-    return {"as_of": iso(now), "points_per_week": usd * ppu * 100, "usd_per_week": usd}
+    rate = yaml.safe_load(open(REPO / "evals" / "budget.yml"))["legacy_usd_per_point"]
+    return {"as_of": iso(now), "points_per_week": usd / rate, "usd_per_week": usd}
 
 
 # --- main ----------------------------------------------------------------------

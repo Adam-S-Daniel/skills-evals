@@ -831,7 +831,7 @@ USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
 #: `budget_stop` (#68): present only on a run that stopped starting work for
 #: its weekly allowance budget, so every summary written before it still
 #: ingests. run_eval.budget_stop_reading's keys and reasons.
-USAGE_OPTIONAL = ("budget_stop", "cost_estimate")
+USAGE_OPTIONAL = ("budget_stop", "cost_estimate", "allowance_estimate")
 BUDGET_STOP_KEYS = ("reason", "utilization", "moved", "limit")
 BUDGET_STOP_REASONS = ("per_run_cap", "account_above", "session_above")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
@@ -859,6 +859,15 @@ COST_ESTIMATE_BASIS = ("an estimate from the CLI's own per-call dollar figures "
                        "(total_cost_usd, else modelUsage costUSD), times the "
                        "measured points-per-dollar rate; not a meter reading")
 MAX_USD = 10 ** 6
+#: `allowance_estimate` (2026-11-20): optional, so a summary written before it
+#: still ingests. harness/allowance_points.estimate_blocks's keys.
+ALLOWANCE_RANGE = ("points", "low", "high")
+ALLOWANCE_COUNTS = ("roles_from_tokens", "legacy_roles", "unpriced_roles")
+ALLOWANCE_KEYS = ("table", *ALLOWANCE_RANGE, "fable", *ALLOWANCE_COUNTS,
+                  "legacy_usd", "complete")
+ALLOWANCE_TABLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+#: More points than any run could spend: ten whole weeks.
+MAX_POINTS = 1000
 
 
 def _reasons(block: dict, where: str, nullable) -> None:
@@ -1080,6 +1089,33 @@ def check_cost_estimate(estimate, where: str) -> None:
     _reasons(estimate, where, COST_ESTIMATE_NULLABLE)
 
 
+def _check_range(block, where: str) -> None:
+    for name in ALLOWANCE_RANGE:
+        _number(block[name], f"{where}.{name}", 0, MAX_POINTS)
+    if not block["low"] <= block["points"] <= block["high"]:
+        raise Rejected(f"{where}: points must lie from low to high")
+
+
+def check_allowance_estimate(estimate, where: str) -> None:
+    """`usage.allowance_estimate`: exactly its keys, points within their
+    range on both meters, whole role counts, and `complete` true exactly when
+    no role was priced from dollars or left unpriced."""
+    where = f"{where}.allowance_estimate"
+    _object(estimate, where, ALLOWANCE_KEYS, ALLOWANCE_KEYS)
+    if not isinstance(estimate["table"], str) \
+            or not ALLOWANCE_TABLE.fullmatch(estimate["table"]):
+        raise Rejected(f"{where}.table is not a table id")
+    _check_range(estimate, where)
+    _object(estimate["fable"], f"{where}.fable", ALLOWANCE_RANGE, ALLOWANCE_RANGE)
+    _check_range(estimate["fable"], f"{where}.fable")
+    for name in ALLOWANCE_COUNTS:
+        _integer(estimate[name], f"{where}.{name}", 0, MAX_COUNT)
+    _number(estimate["legacy_usd"], f"{where}.legacy_usd", 0, MAX_USD)
+    if estimate["complete"] is not (estimate["legacy_roles"] == 0
+                                    and estimate["unpriced_roles"] == 0):
+        raise Rejected(f"{where}.complete does not match its role counts")
+
+
 def check_usage(usage, where: str, run: dict) -> None:
     where = f"{where}: usage"
     _object(usage, where, USAGE_KEYS + USAGE_OPTIONAL, USAGE_KEYS)
@@ -1087,6 +1123,8 @@ def check_usage(usage, where: str, run: dict) -> None:
         check_budget_stop(usage["budget_stop"], where, run["billing"])
     if "cost_estimate" in usage:
         check_cost_estimate(usage["cost_estimate"], where)
+    if "allowance_estimate" in usage:
+        check_allowance_estimate(usage["allowance_estimate"], where)
     _integer(usage["schema_version"], f"{where}.schema_version", 1, 1)
     _span(usage, where)
     _check_meter(usage, where, run["billing"])

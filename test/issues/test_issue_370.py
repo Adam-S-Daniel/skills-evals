@@ -57,7 +57,8 @@ RUN_NULLABLE = ("billing", "runner", "location", "id", "session_id",
 USAGE_KEYS = {"schema_version", "started_at", "ended_at", "meter",
               "meter_delta", "concurrent_runs", "other_account_activity",
               "asserted_quiet_by", "outer_session", "limit_promotion",
-              "price_table_version", "cost_estimate", "measured", "reasons"}
+              "price_table_version", "cost_estimate", "allowance_estimate",
+              "measured", "reasons"}
 USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", "concurrent_runs",
                   "limit_promotion", "price_table_version")
 MEASURED_KEYS = {"scope", "started_at", "ended_at", "calls", "meter", "agent",

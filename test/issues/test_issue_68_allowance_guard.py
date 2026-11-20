@@ -57,6 +57,7 @@ sys.path.insert(0, str(TEST_DIR))
 
 import allowance_guard as guard  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
+import allowance_points  # noqa: E402
 import budget  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
@@ -111,12 +112,13 @@ class BudgetFileTests(unittest.TestCase):
         # the 2026-11-09 17:00 UTC reset, after the finish week's raise).
         # 2026-11-01 (permanent):
         # the per-run cap is 1 point, the overrun the p95 of a run's largest
-        # call. 2026-11-11: $6.67 per point, the rate measured on 2026-11-10.
+        # call. 2026-11-20: eval runs are charged estimated points from token
+        # counts; the legacy rate ($12.35 per point) prices only what has none.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 0.25,
                           "stop_when_account_above": 0.80,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
-                          "points_per_usd": 0.0015})
+                          "legacy_usd_per_point": 12.35})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -191,54 +193,55 @@ class StopReadingTests(unittest.TestCase):
 
 
 class OwnCostStopTests(unittest.TestCase):
-    """per_run_cap charges the run's own calls' dollars at points_per_usd,
-    not the account meter (2026-11-03: a whole-point tick from Adam's own
-    use stranded one run's second arm in six)."""
+    """per_run_cap charges the run's own estimated points (a fraction of the
+    week), not the account meter (2026-11-03: a whole-point tick from Adam's
+    own use stranded one run's second arm in six)."""
 
-    COSTED = {**LIMITS, "per_run_cap": 0.01, "points_per_usd": 0.00214}
+    COSTED = {**LIMITS, "per_run_cap": 0.01, "legacy_usd_per_point": 1.0}
 
     def test_a_meter_tick_mid_pair_does_not_stop_a_cheap_run(self):
-        # The meter moves a whole point while the run itself spent $0.13,
-        # 0.028 points: the second arm still runs.
+        # The meter moves a whole point while the run itself spent 0.028
+        # points: the second arm still runs.
         self.assertIsNone(run_eval.budget_stop_reading(
-            [(0.28, 1), (0.29, 1)], self.COSTED, own_usd=0.13))
+            [(0.28, 1), (0.29, 1)], self.COSTED, own=0.00028))
 
     def test_the_run_stops_once_its_own_cost_reaches_the_cap(self):
         self.assertEqual(
             run_eval.budget_stop_reading([(0.28, 1), (0.28, 1)], self.COSTED,
-                                         own_usd=5.0),
+                                         own=0.0107),
             {"reason": "per_run_cap", "utilization": 0.28, "moved": 0.0107,
              "limit": 0.01})
         self.assertIsNone(run_eval.budget_stop_reading(
-            [(0.28, 1)], self.COSTED, own_usd=4.6))
+            [(0.28, 1)], self.COSTED, own=0.0098))
 
-    def test_an_unknown_cost_or_no_rate_falls_back_to_the_meter(self):
+    def test_an_unknown_cost_falls_back_to_the_meter(self):
         tick = [(0.28, 1), (0.29, 1)]
-        for limits, own in ((self.COSTED, None),
-                            ({**LIMITS, "per_run_cap": 0.01}, 0.13)):
-            with self.subTest(own=own, rate="points_per_usd" in limits):
-                self.assertEqual(
-                    run_eval.budget_stop_reading(tick, limits, own_usd=own)["reason"],
-                    "per_run_cap")
+        self.assertEqual(
+            run_eval.budget_stop_reading(tick, self.COSTED, own=None)["reason"],
+            "per_run_cap")
 
     def test_the_account_limit_still_reads_the_meter(self):
         self.assertEqual(
             run_eval.budget_stop_reading([(0.79, 1), (0.80, 1)], self.COSTED,
-                                         own_usd=0.01)["reason"],
+                                         own=0.0001)["reason"],
             "account_above")
 
     def test_telemetry_sums_the_run_s_recorded_and_queued_call_costs(self):
+        # A role with no token counts is priced from its dollars at the
+        # legacy rate ($1 a point here): $0.10 + $0.03 is 0.13 points.
         run_eval._TELEMETRY.begin(flags())
         self.addCleanup(run_eval._TELEMETRY.begin)
         run_eval._TELEMETRY.budget = dict(self.COSTED)
-        run_eval._TELEMETRY.call_costs = [("agent", 0.10)]
+        run_eval._TELEMETRY.role_blocks = [
+            {"agent": {"calls": 1, "models": None, "cost_usd": 0.10}}]
         now = datetime(2026, 10, 12, 17, 0, tzinfo=timezone.utc)
         run_eval._TELEMETRY.record("judge", [{
             "started": now, "ended": now, "outcome": "ok",
             "events": [{"at": None, "info": meter(week)} for week in (0.28, 0.29)]}],
             [{"total_cost_usd": 0.03}])
         self.assertIsNone(run_eval._TELEMETRY.budget_stop())
-        run_eval._TELEMETRY.call_costs = [("agent", 4.80)]
+        run_eval._TELEMETRY.role_blocks = [
+            {"agent": {"calls": 1, "models": None, "cost_usd": 1.50}}]
         self.assertEqual(run_eval._TELEMETRY.budget_stop()["reason"], "per_run_cap")
 
 
@@ -376,8 +379,8 @@ class EndToEndStopTests(unittest.TestCase):
 
     def test_a_meter_tick_from_other_use_leaves_the_second_arm_running(self):
         # 2026-11-03: the account meter moved past the cap mid-pair while the
-        # run's own calls cost cents. With the committed points_per_usd the
-        # cap charges the run's own dollars, so both arms and judges run.
+        # run's own calls cost cents. The cap charges the run's own estimated
+        # points, so both arms and judges run.
         self.fixture(batches=[[meter(0.28)], [meter(0.30)], [meter(0.31)],
                               [meter(0.31)]])
         proc = self.run_eval("--judge", "always", "--run-billing", "subscription")
@@ -387,7 +390,8 @@ class EndToEndStopTests(unittest.TestCase):
             self.assertNotIn("budget_stop", summary["usage"])
 
     def test_the_per_run_cap_stops_new_trials_and_judge_calls(self):
-        # Without points_per_usd the cap falls back to the meter's movement.
+        # A call that cannot be priced (no tokens, no dollars, and no legacy
+        # rate) makes the cap fall back to the meter's movement.
         meter_only = self.tmp / "budget.yml"
         meter_only.write_text(VALID_BUDGET, encoding="utf-8")
         self.fixture(batches=[[meter(0.70)], [meter(0.74)], [meter(0.74)],
@@ -624,64 +628,95 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(state["runs"], 1)
         self.assertAlmostEqual(state["spent"], 0.025, places=12)
 
-    # A run is charged its own dollars when it has them: the meter delta is the
-    # whole account's movement while the run went (2026-11-04).
-    PRICED = {**LIMITS, "points_per_usd": 0.0005}
+    # A run is charged its own estimated points when its trial summaries have
+    # token counts: the meter delta is the whole account's movement while the
+    # run went (2026-11-04).
+    TOKENS = {"input_tokens": 1_000_000, "output_tokens": 100_000,
+              "cache_read_input_tokens": 500_000,
+              "cache_creation_input_tokens": 200_000, "cost_usd": 1.0}
 
-    def priced_usage(self, dollars, delta=0.30):
+    def token_block(self, **counts):
+        return {"calls": 1, "models": {"claude-sonnet-5-5": {**self.TOKENS, **counts}}}
+
+    def priced_usage(self, role_blocks=None, delta=0.30):
         block = usage_block(delta)
-        block["cost_estimate"] = {"usd": dollars}
+        block["measured"]["agent"] = role_blocks or self.token_block()
         return block
 
-    def test_a_run_with_dollars_is_charged_them_not_the_meter_delta(self):
-        run = self.run_dir("20261019T100000Z")
-        self.summary(run, "k/20261019T100000Z/with_skill",
-                     self.priced_usage(10.0, delta=0.30))
-        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                              since=NOW - guard.WINDOW)
-        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+    def points(self, block, rate=None):
+        return allowance_points.estimate_blocks([{"agent": block}], rate)["points"]
 
-    def test_a_run_whose_dollars_cannot_be_used_keeps_the_meter_charge(self):
-        cases = {"no cost_estimate": None, "nan": float("nan"),
-                 "infinity": float("inf"), "bool": True, "negative": -1.0,
-                 "string": "4.0"}
-        for name, dollars in cases.items():
+    def spent_of(self, limits=None):
+        return guard.account(self.tree, limits or LIMITS, NOW, (0, 0),
+                             since=NOW - guard.WINDOW)
+
+    def test_a_run_with_tokens_is_charged_their_points_not_the_meter_delta(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill/trial-1",
+                     self.priced_usage(delta=0.30))
+        expected = self.points(self.token_block()) / 100 + 0.005
+        self.assertGreater(expected, 0.005)
+        self.assertLess(expected, 0.30)
+        self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
+
+    def test_an_arm_aggregate_s_measured_block_is_not_counted_again(self):
+        run = self.run_dir("20261019T100000Z")
+        for rel, scope in (("with_skill", "arm"), ("with_skill/trial-1", "trial")):
+            block = self.priced_usage(delta=0.30)
+            block["measured"]["scope"] = scope
+            block["measured"]["started_at"] = rel
+            self.summary(run, f"k/20261019T100000Z/{rel}", block)
+        expected = self.points(self.token_block()) / 100 + 0.005
+        self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
+
+    def test_a_role_without_tokens_is_charged_its_dollars_at_the_legacy_rate(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.priced_usage(
+            {"calls": 1, "models": None, "cost_usd": 10.0}, delta=0.30))
+        limits = {**LIMITS, "legacy_usd_per_point": 12.5}
+        self.assertAlmostEqual(self.spent_of(limits)["spent"],
+                               10.0 / 12.5 / 100 + 0.005, places=12)
+
+    def test_a_run_that_cannot_be_priced_keeps_the_meter_charge(self):
+        cases = {
+            "no measured block": (lambda b: b.pop("measured"), None),
+            "no calls recorded": (lambda b: b["measured"].update(
+                agent={"calls": 0}), None),
+            "no tokens, no dollars": (lambda b: b["measured"].update(
+                agent={"calls": 1, "models": None, "cost_usd": None}),
+                {**LIMITS, "legacy_usd_per_point": 12.35}),
+            "dollars but no legacy rate": (lambda b: b["measured"].update(
+                agent={"calls": 1, "models": None, "cost_usd": 4.0}), None),
+            "a null token count": (lambda b: b["measured"].update(
+                agent=self.token_block(output_tokens=None, cost_usd=None)),
+                {**LIMITS, "legacy_usd_per_point": 12.35}),
+        }
+        for name, (edit, limits) in cases.items():
             with self.subTest(case=name):
                 shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
                 run = self.run_dir("20261019T100000Z")
                 block = usage_block(0.02)
-                if dollars is not None:
-                    block["cost_estimate"] = {"usd": dollars}
-                self.summary(run, "k/20261019T100000Z/with_skill", block)
-                state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                                      since=NOW - guard.WINDOW)
-                self.assertAlmostEqual(state["spent"], 0.025, places=12)
-
-    def test_no_usable_rate_keeps_the_meter_charge(self):
-        for name, rate in {"absent": None, "zero": 0, "bool": True,
-                           "nan": float("nan")}.items():
-            with self.subTest(rate=name):
-                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
-                run = self.run_dir("20261019T100000Z")
-                self.summary(run, "k/20261019T100000Z/with_skill",
-                             self.priced_usage(10.0, delta=0.02))
-                limits = dict(LIMITS)
-                if rate is not None:
-                    limits["points_per_usd"] = rate
-                state = guard.account(self.tree, limits, NOW, (0, 0),
-                                      since=NOW - guard.WINDOW)
-                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+                block["measured"]["agent"] = self.token_block()
+                edit(block)
+                self.summary(run, "k/20261019T100000Z/with_skill/trial-1", block)
+                self.assertAlmostEqual(self.spent_of(limits)["spent"], 0.025, places=12)
 
     def test_priced_summaries_of_one_invocation_are_counted_once(self):
         run = self.run_dir("20261019T100000Z")
         for rel in ("with_skill", "with_skill/trial-1", "without_skill/trial-2"):
-            block = self.priced_usage(10.0)
+            block = self.priced_usage()
             block["measured"]["started_at"] = rel  # differs per summary
+            if rel == "with_skill":
+                block["measured"]["scope"] = "arm"
+            if rel.endswith("trial-2"):
+                block["measured"]["agent"] = self.token_block(output_tokens=200_000)
             self.summary(run, f"k/20261019T100000Z/{rel}", block)
-        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                              since=NOW - guard.WINDOW)
+        state = self.spent_of()
         self.assertEqual(state["runs"], 1)
-        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+        # The arm aggregate adds nothing; the two trials are each priced once.
+        expected = (self.points(self.token_block())
+                    + self.points(self.token_block(output_tokens=200_000))) / 100 + 0.005
+        self.assertAlmostEqual(state["spent"], expected, places=12)
 
     def test_two_invocations_in_one_run_are_each_charged(self):
         run = self.run_dir("20261019T100000Z")

@@ -139,6 +139,42 @@ adopted: see ADR
 [0002](decisions/0002-runs-bill-the-api-org-not-the-subscription.md) and § 7's
 blocking decision 5.
 
+### The allowance estimate
+
+Since 2026-11-20 a run's use of the weekly allowance is estimated from its
+token counts by type, not from dollars at a flat rate.
+[`harness/allowance_points.py`](../harness/allowance_points.py) prices each
+role's per-model counts (`usage.measured.<role>.models`: input, output, cache
+read and cache write tokens) with the dated weight table that
+[`evals/usage-weights.lock`](../evals/usage-weights.lock) pins. The table and
+its estimate function are the usage-weights package, vendored under
+`vendor/usage_weights/`; the lock names its release, the table id and a
+sha256 for every vendored file, and every reader stops with a message naming
+the problem when the lock is missing or a file does not match it. Nothing
+names a table anywhere else, and nothing follows "latest".
+
+The table was measured on this account on two controlled quiet nights
+(2026-11-19 and 2026-11-20). Each weight carries a low and high, so every
+estimate is a point with a range. The 5-minute and 1-hour cache-write split
+is recorded per role, not per model, so it is applied only when one model
+made the role's calls; otherwise cache writes are priced at the 5-minute
+weight with the wider range of both. A role recorded without token counts,
+or a model the table does not price, is charged its dollars at
+`legacy_usd_per_point`.
+
+Every summary carries the run's `usage.allowance_estimate`: `points`, `low`,
+`high` on the all-models weekly meter, the same on the Fable weekly meter
+(`fable`; judge calls run on Fable 5.2 and move both meters, reported only),
+the table id, and how many role totals were priced from tokens, from dollars
+(`legacy_roles`, `legacy_usd`) or not at all (`unpriced_roles`). report.md
+shows it to the hundredth of a point. The guard recomputes every ingested
+run's charge from the tokens its summaries already hold, so a week's books
+use one table throughout.
+
+The switch did not change any cap. It changed what a run is charged: about
+half of what the flat rate charged, so the same 25% cap holds roughly twice
+as many eval runs.
+
 ### The weekly allowance guard
 
 Since 2026-10-06 the scheduled evals run as Claude Code routines on the
@@ -154,7 +190,7 @@ weekly allowance):
 | `weekly_cap` | 0.25 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
 | `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
-| `points_per_usd` | 0.0015 | the allowance one dollar of the CLI's reported call cost uses: about $6.70 per point, measured on 2026-11-10 from overnight windows when evals were the only use. `per_run_cap` and the weekly total both charge a run its own spend at this rate (was 0.00214, fitted to the account meter's movement, which other use inflated, until 2026-11-06; then 0.0005, $20 per point, which undercharged about 3 times and let fires run past the weekly cap, until 2026-11-11) |
+| `legacy_usd_per_point` | 12.35 | dollars per point, used only for calls recorded without token counts (summaries from before tokens were kept, a result with no `modelUsage`, a model the weight table does not price) and for improve cost records, which keep dollars only. Night 1 (2026-11-19) measured the eval mix at $17.15 a point on Opus 5.5 and $12.35 on Sonnet 5.5; this is the lower. It replaced `points_per_usd` (0.0015, $6.67 a point), which charged eval runs about 1.9 to 2.6 times their real use |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 | `stop_when_session_above` | not set | optional: a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
 
@@ -163,11 +199,11 @@ Three layers enforce it:
 1. **The in-run stop** (`harness/run_eval.py`). The CLI prints the account's
    weekly meter as each agent call begins. Before each trial and each judge
    call, a run checks its spend and the latest reading: once its own calls
-   have cost `per_run_cap` at `points_per_usd`, or the meter reads
-   `stop_when_account_above`, nothing more is started. The cap is charged the
-   run's own dollars because the meter reads whole points and moves with the
-   account's other use too; when any call's cost is unknown, or the file sets
-   no `points_per_usd`, the cap falls back to the meter's movement since the
+   have cost `per_run_cap` by the allowance estimate (below), or the meter
+   reads `stop_when_account_above`, nothing more is started. The cap is
+   charged the run's own estimated spend because the meter reads whole points
+   and moves with the account's other use too; when some call has neither
+   token counts nor dollars, the cap falls back to the meter's movement since the
    run's first reading (after a window reset, the new reading alone counts). Skipped trials are written with error `budget_stop`, a
    skipped judge call as a judge error, and every summary of the run carries
    `usage.budget_stop` naming the limit. A guidance run, being one pair, ends
@@ -178,9 +214,9 @@ Three layers enforce it:
    account's current allowance week, from its last weekly reset
    (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
    saving does not move it; a rolling seven days until 2026-10-26; a manual reset the owner pressed, listed in `MANUAL_RESETS`, starts it at that instant for the rest of its week): each ingested run on `persistent/eval-results` at its
-   own dollars (`usage.cost_estimate.usd` times `points_per_usd`) plus the
-   overrun; at its measured weekly delta plus the overrun when it has no
-   dollar figure (the delta is the whole account's movement, so it charged
+   estimated points (its trial summaries' token counts by type, priced as
+   below) plus the overrun; at its measured weekly delta plus the overrun when
+   some call of it has neither tokens nor dollars (the delta is the whole account's movement, so it charged
    each run every other thread's use: 116 points booked against about 23 real
    in the week to 2026-11-04); or at the full reservation,
    `per_run_cap + per_run_overrun`, when neither is known, plus every successful
@@ -705,7 +741,7 @@ recorded, because its `usd` already includes them.
 Since 2026-11-13 (#577) `scripts/allowance_guard.py` charges a matched fire
 its record: one-to-one, oldest first, by mode, target and a run id stamp from
 2 minutes before to 30 minutes after the fire's start, at the record's
-dollars times `points_per_usd` (or, when those are only a floor, the larger of
+dollars at `legacy_usd_per_point` (or, when those are only a floor, the larger of
 that and a clean bracket's meter delta). Unmatched fires keep
 `IMPROVE_FIRE_UNITS` times the mean eval fire, and
 `python3 scripts/allowance_guard.py units --results-tree <persistent/eval-results>`

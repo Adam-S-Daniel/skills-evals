@@ -305,7 +305,7 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertAlmostEqual(row["room_points"], g.room(state) * 100)
         self.assertAlmostEqual(row["committed_points"], state["committed"] * 100)
         self.assertAlmostEqual(row["pending_points"], state["pending"] * 100)
-        self.assertGreater(row["points"], 10.0 * limits["points_per_usd"] * 100, "the unreadable run is charged in full")
+        self.assertGreaterEqual(row["points"], (limits["per_run_cap"] + limits["per_run_overrun"]) * 100, "the unreadable run is charged in full")
 
     def test_week_resets_at_is_the_next_scheduled_reset_even_in_a_manual_reset_week(self):
         sys.path.insert(0, str(REPO / "scripts"))

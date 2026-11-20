@@ -4735,7 +4735,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
-               "harness/**", "scripts/**", "test/**", "tool/**", "explorer/**",
+               "harness/**", "vendor/**", "scripts/**", "test/**", "tool/**", "explorer/**",
                "README.md",
                "DESIGN.md",
                # The rules restatement check reads every doc (docs/rules.md).
@@ -11302,6 +11302,11 @@ class TestIssue63Round2(unittest.TestCase):
             (skills_evals_root / "evals").mkdir()
             shutil.copy2(REPO_ROOT / "evals" / "budget.yml",
                          skills_evals_root / "evals" / "budget.yml")
+            # And the allowance estimate's pinned weight table.
+            shutil.copy2(REPO_ROOT / "evals" / "usage-weights.lock",
+                         skills_evals_root / "evals" / "usage-weights.lock")
+            shutil.copytree(REPO_ROOT / "vendor", skills_evals_root / "vendor",
+                            ignore=shutil.ignore_patterns("__pycache__"))
             (harness_dir / "registries.yml").write_text(
                 "registries:\n"
                 "  - name: scratch-registry\n"

@@ -3352,6 +3352,10 @@ class TestIssue97(unittest.TestCase):
         # without one it stops at a configuration error before any sink.
         (tmp / "evals").mkdir()
         shutil.copy2(REPO_ROOT / "evals" / "budget.yml", tmp / "evals" / "budget.yml")
+        shutil.copy2(REPO_ROOT / "evals" / "usage-weights.lock",
+                     tmp / "evals" / "usage-weights.lock")
+        shutil.copytree(REPO_ROOT / "vendor", tmp / "vendor",
+                        ignore=shutil.ignore_patterns("__pycache__"))
         for rel, old, new in replacements:
             path = tmp / "harness" / rel
             source = path.read_text(encoding="utf-8")

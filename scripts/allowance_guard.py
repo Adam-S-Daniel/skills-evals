@@ -25,13 +25,17 @@ one week's sanctioned push to the next):
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
     run id's timestamp falls in the window, each invocation charged its own
-    dollars, `usage.cost_estimate.usd` times `points_per_usd`, plus
-    `per_run_overrun`. The weekly meter's delta is not used when the dollars
-    are known: it is the whole ACCOUNT's movement while the run went, so it
-    charges a run with every other thread's use, and overlapping runs are
+    estimated points plus `per_run_overrun`: its trial summaries' token
+    counts by type priced with the weight table evals/usage-weights.lock pins
+    (harness/allowance_points.py; since 2026-11-20, replacing dollars at a
+    flat rate, which charged eval runs about twice their real use). A role
+    recorded without token counts is charged its dollars at
+    `legacy_usd_per_point`. The weekly meter's delta is not used when the run
+    can be priced: it is the whole ACCOUNT's movement while the run went, so
+    it charges a run with every other thread's use, and overlapping runs are
     charged the same movement twice (2026-11-04: 116 points booked against
-    about 23 real). Without a usable rate or dollar figure (none, non-finite,
-    negative or a bool) the charge is the old one: the measured
+    about 23 real). When some role has neither tokens nor dollars, the
+    charge is the old one: the measured
     `usage.meter_delta.windows.seven_day.delta` plus `per_run_overrun` (the
     meter is read as a call begins, so the last call is outside the delta),
     or `per_run_cap + per_run_overrun` when there is no measured delta (null,
@@ -76,13 +80,13 @@ cost record at `improve-costs/<run id>.json` (scripts/improve_cost.py). A
 fire is matched to one by mode, target and a run id stamp from 2 minutes
 before to 30 minutes after its `run_started_at`, one-to-one, oldest first,
 and is charged the record's dollars (agent + judge + guard + proposal) at
-`points_per_usd` in `spent`, like an ingested eval run; in the reading bound
+`legacy_usd_per_point` in `spent` (the record keeps no token counts by type), like an ingested eval run; in the reading bound
 it is inside the reading when it started `IMPROVE_MAX_RUN` before it and
 charged in full after. When the dollars are only a floor (the trigger loop's
 `claude -p` calls and a failed proposal call report none), the charge is the
 larger of the dollars and the meter delta of a clean bracket (busy/span at
 least `CLEAN_BRACKET`), else `improve_charge`. An unmatched fire, or no
-`points_per_usd`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
+`legacy_usd_per_point`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
 from the records by `allowance_guard.py units --results-tree <tree>`.
 
 That charge is an estimate and was never corrected by measurement: on
@@ -250,6 +254,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import allowance_points  # noqa: E402
 import budget as budget_file  # noqa: E402
 import improve_cost  # noqa: E402
 import improve_outcomes  # noqa: E402
@@ -377,26 +382,26 @@ def _load_summary(path: Path):
         return None
 
 
-def _own_dollars_cost(usage, limits: dict) -> float | None:
-    """The charge from an invocation's own dollars, or None when it cannot be
-    made: `usage.cost_estimate.usd` (every call of the invocation that carries
-    a dollar figure) times `points_per_usd`, plus the overrun. Needs a positive
-    finite rate and a finite non-negative, non-bool dollar figure."""
-    rate = limits.get("points_per_usd")
-    estimate = usage.get("cost_estimate") if isinstance(usage, dict) else None
-    dollars = estimate.get("usd") if isinstance(estimate, dict) else None
-    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
-            or not math.isfinite(rate) or rate <= 0:
+def _own_points_cost(measured: list, limits: dict) -> float | None:
+    """The charge from an invocation's own calls, or None when it cannot be
+    made: its trial summaries' `usage.measured` blocks priced from their
+    token counts by type (harness/allowance_points.py, the table
+    evals/usage-weights.lock pins; a role without token counts at
+    `legacy_usd_per_point`), as a fraction of the week, plus the overrun.
+    None when no trial block records a call, or some role has neither tokens
+    nor dollars: nothing of the run's own was priced."""
+    estimate = allowance_points.estimate_blocks(
+        measured, limits.get(budget_file.LEGACY_RATE))
+    if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
+                                          or estimate["legacy_roles"]):
         return None
-    if isinstance(dollars, bool) or not isinstance(dollars, (int, float)) \
-            or not math.isfinite(dollars) or dollars < 0:
-        return None
-    return float(dollars) * rate + limits["per_run_overrun"]
+    return estimate["points"] / 100 + limits["per_run_overrun"]
 
 
-def _invocation_cost(usage, limits: dict) -> float:
-    """One run_eval invocation's charge from its run-level `usage` block."""
-    own = _own_dollars_cost(usage, limits)
+def _invocation_cost(usage, limits: dict, measured: list = ()) -> float:
+    """One run_eval invocation's charge from its run-level `usage` block and
+    its trial summaries' `usage.measured` blocks."""
+    own = _own_points_cost(list(measured), limits)
     if own is not None:
         return own
     reserve = budget_file.run_reservation(limits)
@@ -410,6 +415,18 @@ def _invocation_cost(usage, limits: dict) -> float:
     # A meter that went down in a window that did not reset spent nothing
     # measurable; the overrun is still charged.
     return max(0.0, float(moved)) + limits["per_run_overrun"]
+
+
+def _add_invocation(blocks: dict, usage: dict) -> None:
+    """File one summary's `usage` under its invocation (the run-level block
+    every summary of one run_eval invocation shares), keeping its
+    `measured` block when it is a trial's own (an arm aggregate's is a sum
+    of those, so it is not counted again)."""
+    level = {key: value for key, value in usage.items() if key != "measured"}
+    entry = blocks.setdefault(json.dumps(level, sort_keys=True), (usage, []))
+    measured = usage.get("measured")
+    if isinstance(measured, dict) and measured.get("scope") == "trial":
+        entry[1].append(measured)
 
 
 def run_cost(run_dir: Path, limits: dict) -> float:
@@ -426,11 +443,11 @@ def run_cost(run_dir: Path, limits: dict) -> float:
         if not isinstance(usage, dict):
             # A summary from before #370 says nothing of its spend.
             return reserve
-        level = {key: value for key, value in usage.items() if key != "measured"}
-        blocks[json.dumps(level, sort_keys=True)] = usage
+        _add_invocation(blocks, usage)
     if not blocks:
         return reserve
-    return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+    return sum(_invocation_cost(usage, limits, measured)
+               for usage, measured in blocks.values())
 
 
 def _unmeasured(usage) -> bool:
@@ -453,11 +470,11 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
         usage = summary.get("usage") if isinstance(summary, dict) else None
         if not isinstance(usage, dict) or _unmeasured(usage):
             return None
-        level = {key: value for key, value in usage.items() if key != "measured"}
-        blocks[json.dumps(level, sort_keys=True)] = usage
+        _add_invocation(blocks, usage)
     if not blocks:
         return None
-    return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+    return sum(_invocation_cost(usage, limits, measured)
+               for usage, measured in blocks.values())
 
 
 def delta_inside(run_dir: Path, at: datetime) -> float:
@@ -602,17 +619,18 @@ def bracket_clean(record: dict) -> bool:
 
 
 def record_charge(record: dict, limits: dict, unit_charge: float) -> float | None:
-    """What a matched fire is charged, or None without a dollar rate. The
-    measured dollars at `points_per_usd`; when they are only a floor, the
+    """What a matched fire is charged, or None without a rate. An improve
+    cost record keeps dollars, not token counts by type, so its dollars are
+    charged at `legacy_usd_per_point`; when they are only a floor, the
     larger of that and the meter delta of a clean bracket (an account-wide
     figure, so a ceiling on the run's own use), and with no clean bracket the
     unit charge, today's rule."""
-    rate = limits.get("points_per_usd")
+    rate = limits.get(budget_file.LEGACY_RATE)
     if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
             or not math.isfinite(rate) or rate <= 0:
         return None
     dollars, complete = record_dollars(record)
-    points = dollars * rate
+    points = dollars / rate / 100
     if complete:
         return points
     if bracket_clean(record) and record["delta"] is not None:
