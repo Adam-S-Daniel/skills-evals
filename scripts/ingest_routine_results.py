@@ -82,9 +82,17 @@ from fractions import Fraction
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
-import allowance_points  # noqa: E402
-import budget as budget_file  # noqa: E402
+
+def _harness():
+    """(allowance_points, budget) from harness/, imported only by the cost
+    estimate: scripts/board_feed.py imports this module standalone, beside
+    nothing but itself, and must not need the harness or yaml."""
+    harness = str(Path(__file__).resolve().parent.parent / "harness")
+    if harness not in sys.path:
+        sys.path.insert(0, harness)
+    import allowance_points  # noqa: PLC0415
+    import budget  # noqa: PLC0415
+    return allowance_points, budget
 
 # ---------------------------------------------------------------------------
 # Names and shapes.
@@ -1565,6 +1573,7 @@ def _week_range(usage: dict):
     before, after = week.get("from"), week.get("to")
     if not (is_number(before) and is_number(after)):
         return moved, moved
+    allowance_points, _ = _harness()
     low, high = allowance_points.delta_range(
         float(before) * 100, float(after) * 100, allowance_points.CLI)
     return max(0.0, low), max(0.0, high)
@@ -1609,6 +1618,7 @@ def calibrate(tree: Path, skip: str) -> dict:
 def _legacy_rate():
     """evals/budget.yml's `legacy_usd_per_point` (dollars per point, for a
     call with no token counts), None when the file cannot be read."""
+    _, budget_file = _harness()
     try:
         return budget_file.load_budget()[budget_file.LEGACY_RATE]
     except (budget_file.BudgetError, KeyError):
@@ -1622,6 +1632,7 @@ def _estimated_points(blocks: list, legacy_rate):
     dollars)."""
     if not blocks:
         return None
+    allowance_points, _ = _harness()
     found = allowance_points.estimate_blocks(blocks, legacy_rate)
     if not (found["roles_from_tokens"] or found["legacy_roles"]):
         return None
