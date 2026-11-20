@@ -390,13 +390,20 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     high_rate = a["usd_per_point_high"] or low_rate
     cap_points = budget["weekly_cap"] * 100
     # Non-eval meter use by category (scripts/automatic_spend.py): each
-    # automatic category's meter dollars at the mid $/point, plus people's
-    # own use. It sets non_eval_points_per_week unless that is given.
+    # automatic category's meter points, estimated from its fires' token
+    # counts (a breakdown from before points: its dollars at the mid
+    # $/point), plus people's own use. It sets non_eval_points_per_week
+    # unless that is given.
     breakdown = None
+    mid = (low_rate + high_rate) / 2
+
+    def meter_points(doc, key):
+        points = doc.get(key.replace("_usd_", "_points_"))
+        return points if points is not None else (doc.get(key) or 0) / mid
+
     if automatic is not None:
-        mid = (low_rate + high_rate) / 2
-        breakdown = {c["label"]: c["meter_usd_per_week"] / mid
-                     for c in automatic.get("categories") or [] if c.get("meter_usd_per_week")}
+        breakdown = {c["label"]: meter_points(c, "meter_usd_per_week")
+                     for c in automatic.get("categories") or [] if meter_points(c, "meter_usd_per_week")}
         # Measured total less the automatic jobs is people's own use.
         if a["interactive_points_per_week"] is None and measured_non_eval is not None:
             a["interactive_points_per_week"] = max(
@@ -408,8 +415,9 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     # The loop's own automatic jobs share the cap with evals (Adam,
     # 2026-11-15: all automated parts of the system fit in the 25%).
     loop_points = None
-    if automatic is not None and automatic.get("loop_meter_usd_per_week") is not None:
-        loop_points = automatic["loop_meter_usd_per_week"] / ((low_rate + high_rate) / 2)
+    if automatic is not None and (automatic.get("loop_meter_points_per_week") is not None
+                                  or automatic.get("loop_meter_usd_per_week") is not None):
+        loop_points = meter_points(automatic, "loop_meter_usd_per_week")
         if a["loop_jobs_in_cap"]:
             cap_points = max(0.0, cap_points - loop_points)
     # The account stop: evals halt once the whole meter passes it, so other

@@ -477,6 +477,37 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
                for usage, measured in blocks.values())
 
 
+def run_points(run_dir: Path, legacy_usd_per_point) -> dict | None:
+    """What the pages show one ingested routine run used of the weekly
+    allowance: `points` (all-models meter, percent of the week), the sum of
+    its trial summaries' `usage.measured` blocks priced from token counts by
+    type (a role with none at `legacy_usd_per_point`), with no overrun, plus
+    the `usd` those blocks record and whether every role was priced from
+    tokens (`from_tokens`). None when a summary cannot be read or some role
+    has neither tokens nor dollars: the caller then prices the run another
+    way, never as zero."""
+    blocks = []
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if not isinstance(usage, dict):
+            return None
+        measured = usage.get("measured")
+        if isinstance(measured, dict) and measured.get("scope") == "trial":
+            blocks.append(measured)
+    if not blocks:
+        return None
+    estimate = allowance_points.estimate_blocks(blocks, legacy_usd_per_point)
+    if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
+                                          or estimate["legacy_roles"]):
+        return None
+    usd = sum(float(block[role]["cost_usd"]) for block in blocks
+              for role in allowance_points.ROLES
+              if isinstance(block.get(role), dict) and block[role].get("calls")
+              and allowance_points._number(block[role].get("cost_usd")))
+    return {"points": estimate["points"], "usd": usd, "from_tokens": estimate["complete"]}
+
+
 def delta_inside(run_dir: Path, at: datetime) -> float:
     """The measured weekly delta of one ingested run with at least one meter
     snapshot, all of them readable and no later than `at`: use the reading at

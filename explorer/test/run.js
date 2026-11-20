@@ -532,11 +532,11 @@ await test('money is printed with thousands separators everywhere', () => {
   eq(bad.join(','), '', 'format dollars with fmtUsd');
 });
 await test('C5: allowance spend reads as approximate points, the API credit stays in dollars, and the two never add up', () => {
-  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14, thread_spend_usd: 400, run_usd: 100, scheduled_usd: 20, cost_per_verdict: 99 },
-    { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 3600, run_usd: 900, scheduled_usd: 60, cost_per_verdict: null }];
-  const total = { since: '2026-10-19', usd: 1294, run_usd: 1000, scheduled_usd: 80, scheduled_since: '2026-11-02', thread_spend_usd: 4000, api_usd: 214, verdicts: 10, cost_per_verdict: 129.4 };
+  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14, thread_spend_usd: 400, run_usd: 100, scheduled_usd: 20, run_points: 200, scheduled_points: 10, cost_per_verdict: 99 },
+    { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 3600, run_usd: 900, scheduled_usd: 60, run_points: 1800, scheduled_points: 30, cost_per_verdict: null }];
+  const total = { since: '2026-10-19', usd: 1294, run_usd: 1000, scheduled_usd: 80, run_points: 2000, scheduled_points: 40, scheduled_since: '2026-11-02', thread_spend_usd: 4000, api_usd: 214, verdicts: 10, cost_per_verdict: 129.4 };
   const t = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total, rates: RATES } }), { name: 'spend', id: null }, {})).replace(/\s+/g, ' ');
-  // $1,000 of eval runs at $0.50 a point and $80 of scheduled tasks at $2 a point: 2,000 + 40 points. Development
+  // The estimated points the data carries (2,000 eval + 40 scheduled), not dollars at a rate. Development
   // ($4,000 of threads at $10 a point) is never in it.
   ok(t.includes('Since Oct 19: \u22482040.0 points (eval runs \u22482000.0 points, scheduled tasks \u224840.0 points from Nov 2) and $214.00 API credit for 10 decided verdicts, \u2248204.0 points and $21.40 each.'), t);
   ok(t.includes(STRINGS.colRunPoints) && t.includes(STRINGS.colSchedPoints) && t.includes(STRINGS.colApi), 'points columns and the API credit column');
@@ -544,8 +544,9 @@ await test('C5: allowance spend reads as approximate points, the API credit stay
   ok(t.includes('Development (project threads building the system), apart from all of the above') && t.includes('\u2248400.0 points in all'), 'development is reported apart: ' + t);
   ok(!t.includes('$5,214') && !t.includes('$1,000.00') && !t.includes('$4,000.00'), 'no allowance spend in dollars, and no grand total mixing the two');
   ok(!t.includes('Meter points'), 'the meter column is gone');
-  const none = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total } }), { name: 'spend', id: null }, {}));
-  ok(!none.includes('$1,000.00') && none.includes('$214.00'), 'without rates allowance spend reads as no value, never dollars or a guessed rate');
+  const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.endsWith('_points') || k === 'plan_meter_points'));
+  const none = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map(strip), total: strip(total), rates: RATES } }), { name: 'spend', id: null }, {}));
+  ok(!none.includes('$1,000.00') && !none.includes('\u22482000.0') && none.includes('$214.00'), 'without estimated points allowance spend reads as no value, never dollars or dollars at a rate');
 });
 
 // --- web adapter and config ------------------------------------------------------
@@ -1289,13 +1290,13 @@ await test('R3: the dashboard runtime keeps no loop_* dataset, gate, cleanup or 
   const defined = Object.keys(JSON.parse(fs.readFileSync(DATASETS, 'utf8')));
   for (const gone of ['cleanup', 'decisions', 'gate', 'loop_stages', 'loop_grid', 'loop_lanes', 'loop_gaps']) ok(!defined.includes(gone), gone);
 });
-await test('recommendation 6: spend shows this week and last week side by side in dollars, with week starts in Eastern time and the share that bought nothing', () => {
-  const weeks = [{ week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 4000, run_usd: 900 },
-    { week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 340, run_usd: 90, scheduled_usd: 68 },
-    { week: '2026-10-26', eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1, run_usd: 1 }];
+await test('recommendation 6: spend shows this week and last week side by side in estimated points, with week starts in Eastern time and the share that bought nothing', () => {
+  const weeks = [{ week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 4000, run_usd: 900, run_points: 1800 },
+    { week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 340, run_usd: 90, scheduled_usd: 68, run_points: 180, scheduled_points: 34 },
+    { week: '2026-10-26', eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1, run_usd: 1, run_points: 2 }];
   const two = spendWeeks(doc({ spend: { weeks } }));
   eq(two.map((w) => w.week).join(','), '2026-11-09,2026-11-02', 'the two newest, newest first');
-  eq([two[0].evals, two[0].sched, two[0].api, two[0].dev].join(','), '90,68,14.41,340', 'the parts in dollars, as the data holds them');
+  eq([two[0].evals, two[0].sched, two[0].api, two[0].dev].join(','), '180,34,14.41,340', 'allowance parts in estimated points, API credit and development in dollars');
   const utility = [U('2026-11-10', 'decisive', 10, 59), U('2026-11-10', 'discarded', 4, 25, 'fixture_changed'), U('2026-11-10', 'discarded', 3, 15, 'fixture_off_main'), U('2026-11-10', 'stranded', 1, 1, 'subject_changed')];
   const d = doc({ generated_at: '2026-11-12T17:00:00Z', skills: [{ name: 'a', run_utility: utility }], spend: { generated_at: '2026-11-12T01:00:00Z', weeks, rates: RATES } });
   const share = noUseShare(d, Date.parse(d.generated_at));
@@ -1304,14 +1305,14 @@ await test('recommendation 6: spend shows this week and last week side by side i
   const t = flat(renderRoute(d, { name: 'spend', id: null }, {}));
   ok(t.includes('this week from Nov 9, 2026, 12:00 PM ET, last week from Nov 2, 2026, 12:00 PM ET'), 'week starts in ET, in a note: ' + t.slice(0, 600));
   ok(!t.includes('This week (from'), 'the starts are not in the column headers');
-  // $90 of eval runs at $0.50 a point, $68 of scheduled tasks at $2 a point; the API credit apart, in dollars.
+  // The week's own estimated points (180 eval, 34 scheduled), never its dollars at a rate; the API credit apart, in dollars.
   ok(t.includes('\u2248180.0 points') && t.includes('\u224834.0 points') && t.includes('\u2248214.0 points') && t.includes('$14.41'), 'this week\'s parts and allowance total');
   ok(t.includes('this week \u224834.0 points, last week \u2248400.0 points'), 'development ($340 and $4,000 at $10 a point) apart');
   ok(!t.includes('$90.00') && !t.includes('$340.00') && !t.includes('$444.41'), 'no allowance dollars and no total across the two kinds of money');
   ok(t.includes('In the last 30 days 41% of eval run spend bought nothing (\u224882.0 points of \u2248200.0 points), mostly eval changed (\u224850.0 points) and eval no longer scheduled (\u224830.0 points).'), t.slice(0, 2500));
   eq(t.split('hover for the rate').length - 1, 1, 'the approximation is explained once');
   const old = flat(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => ({ week: w.week, eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1 })) } }), { name: 'spend', id: null }, {}));
-  ok(old.includes('Mon Nov 9') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
+  ok(old.includes('Mon Nov 9') && !old.includes('In the last 30 days'), 'data without points or a ledger still renders, with no total or share');
   eq(spendWeeks(doc({ spend: { weeks: [{ week: '2026-11-09', api_usd: 1, thread_spend_usd: 1 }] } }))[0].evals, null, 'a missing part is no value');
   // Old data does not call an old week this one: the label follows the data's own time.
   const stale = flat(renderRoute(doc({ generated_at: '2026-11-25T17:00:00Z', spend: { weeks } }), { name: 'spend', id: null }, {}));

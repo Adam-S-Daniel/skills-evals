@@ -11,7 +11,8 @@ import { table, panel, navLink, timesLine, srcLineFor, fold } from './bits.js';
 import { VERDICT_CHIPS } from '../core/stats.js';
 import { noUseShare } from './utility.js';
 import { weekChart, weekScale } from './weekchart.js';
-import { spendCell, spendText, toPoints, fmtPoints } from '../core/points.js';
+import { spendText, fmtPoints } from '../core/points.js';
+const num = (x) => (typeof x === 'number' && isFinite(x) ? x : null);
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 
@@ -63,8 +64,7 @@ function checkUseView(doc) {
 /* What the system uses of the allowance, eval runs plus scheduled tasks, in
    approximate points; no value when a part or a rate is missing. Development
    (project threads) never joins it. */
-function allowanceTotal(evalUsd, schedUsd) {
-  const a = toPoints(evalUsd, 'eval'), b = toPoints(schedUsd, 'scheduled');
+function allowanceTotal(a, b) {
   return a === null || b === null ? STRINGS.noValue : fmtPoints(a + b);
 }
 
@@ -76,20 +76,20 @@ export function spendTotalLine(s) {
   const t = s && s.total;
   if (!t || typeof t !== 'object' || typeof t.api_usd !== 'number') return null;
   const v = t.verdicts || 0;
-  const sched = typeof t.scheduled_usd === 'number' ? t.scheduled_usd : null;
-  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), allowanceTotal(t.run_usd, sched), spendText(t.run_usd, 'eval'),
-    spendText(sched, 'scheduled'), t.scheduled_since ? fmtDayKey(t.scheduled_since, NaN) : '', usd(t.api_usd), fmtCount(v),
-    v && sched !== null ? allowanceTotal(t.run_usd / v, sched / v) : STRINGS.noValue, v ? usd(t.api_usd / v) : STRINGS.noValue));
+  const runs = num(t.run_points), sched = num(t.scheduled_points);
+  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), allowanceTotal(runs, sched), fmtPoints(runs),
+    fmtPoints(sched), t.scheduled_since ? fmtDayKey(t.scheduled_since, NaN) : '', usd(t.api_usd), fmtCount(v),
+    v && runs !== null && sched !== null ? allowanceTotal(runs / v, sched / v) : STRINGS.noValue, v ? usd(t.api_usd / v) : STRINGS.noValue));
 }
 
-/* The two newest weeks side by side, in dollars as the data holds them: eval
-   runs and scheduled tasks (allowance spend, shown as points), the API credit,
-   and development apart. A part a week does not carry reads as no value. */
+/* The two newest weeks side by side: eval runs and scheduled tasks (allowance
+   spend, their points estimated from token counts by type), the API credit in
+   dollars, and development apart in dollars. A part a week does not carry
+   reads as no value. */
 export function spendWeeks(doc) {
   const s = doc.spend;
   const weeks = s && Array.isArray(s.weeks) ? s.weeks.filter((w) => w && typeof w.week === 'string').slice().sort((a, b) => (a.week < b.week ? 1 : -1)) : [];
-  const part = (w, k) => (w && typeof w[k] === 'number' && isFinite(w[k]) ? w[k] : null);
-  return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: part(w, 'run_usd'), sched: part(w, 'scheduled_usd'), api: part(w, 'api_usd'), dev: part(w, 'thread_spend_usd') }));
+  return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: num(w.run_points), sched: num(w.scheduled_points), api: num(w.api_usd), dev: num(w.thread_spend_usd) }));
 }
 
 /* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
@@ -109,8 +109,8 @@ function spendView(doc, refMs) {
   if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
   const two = spendWeeks(doc);
   const share = noUseShare(doc, refMs);
-  const cell = (w, k) => (k === 'total' ? allowanceTotal(w.evals, w.sched) : w[k] === null ? STRINGS.noValue
-    : k === 'evals' ? spendCell(w.evals, 'eval') : k === 'sched' ? spendCell(w.sched, 'scheduled') : usd(w[k]));
+  const cell = (w, k) => (k === 'total' ? allowanceTotal(w.evals, w.sched) : k === 'evals' || k === 'sched' ? fmtPoints(w[k])
+    : w[k] === null ? STRINGS.noValue : usd(w[k]));
   const rows = [{ label: STRINGS.spendTests, k: 'evals' }, { label: STRINGS.spendScheduled, k: 'sched' }, { label: STRINGS.spendTotal, k: 'total' }, { label: STRINGS.spendApi, k: 'api' }];
   const which = (w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs));
   return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => which(w) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
@@ -123,8 +123,8 @@ function spendView(doc, refMs) {
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => fmtWeekStart(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
-        { label: STRINGS.colRunPoints, num: true, sort: (w) => w.run_usd, cell: (w) => spendCell(w.run_usd, 'eval') },
-        { label: STRINGS.colSchedPoints, num: true, sort: (w) => w.scheduled_usd, cell: (w) => spendCell(w.scheduled_usd, 'scheduled') },
+        { label: STRINGS.colRunPoints, num: true, sort: (w) => w.run_points, cell: (w) => fmtPoints(num(w.run_points)) },
+        { label: STRINGS.colSchedPoints, num: true, sort: (w) => w.scheduled_points, cell: (w) => fmtPoints(num(w.scheduled_points)) },
         { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
       ], s.weeks)),
     two.length ? h('p', { class: 'note' }, STRINGS.spendDev(two.map((w) => which(w) + ' ' + spendText(w.dev, 'thread')).join(', '),

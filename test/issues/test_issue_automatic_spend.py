@@ -226,6 +226,37 @@ class LoopMembership(unittest.TestCase):
         fleet = next(c for c in doc["categories"] if c["id"] == "fleet")
         self.assertAlmostEqual(fleet["outside_loop_meter_usd_per_week"], 2.0)
 
+    def test_points_come_from_each_fires_token_counts(self):
+        """Each fire is priced from its tokens by model with the locked weight table; a fire with
+        none at the legacy rate; with neither, it has no points, never a guess."""
+        sys.path.insert(0, str(ROOT / "harness"))
+        import allowance_points
+        models = {"claude-sonnet-5-5": {"input_tokens": 62, "output_tokens": 20502,
+                                        "cache_read_input_tokens": 6889628,
+                                        "cache_creation_input_tokens": 239884, "cost_usd": 1.85}}
+        expected = allowance_points.estimate_blocks(
+            [{"agent": {"calls": 1, "models": models, "cost_usd": 1.85}}], None)["points"]
+        self.assertGreater(expected, 0)
+        tokens = {"trigger_id": "t1", "session_id": "a", "total_cost_usd": 1.85, "models": models,
+                  "fired_at": "2026-11-12T00:00:00Z", "last_served_model": "claude-sonnet-5-5"}
+        self.assertAlmostEqual(aus.fire_points(tokens), expected)
+        self.assertAlmostEqual(aus.fire_points({"total_cost_usd": 5.0}, 12.5), 0.4)
+        self.assertIsNone(aus.fire_points({"total_cost_usd": 5.0}))
+        triggers = {"t1": {"name": "Fleet worker", "cron_expression": "0 0 * * 1", "enabled": True},
+                    "t2": {"name": "Daily security alert triage", "cron_expression": "0 0 * * 1",
+                           "enabled": True}}
+        fires = [tokens, {"trigger_id": "t2", "session_id": "b", "total_cost_usd": 2.0}]
+        doc = aus.breakdown(self.CONFIG, triggers, fires, [], [], NOW, 14, legacy_usd_per_point=10.0)
+        fw = next(j for j in doc["jobs"] if j["name"] == "Fleet worker")
+        self.assertAlmostEqual(fw["points_per_fire"], expected)
+        self.assertAlmostEqual(fw["points_per_week"], expected)
+        self.assertAlmostEqual(doc["loop_meter_points_per_week"], expected)
+        self.assertAlmostEqual(doc["outside_loop_meter_points_per_week"], 0.2)
+        self.assertAlmostEqual(doc["meter_points_per_week"], expected + 0.2)
+        none = aus.breakdown(self.CONFIG, triggers, fires, [], [], NOW, 14)
+        triage = next(j for j in none["jobs"] if j["name"] == "Daily security alert triage")
+        self.assertEqual((triage["points_per_fire"], triage["points_per_week"]), (None, None))
+
 
 class ShippedConfig(unittest.TestCase):
     def test_every_category_says_whether_it_is_in_the_loop(self):

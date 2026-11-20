@@ -171,6 +171,16 @@ shows it to the hundredth of a point. The guard recomputes every ingested
 run's charge from the tokens its summaries already hold, so a week's books
 use one table throughout.
 
+The pages use the same estimate, with no typed-in rate: the dashboard and the
+explorer show each week's eval runs as the sum of their runs' estimated points
+(`allowance_guard.run_points`, without the guard's overrun), and scheduled
+tasks as each fire's token counts by model priced the same way
+(`automatic_spend.fire_points`). Dollars travel beside them for reference, and
+a single run's dollars are converted at the measured eval dollars per estimated
+point. API-credit runs stay in dollars. See
+[`dashboard/README.md`](../dashboard/README.md), "Points, not dollars, for
+allowance spend".
+
 The switch did not change any cap. It changed what a run is charged: about
 half of what the flat rate charged, so the same 25% cap holds roughly twice
 as many eval runs.

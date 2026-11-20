@@ -635,7 +635,7 @@ class SpendTests(unittest.TestCase):
                        "api_usd": 4.25, "thread_spend_usd": 18.123456789, "cost_per_verdict": None,
                        "sessions": [{"session": "invented", "usd": 1}], "thread_id": "thread-0001"},
                       {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1,
-                       "api_usd": 0, "thread_spend_usd": 2, "run_usd": 1.5, "plan": "Pro"},
+                       "api_usd": 0, "thread_spend_usd": 2, "run_usd": 1.5, "run_points": 0.75, "plan": "Pro"},
                       {"week": "2026-10-12", "eval_runs": -1, "api_usd": 1},
                       {"week": "not-a-week", "eval_runs": 1}]}
 
@@ -648,9 +648,11 @@ class SpendTests(unittest.TestCase):
         self.assertEqual(spend["generated_at"], "2026-10-31T12:00:00Z")
         self.assertEqual(spend["weeks"], [
             {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1, "api_usd": 0,
-             "thread_spend_usd": 2, "run_usd": 1.5, "scheduled_usd": None, "plan": "Pro"},
+             "thread_spend_usd": 2, "run_usd": 1.5, "scheduled_usd": None, "run_points": 0.75,
+             "scheduled_points": None, "plan": "Pro"},
             {"week": "2026-10-19", "eval_runs": 12, "plan_meter_points": 30.5, "api_usd": 4.25,
-             "thread_spend_usd": 18.123456789, "run_usd": None, "scheduled_usd": None, "plan": "Max 20x"}])
+             "thread_spend_usd": 18.123456789, "run_usd": None, "scheduled_usd": None, "run_points": None,
+             "scheduled_points": None, "plan": "Max 20x"}])
         self.assertIsNone(spend["total"], "a file without a total publishes none")
         self.assertNotIn("invented", json.dumps(spend))
         self.assertNotIn("thread-0001", json.dumps(spend))

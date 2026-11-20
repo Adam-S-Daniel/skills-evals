@@ -1,9 +1,11 @@
 /* Spend drawn from the weekly Max allowance, shown only as approximate points
-   (percent of the weekly allowance), never list-price dollars. The rates are
-   the document's `spend.rates` (dashboard/build.py writes them from
-   evals/points.yml and the account meter); this module holds no rate of its
-   own, so with none a figure reads as no value. Spend paid from the monthly
-   API credit never comes through here. */
+   (percent of the weekly allowance), never list-price dollars. Weekly and
+   total figures carry their own points, estimated from token counts by type
+   (dashboard/build.py); a single run's dollars are converted with the
+   document's `spend.rates`, measured dollars per estimated point (and the
+   account meter for project threads). This module holds no rate of its own,
+   so with none a figure reads as no value. Spend paid from the monthly API
+   credit never comes through here. */
 import { STRINGS } from './strings.js';
 import { fmtUsd } from './format.js';
 import { h } from './h.js';

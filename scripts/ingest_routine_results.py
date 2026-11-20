@@ -114,9 +114,10 @@ SPEND_RATES_KEYS = frozenset({"eval_usd_per_point", "scheduled_task_usd_per_poin
 SPEND_LOOP_JOBS_KEYS = frozenset({"as_of", "points_per_week", "usd_per_week"})
 SPEND_WEEK_KEYS = frozenset({"week", "eval_runs", "plan_meter_points", "api_usd",
                              "thread_spend_usd", "cost_per_verdict", "plan", "run_usd",
-                             "scheduled_usd"})
+                             "scheduled_usd", "run_points", "scheduled_points"})
 SPEND_TOTAL_KEYS = frozenset({"since", "verdicts", "usd", "run_usd", "thread_spend_usd",
-                              "api_usd", "cost_per_verdict", "scheduled_usd", "scheduled_since"})
+                              "api_usd", "cost_per_verdict", "scheduled_usd", "scheduled_since",
+                              "run_points", "scheduled_points"})
 #: Copies of explorer_public's FORBIDDEN_ID_RE and _PLAN_RE (that module
 #: needs PyYAML and the harness, which this job does not install); a test
 #: holds them equal.
