@@ -28,6 +28,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -47,7 +48,8 @@ TOKEN_NAMES = (("input_tokens", "input"), ("output_tokens", "output"),
 CACHE_TOTAL = "cache_creation_input_tokens"
 CACHE_SPLIT = (("ephemeral_5m_input_tokens", "cache_write_5m"),
                ("ephemeral_1h_input_tokens", "cache_write_1h"))
-LOCK_KEYS = ("repo", "tag", "source", "table", "files")
+LOCK_KEYS = ("repo", "commit", "tag", "table", "files")
+COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 class LockError(ValueError):
@@ -74,6 +76,12 @@ def read_lock(path: Path | None = None, vendor: Path | None = None) -> dict:
         raise LockError(f"{path.name} could not be read: {type(error).__name__}") from None
     if not isinstance(lock, dict) or sorted(lock) != sorted(LOCK_KEYS):
         raise LockError(f"{path.name} must have exactly the keys {list(LOCK_KEYS)}")
+    if not isinstance(lock["repo"], str) or lock["repo"].count("/") != 1:
+        raise LockError(f"{path.name} `repo` must name the source repository as owner/name")
+    if not isinstance(lock["commit"], str) or not COMMIT.fullmatch(lock["commit"]):
+        raise LockError(f"{path.name} `commit` must be the release's full 40-hex commit")
+    if lock["tag"] is not None and not isinstance(lock["tag"], str):
+        raise LockError(f"{path.name} `tag` must be the release tag or null")
     table = lock["table"]
     if not isinstance(table, str) or not table or "/" in table or "\\" in table:
         raise LockError(f"{path.name} `table` must name one packaged weight table id")

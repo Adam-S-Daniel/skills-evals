@@ -69,6 +69,25 @@ class LockTests(TmpCase):
         self.assertIn("usage_weights/data/weights/2026-11-20.json", lock["files"])
         self.assertEqual(ap.table()["id"], lock["table"])
 
+    def test_the_committed_lock_pins_the_source_repository_commit(self):
+        lock = ap.read_lock()
+        self.assertEqual(lock["repo"], "Adam-S-Daniel/claude-plan-usage-estimator")
+        self.assertRegex(lock["commit"], r"^[0-9a-f]{40}$")
+
+    def test_a_short_commit_or_a_bare_repo_name_is_refused(self):
+        for old, new, named in (
+                ("commit: 990850e87b7ea19276dbeea631aaad9eba9f54e8", "commit: 990850e",
+                 "`commit`"),
+                ("repo: Adam-S-Daniel/claude-plan-usage-estimator",
+                 "repo: claude-plan-usage-estimator", "`repo`")):
+            with self.subTest(named=named):
+                lock, vendor = mimic_vendor(self.tmp / named.strip("`"))
+                text = lock.read_text(encoding="utf-8")
+                self.assertIn(old, text)
+                lock.write_text(text.replace(old, new), encoding="utf-8")
+                with self.assertRaisesRegex(ap.LockError, named):
+                    ap.read_lock(lock, vendor)
+
     def test_a_changed_byte_is_refused_naming_the_file(self):
         lock, vendor = mimic_vendor(self.tmp)
         self.assertEqual(ap.read_lock(lock, vendor)["table"], "2026-11-20")

@@ -4,17 +4,19 @@
 # names a table: no reader has a default and none follows "latest". A missing
 # or unreadable lock, a missing `table`, or a vendored file whose sha256 differs
 # from the one below stops the reader with a message that names the problem
-# (test/issues/test_usage_weights_lock.py recomputes every checksum).
+# (test/issues/test_issue_usage_weights.py recomputes every checksum).
 #
-# To move to a new release: copy its usage_weights/ package over
-# vendor/usage_weights/, set `repo`, `tag` and `table`, and rewrite `files`.
+# To move to a new release: copy its usage_weights/ package (and LICENSE)
+# over vendor/usage_weights/, set `commit`, `tag` and `table`, and rewrite
+# `files`.
 # A new table is a spending decision (it changes what every run is charged).
 
-# The source repository and release. Pending until the repository is created:
-# the vendored files are the 2026-11-20 draft (64 tests passing there).
-repo: null
+# The source repository and the commit the vendored files were copied from
+# (the merge of its first PR, 2026-11-20). `tag` is null until v0.1.0 is
+# published on that commit; then it names the tag, and the commit stays.
+repo: Adam-S-Daniel/claude-plan-usage-estimator
+commit: 990850e87b7ea19276dbeea631aaad9eba9f54e8
 tag: null
-source: draft of 2026-11-20, before the repository was created
 
 table: "2026-11-20"
 
