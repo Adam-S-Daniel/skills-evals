@@ -192,7 +192,7 @@ loop's calls report no tokens, so a record with them stays a floor, as before.
 A weekly-meter reading is a whole percent, so it is a range, not a value
 (`allowance_points.reading_range` and `delta_range`, from the package's
 `reading_bounds`): the CLI that run_eval reads truncates, so 40% means 40 to
-41; the usage endpoint BOXY's collector stores rounds, so 40% means 39.5 to
+41; the usage endpoint the dev box's collector stores rounds, so 40% means 39.5 to
 40.5. A delta between two readings is the later range less the earlier one,
 so a one-run delta of 0 or 1 point says almost nothing about that run's own
 use. The guard's pace room is taken from the top of the reading's range, and
