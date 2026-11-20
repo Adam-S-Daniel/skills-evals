@@ -73,6 +73,7 @@ class LockTests(TmpCase):
         lock = ap.read_lock()
         self.assertEqual(lock["repo"], "Adam-S-Daniel/claude-plan-usage-estimator")
         self.assertRegex(lock["commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(lock["tag"], "v0.1.0")
 
     def test_a_short_commit_or_a_bare_repo_name_is_refused(self):
         for old, new, named in (

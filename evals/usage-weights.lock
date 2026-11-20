@@ -12,11 +12,11 @@
 # A new table is a spending decision (it changes what every run is charged).
 
 # The source repository and the commit the vendored files were copied from
-# (the merge of its first PR, 2026-11-20). `tag` is null until v0.1.0 is
-# published on that commit; then it names the tag, and the commit stays.
+# (release v0.1.0, 2026-11-20). The commit is what is pinned; the tag names
+# it for people.
 repo: Adam-S-Daniel/claude-plan-usage-estimator
 commit: 990850e87b7ea19276dbeea631aaad9eba9f54e8
-tag: null
+tag: v0.1.0
 
 table: "2026-11-20"
 
