@@ -1271,7 +1271,7 @@ class EndToEndTests(Checks):
         self.budget = self.tmp / "budget.yml"
         self.budget.write_text(yaml.safe_dump({
             "weekly_cap": 1, "per_run_cap": 1, "per_run_overrun": 0.005,
-            "stop_when_account_above": 1}), encoding="utf-8")
+            "stop_when_account_above": 1, "claude_plan": "ultra"}), encoding="utf-8")
 
     def fixture(self, batches=None, **extra) -> None:
         # The stand-in CLI's settings reach an arm only through the fixture's

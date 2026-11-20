@@ -192,7 +192,7 @@ loop's calls report no tokens, so a record with them stays a floor, as before.
 A weekly-meter reading is a whole percent, so it is a range, not a value
 (`allowance_points.reading_range` and `delta_range`, from the package's
 `reading_bounds`): the CLI that run_eval reads truncates, so 40% means 40 to
-41; the usage endpoint BOXY's collector stores rounds, so 40% means 39.5 to
+41; the usage endpoint the owner's ai-usage-dashboard collector stores rounds, so 40% means 39.5 to
 40.5. A delta between two readings is the later range less the earlier one,
 so a one-run delta of 0 or 1 point says almost nothing about that run's own
 use. The guard's pace room is taken from the top of the reading's range, and
@@ -219,7 +219,9 @@ weekly allowance):
 | `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
 | `legacy_usd_per_point` | 12.35 | dollars per point, used only for calls recorded without token counts (summaries from before tokens were kept, a result with no `modelUsage`, a model the weight table does not price) and for improve cost records, which keep dollars only. Night 1 (2026-11-19) measured the eval mix at $17.15 a point on Opus 5.5 and $12.35 on Sonnet 5.5; this is the lower. It replaced `points_per_usd` (0.0015, $6.67 a point), which charged eval runs about 1.9 to 2.6 times their real use |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
-| `stop_when_session_above` | not set | optional: a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
+| `stop_when_session_above` | not set | required on a plan with a 5-hour window, refused on one without (`claude_plan`): a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
+| `claude_plan` | `ultra` | the subscription the meter belongs to: `pro`, `max5x`, `ultra` (formerly Max 20x), `team_standard`, `team_premium`, `enterprise_seat` or `enterprise_usage`. `harness/budget.py`'s `FIVE_HOUR_WINDOW` records, citing Anthropic's help center, which have a 5-hour window. A verified Ultra account has none, and this account's meter has shown none since 2026-10-30, so the 5-hour keys are not set |
+| `working_hours` | not set | optional, only with `stop_when_session_above`: `timezone` (IANA), `days`, `start` and `end` (HH:MM), and `session_stop`, a lower 5-hour stop in force from 5 hours before `start` until `end` on each listed day, so the loop never hands the owner a nearly spent window as their day begins. Outside those hours `stop_when_session_above` applies |
 
 Three layers enforce it:
 
