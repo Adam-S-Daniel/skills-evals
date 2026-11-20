@@ -5043,6 +5043,16 @@ class _RunTelemetry:
         rate = (self.budget or {}).get(budget.LEGACY_RATE)
         return allowance_points.estimate_blocks([*self.role_blocks, *extra], rate)
 
+    def _estimate_or_nothing(self) -> dict:
+        """`{"allowance_estimate": ...}`, or nothing when the lock cannot be
+        read: main() refuses to start a run then (a configuration error,
+        exit 2), and the summaries written on that way out must not turn
+        the named refusal into a traceback."""
+        try:
+            return {"allowance_estimate": self.allowance_estimate()}
+        except allowance_points.LockError:
+            return {}
+
     def _call_snapshots(self, events: list, role: str, index: int,
                         started: datetime) -> list:
         """The snapshots one call's meter events make: the first and the last
@@ -5205,8 +5215,7 @@ class _RunTelemetry:
                     self.call_costs, None if delta is None else
                     (self.snapshot_calls[0], self.snapshot_calls[-1]),
                     self._api_billed()),
-                "allowance_estimate": self.allowance_estimate(),
-                "reasons": reasons, **stopped}
+                "reasons": reasons, **stopped, **self._estimate_or_nothing()}
 
     def usage(self, trials: list | None) -> dict:
         """A summary's `usage` block. `trials` are an arm aggregate's trial
@@ -5256,8 +5265,10 @@ class _RunTelemetry:
                          "guard call starts, "
                          f"so the {late} call(s) from the last reading on are "
                          f"not in it): {moved}, from {len(self.snapshots)} snapshots")
-        return [*lines, _cost_estimate_line(level["cost_estimate"]),
-                _allowance_estimate_line(level["allowance_estimate"])]
+        lines.append(_cost_estimate_line(level["cost_estimate"]))
+        if "allowance_estimate" in level:
+            lines.append(_allowance_estimate_line(level["allowance_estimate"]))
+        return lines
 
 
 def _allowance_estimate_line(estimate: dict) -> str:
