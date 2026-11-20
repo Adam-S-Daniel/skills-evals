@@ -2376,6 +2376,8 @@ judge keep the real `HOME` on a workstation, because the interactive login
 lives there (ADR 0002, decision 4); with auto-memory on, a local trial wrote
 fixture-derived notes into the operator's own
 `~/.claude/projects/<workspace>/memory/` (observed 2026-10-05).
+`guidance.cli_child_env` also sets the prompt-cache TTL last, by lane and by
+the locked meter weights (`harness/cache_ttl.py`; see `docs/cache-ttl.md`).
 
 **Isolation is by flags, because the login pins HOME.** Measured on CLI
 2.1.289 with no credential copied: a scratch `HOME`, a scratch
