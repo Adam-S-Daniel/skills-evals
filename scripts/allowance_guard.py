@@ -387,7 +387,8 @@ IMPROVE_CAP_REFUSAL = ("::error::improve cap: share allows {allowed}, used {used
 
 #: The 5-hour stop's refusal (skills-evals#921): no number, only which limit.
 SESSION_REFUSAL = ("::error::the account's 5-hour window is at or above "
-                   "stop_when_session_above; nothing was fired (evals/budget.yml, #921)")
+                   "its stop (stop_when_session_above, or working_hours.session_stop "
+                   "in working hours); nothing was fired (evals/budget.yml, #921)")
 
 
 #: The pace hold's refusal (Adam, 2026-11-20): no number, only which limit.
@@ -928,11 +929,13 @@ def pace_probe(used, recent: int, eval_started, now: datetime) -> bool:
 
 
 def session_hold(runs: list[Path], limits: dict, now: datetime) -> bool:
-    """Whether the newest snapshot's 5-hour window reads at or above
-    `stop_when_session_above` and has not reset yet (skills-evals#921).
+    """Whether the newest snapshot's 5-hour window reads at or above the
+    5-hour stop in force at `now` (`budget.session_limit`: the lower
+    `working_hours.session_stop` in the owner's working hours, else
+    `stop_when_session_above`) and has not reset yet (skills-evals#921).
     False when the budget sets no such stop or no snapshot carries a
     readable 5-hour window: the weekly checks still apply."""
-    limit = limits.get("stop_when_session_above")
+    limit = budget_file.session_limit(limits, now)
     found = newest_snapshot(runs) if limit is not None else None
     if found is None:
         return False

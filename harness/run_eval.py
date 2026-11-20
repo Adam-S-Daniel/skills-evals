@@ -4882,7 +4882,8 @@ def _five_hour(info) -> float | None:
 
 def budget_stop_reading(readings: list, limits: dict,
                         own: float | None = None,
-                        session: float | None = None) -> dict | None:
+                        session: float | None = None,
+                        now: datetime | None = None) -> dict | None:
     """The budget stop (#68) a run's weekly-window readings call for, oldest
     first, or None. `limits` is `budget.load_budget()`'s.
 
@@ -4899,14 +4900,17 @@ def budget_stop_reading(readings: list, limits: dict,
     changed in between, the latest reading alone, which is what was spent
     since the reset and never less than this run spent in it. The account
     limit wins when both are reached: it is the one that protects Adam's own
-    work."""
+    work.
+
+    `session` is the latest 5-hour reading; its stop is the one in force at
+    `now` (`budget.session_limit`: lower in the owner's working hours)."""
     if not readings:
         return None
     (start, start_reset), (latest, latest_reset) = readings[0], readings[-1]
     moved = round(latest - start, 6) if latest_reset == start_reset else latest
     if own is not None:
         moved = round(own, 6)
-    session_limit = limits.get("stop_when_session_above")
+    session_limit = budget.session_limit(limits, now)
     if latest >= limits["stop_when_account_above"]:
         reason, limit = "account_above", limits["stop_when_account_above"]
     elif session_limit is not None and session is not None and session >= session_limit:
@@ -5033,7 +5037,8 @@ class _RunTelemetry:
         estimate = self.allowance_estimate(queued)
         own = None if estimate["unpriced_roles"] else estimate["points"] / 100
         self.stop = budget_stop_reading(readings, self.budget, own,
-                                        session=sessions[-1] if sessions else None)
+                                        session=sessions[-1] if sessions else None,
+                                        now=datetime.now(timezone.utc))
         return self.stop
 
     def allowance_estimate(self, extra=()) -> dict:

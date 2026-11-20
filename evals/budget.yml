@@ -29,7 +29,8 @@
 #
 # harness/budget.py validates it strictly: exactly these four keys, each a
 # number above 0 and at most 1, and `per_run_cap` no larger than
-# `weekly_cap`. A change here is a spending decision: it is Adam's.
+# `weekly_cap`, plus `claude_plan` below. A change here is a spending
+# decision: it is Adam's.
 
 # 25 points: all automated evals together, in each allowance week of the
 # account (Monday 17:00 UTC to the next; Adam, 2026-10-26), so a sanctioned
@@ -82,3 +83,24 @@ legacy_usd_per_point: 12.35
 # limit"). The finish week that ended 2026-11-09 17:00 UTC ran at 85 to 96
 # (Adam, 2026-11-02 to 2026-11-09).
 stop_when_account_above: 0.80
+
+# The subscription this account is on, which decides whether the 5-hour stop
+# applies (harness/budget.py, FIVE_HOUR_WINDOW, cites Anthropic's help center
+# for each plan). Ultra, formerly Max 20x: a verified Ultra account has no
+# 5-hour limit (https://support.claude.com/en/articles/17728952), and this
+# account's meter has shown none since 2026-10-30 (the CLI's snapshots in
+# ingested runs and the owner's usage-endpoint collector carry only the weekly
+# windows), so neither `stop_when_session_above` nor `working_hours` is set.
+# On a plan with a 5-hour window both apply, for example:
+#
+#   stop_when_session_above: 0.90
+#   working_hours:
+#     timezone: America/New_York
+#     days: [mon, tue, wed, thu, fri]
+#     start: "09:00"
+#     end: "18:00"
+#     session_stop: 0.50
+#
+# `session_stop` replaces `stop_when_session_above` from 5 hours before
+# `start` (a window opened then is still open when work begins) until `end`.
+claude_plan: ultra

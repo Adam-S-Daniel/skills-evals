@@ -320,7 +320,7 @@ class MainWiringTests(TreeCase):
         budget_file = self.tree / "budget.yml"
         budget_file.write_text(
             "weekly_cap: 0.25\nper_run_cap: 0.01\nper_run_overrun: 0.0005\n"
-            "stop_when_account_above: 0.80\nlegacy_usd_per_point: 12.35\n", encoding="utf-8")
+            "stop_when_account_above: 0.80\nlegacy_usd_per_point: 12.35\nclaude_plan: ultra\n", encoding="utf-8")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = guard.main(["check", "--results-tree", str(self.tree), "--budget",

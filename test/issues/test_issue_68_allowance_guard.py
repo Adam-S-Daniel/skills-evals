@@ -73,7 +73,7 @@ HOLD_H = guard.PENDING_FULL_HOLD.total_seconds() / 3600
 #: The hold window's `created` bound for NOW, as the runs API query carries it.
 HOLD_QUERY = "%3E%3D" + (NOW - guard.PENDING_FULL_HOLD).strftime("%Y-%m-%dT%H%%3A%M%%3A%SZ")
 VALID_BUDGET = ("weekly_cap: 0.30\nper_run_cap: 0.03\nper_run_overrun: 0.005\n"
-                "stop_when_account_above: 0.80\n")
+                "stop_when_account_above: 0.80\nclaude_plan: ultra\n")
 
 
 def meter(week: float, resets: int = 1791824400) -> dict:
@@ -118,7 +118,7 @@ class BudgetFileTests(unittest.TestCase):
                          {**LIMITS, "weekly_cap": 0.25,
                           "stop_when_account_above": 0.80,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
-                          "legacy_usd_per_point": 12.35})
+                          "legacy_usd_per_point": 12.35, "claude_plan": "ultra"})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -152,7 +152,7 @@ class BudgetFileTests(unittest.TestCase):
 
     def test_one_and_integers_are_numbers_in_range(self):
         loaded = budget.parse_budget("weekly_cap: 1\nper_run_cap: 1\n"
-                                     "per_run_overrun: 0.5\nstop_when_account_above: 1\n")
+                                     "per_run_overrun: 0.5\nstop_when_account_above: 1\nclaude_plan: ultra\n")
         self.assertEqual(loaded["weekly_cap"], 1.0)
 
     def test_a_missing_file_is_a_budget_error(self):

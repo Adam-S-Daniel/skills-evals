@@ -277,7 +277,7 @@ class GuardImproveChargeTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             budget_path = self.tree / "budget.yml"
             budget_path.write_text("weekly_cap: 0.25\nper_run_cap: 0.03\n"
-                                   "per_run_overrun: 0.005\nstop_when_account_above: 0.80\n")
+                                   "per_run_overrun: 0.005\nstop_when_account_above: 0.80\nclaude_plan: ultra\n")
             code = guard.main(["check", "--results-tree", str(self.tree), "--mode", "improve",
                                "--budget", str(budget_path)],
                               now=NOW, fire_count=lambda now: (0, 0),
