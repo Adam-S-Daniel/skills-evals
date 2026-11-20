@@ -27,7 +27,6 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -147,9 +146,9 @@ def apply_settings(path, ttl, dry_run=False) -> str:
     if dry_run:
         return "applied"
     data[SETTINGS_KEY] = ttl
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with open(tmp, "x", encoding="utf-8") as handle:
             json.dump(data, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
         os.chmod(tmp, path.stat().st_mode & 0o7777)
