@@ -1549,6 +1549,31 @@ def print_units(tree: Path) -> int:
     return 0
 
 
+def live_state(tree: Path, limits: dict, now: datetime, fire_count=None,
+               improve_count=None, improve_starts=None, eval_starts=None,
+               improve_kinds=None, improve_details=None) -> dict:
+    """`account` for `now` with the fires read live from the GitHub API
+    (GITHUB_REPOSITORY, GH_TOKEN), as `check` and `fits` see it; `main`'s
+    stand-ins replace the API in tests. scripts/loop_status.py reads the
+    guard's state through this, so the status page never recomputes it.
+    Raises GuardError when the spend cannot be read."""
+    since = window_start(now)
+    fires = fire_count(now) if fire_count else _live_fires(now, since)
+    if improve_count:
+        improve = improve_count(now)
+        started = improve_starts(now) if improve_starts else None
+        evals = eval_starts(now) if eval_starts else None
+        by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
+        details = improve_details(now) if improve_details else None
+    else:
+        # One fetch feeds the counts and the start times.
+        improve, started, evals, (by_kind, in_flight), details = _live_improve_both(
+            now, since)
+    return account(tree, limits, now, fires, improve, since, started,
+                   eval_started=evals, improve_by_kind=by_kind,
+                   improve_in_flight=in_flight, improve_fires=details)
+
+
 def main(argv: list[str] | None = None, now: datetime | None = None,
          fire_count=None, improve_count=None, improve_starts=None,
          eval_starts=None, improve_kinds=None, improve_details=None) -> int:
@@ -1578,21 +1603,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
         return print_units(args.results_tree)
     try:
         limits = budget_file.load_budget(args.budget)
-        since = window_start(now)
-        fires = fire_count(now) if fire_count else _live_fires(now, since)
-        if improve_count:
-            improve = improve_count(now)
-            started = improve_starts(now) if improve_starts else None
-            evals = eval_starts(now) if eval_starts else None
-            by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
-            details = improve_details(now) if improve_details else None
-        else:
-            # One fetch feeds the counts and the start times.
-            improve, started, evals, (by_kind, in_flight), details = _live_improve_both(
-                now, since)
-        state = account(args.results_tree, limits, now, fires, improve, since, started,
-                        eval_started=evals, improve_by_kind=by_kind,
-                        improve_in_flight=in_flight, improve_fires=details)
+        state = live_state(args.results_tree, limits, now, fire_count, improve_count,
+                           improve_starts, eval_starts, improve_kinds, improve_details)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")

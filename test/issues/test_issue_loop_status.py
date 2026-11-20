@@ -1,0 +1,201 @@
+"""scripts/loop_status.py: the status document the AI Usage dashboard shows
+(Adam, 2026-11-20, "observability on the loop guards, pace, usage"). Every
+figure comes from allowance_guard.py or forecast_catch_up.py; these tests
+check the document carries their numbers and verdicts. Invented data only;
+`now` and the fire counts are passed in, so nothing reads the network."""
+
+from __future__ import annotations
+
+import io
+import json
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "harness"))
+import allowance_guard as guard  # noqa: E402
+import loop_status  # noqa: E402
+
+NOW = datetime(2026, 11, 20, 18, 0, 0, tzinfo=timezone.utc)
+LIMITS = {"weekly_cap": 0.25, "per_run_cap": 0.01, "per_run_overrun": 0.0005,
+          "stop_when_account_above": 0.80, "legacy_usd_per_point": 12.35,
+          "claude_plan": "ultra"}
+RESETS = datetime(2026, 11, 23, 17, 0, 0, tzinfo=timezone.utc)
+
+
+def iso(when):
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def base_state(**extra):
+    state = {"session_hold": False, "pace_hold": False, "pace_probe": False,
+             "spent": 0.10, "pending": 0.01, "committed": 0.11, "bound": None,
+             "stop_left": None, "stop": 0.8, "runs": 4, "fires": 5, "recent": 0,
+             "reservation": 0.0105, "cap": 0.16, "cap_configured": 0.25,
+             "loop_reserve": 0.09, "pace_room": 0.0, "account_used": None,
+             "week_elapsed": None, "improve_fires": 0, "improve_charge": 0.1,
+             "improve_finished": 0, "improve_finished_held": 0.0}
+    state.update(extra)
+    return state
+
+
+class VerdictTests(unittest.TestCase):
+    def test_room_under_the_cap_is_open(self):
+        code, why = loop_status.verdict(base_state())
+        self.assertEqual(code, "open")
+        self.assertIn(str(guard.fits(base_state())), why)
+
+    def test_the_5_hour_stop_comes_first(self):
+        code, _ = loop_status.verdict(base_state(session_hold=True, pace_hold=True))
+        self.assertEqual(code, "session_hold")
+
+    def test_pace_hold_with_a_reading(self):
+        code, why = loop_status.verdict(base_state(pace_hold=True, account_used=0.74))
+        self.assertEqual(code, "pace_hold")
+        self.assertIn("ahead", why)
+
+    def test_pace_hold_without_a_reading_and_the_probe(self):
+        self.assertEqual(loop_status.verdict(base_state(pace_hold=True))[0], "pace_hold")
+        self.assertEqual(loop_status.verdict(base_state(pace_hold=True, pace_probe=True))[0],
+                         "pace_probe")
+
+    def test_a_full_cap(self):
+        self.assertEqual(loop_status.verdict(base_state(spent=0.16, committed=0.16))[0], "cap_full")
+
+
+class LiveReadingTests(unittest.TestCase):
+    def test_a_fresh_reading_gives_the_share_of_the_week_gone(self):
+        got = loop_status.live_reading(76.0, NOW - timedelta(minutes=5), RESETS, NOW)
+        self.assertAlmostEqual(got["used"], 0.76)
+        left = (RESETS - NOW).total_seconds() / guard.WINDOW.total_seconds()
+        self.assertAlmostEqual(got["elapsed"], 1 - left)
+
+    def test_stale_future_or_out_of_range_readings_are_not_used(self):
+        self.assertIsNone(loop_status.live_reading(76.0, NOW - timedelta(hours=2), RESETS, NOW))
+        self.assertIsNone(loop_status.live_reading(76.0, NOW + timedelta(hours=1), RESETS, NOW))
+        self.assertIsNone(loop_status.live_reading(120.0, NOW, RESETS, NOW))
+        self.assertIsNone(loop_status.live_reading(76.0, NOW, NOW - timedelta(hours=1), NOW))
+        self.assertIsNone(loop_status.live_reading(None, NOW, RESETS, NOW))
+
+    def test_the_pace_line_is_the_guards(self):
+        reading = loop_status.live_reading(76.0, NOW, RESETS, NOW)
+        block = loop_status.pace_block(reading, LIMITS, "live")
+        self.assertAlmostEqual(block["line_pct"], 80 * reading["elapsed"])
+        self.assertEqual(block["ahead"], guard.ahead_of_pace(0.76, reading["elapsed"], LIMITS))
+        self.assertTrue(block["ahead"])
+        under = loop_status.pace_block(loop_status.live_reading(10.0, NOW, RESETS, NOW),
+                                       LIMITS, "live")
+        self.assertFalse(under["ahead"])
+        self.assertGreater(under["under_line_points"], 0)
+
+
+FORECAST = {
+    "inputs": {"usd_per_point": [6.0, 8.0], "weekly_cap_points": 16.0,
+               "loop_jobs_points_per_week": 9.0,
+               "assumptions": {"non_eval_points_per_week": 50.0, "pace_hold": True},
+               "scheduled_tasks": [{"task": "Dashboard refresh", "in_loop": True, "model": "m",
+                                    "fires_per_week": 7, "points_per_week": 3.5}]},
+    "subjects": [{}, {}],
+    "backlog_points_central": 26.0,
+    "keep_up_usd_per_week": 70.0,
+    "capacity_usd_per_week": {"plan_central": 140.0},
+    "scenarios": {"plan_cap_only": {"weeks_central": 2.5, "weeks_fast": 1.0,
+                                    "weeks_slow": float("inf"),
+                                    "done_central": "2026-12-08T00:00:00+00:00",
+                                    "done_fast": "2026-11-27T00:00:00+00:00",
+                                    "done_slow": None}},
+}
+
+
+class ForecastTests(unittest.TestCase):
+    def test_points_are_dollars_at_the_mid_rate(self):
+        got = loop_status.forecast_block(FORECAST)
+        self.assertAlmostEqual(got["keep_up_points_per_week"], 10.0)
+        self.assertAlmostEqual(got["capacity_points_per_week"], 20.0)
+        self.assertEqual(got["open_subjects"], 2)
+
+    def test_catch_up_weeks_and_dates(self):
+        got = loop_status.forecast_block(FORECAST)
+        self.assertEqual(got["catch_up_weeks"], {"central": 2.5, "fast": 1.0, "slow": None})
+        self.assertEqual(got["catch_up_date"]["central"], "2026-12-08T00:00:00+00:00")
+
+    def test_per_task_rows(self):
+        got = loop_status.forecast_block(FORECAST)
+        self.assertEqual(got["tasks"][0]["task"], "Dashboard refresh")
+        self.assertEqual(got["tasks"][0]["points_per_week"], 3.5)
+
+    def test_a_document_without_the_figures_is_none(self):
+        self.assertIsNone(loop_status.forecast_block({"inputs": {}}))
+        self.assertIsNone(loop_status.forecast_block(None))
+
+    def test_the_loop_jobs_input_carries_only_their_points(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "spend").mkdir()
+            (tree / "spend" / "weekly.json").write_text(json.dumps(
+                {"loop_jobs": {"as_of": iso(NOW), "points_per_week": 8.5, "usd_per_week": 1}}))
+            out = loop_status.loop_jobs_input(tree, tree / "jobs.json")
+            doc = json.loads(out.read_text())
+            self.assertEqual(doc["loop_meter_points_per_week"], 8.5)
+            self.assertEqual(doc["categories"], [])
+            self.assertIsNone(loop_status.loop_jobs_input(tree / "none", tree / "x.json"))
+
+
+@pytest.mark.real_loop_reserve
+class StatusTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tree = Path(self._tmp.name)
+
+    def counts(self):
+        return {"fire_count": lambda now: (0, 0), "improve_count": lambda now: (0, 0)}
+
+    def test_without_the_loop_reserve_the_guard_refuses_and_the_page_says_so(self):
+        doc = loop_status.status_from_tree(self.tree, LIMITS, NOW, _args(), None, **self.counts())
+        self.assertEqual(doc["guard"]["verdict"], "error")
+        self.assertIn("loop reserve", doc["guard"]["why"])
+        self.assertIsNone(doc["loop"])
+
+    def test_loop_spend_is_the_guards_committed_plus_the_loop_jobs(self):
+        (self.tree / "spend").mkdir()
+        (self.tree / "spend" / "weekly.json").write_text(json.dumps(
+            {"loop_jobs": {"as_of": iso(NOW - timedelta(hours=1)), "points_per_week": 9.0,
+                           "usd_per_week": 60.0}}))
+        args = _args(week_used=40.0, week_at=iso(NOW), week_resets=iso(RESETS))
+        doc = loop_status.status_from_tree(self.tree, LIMITS, NOW, args, None, **self.counts())
+        state = guard.live_state(self.tree, LIMITS, NOW, **self.counts())
+        self.assertAlmostEqual(doc["loop"]["loop_jobs_points"], 9.0)
+        self.assertAlmostEqual(doc["loop"]["used_points"], (state["committed"] + 0.09) * 100)
+        self.assertAlmostEqual(doc["loop"]["cap_points"], 25.0)
+        # No ingested reading: the guard holds, fails safe, while the live pace shows.
+        self.assertEqual(doc["guard"]["verdict"], "pace_hold")
+        self.assertEqual(doc["pace"]["source"], "live")
+        self.assertIsNone(doc["guard_pace"])
+        self.assertEqual(doc["week"]["resets_at"], iso(RESETS))
+        self.assertEqual(doc["session"], {"plan": "ultra", "stop_pct": None, "hold": False})
+
+    def test_main_prints_one_json_document(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = loop_status.main(["status", "--results-tree", str(self.tree)], now=NOW,
+                                    **self.counts())
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["schema"], loop_status.SCHEMA)
+
+
+def _args(**values):
+    base = {"week_used": None, "week_at": None, "week_resets": None}
+    base.update(values)
+    return type("Args", (), base)()
+
+
+if __name__ == "__main__":
+    unittest.main()
