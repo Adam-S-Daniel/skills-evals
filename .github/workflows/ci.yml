@@ -80,6 +80,7 @@ on:
       - evals/**
       - dashboard/**
       - harness/**
+      - vendor/**
       - scripts/**
       - test/**
       - tool/**
@@ -163,6 +164,7 @@ jobs:
             evals/**
             dashboard/**
             harness/**
+            vendor/**
             scripts/**
             test/**
             tool/**

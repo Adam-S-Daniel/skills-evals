@@ -1,0 +1,246 @@
+{
+  "schema": 1,
+  "id": "2026-11-20",
+  "plan": "max_20x",
+  "unit": "points_per_million_tokens",
+  "unmeasured_factor": [
+    0.5,
+    2.0
+  ],
+  "sources": {
+    "2026-11-19-night1": "79 Opus and 106 Sonnet runs of real agent workloads (742 calls, all 5-minute cache writes), analyzed by meter ticks with kit/intervals.py",
+    "2026-11-20-night2": "Synthetic blocks, one dominant token type each (755 calls), fitted by linear program with kit/fit.py",
+    "atlas-2026-10-29": "Atlas ADE, Plan usage burn data, model a5v3: https://atlas-ade.dev/docs/plan-usage-burn-data/"
+  },
+  "notes": [
+    "One account, on Max 20x (renamed Ultra).",
+    "Contexts under 200k tokens only.",
+    "Fable rows were measured during the Fable 5.2 launch offer; re-measure after it ends.",
+    "Usage reaches the meter when a call ends.",
+    "A joint range is never narrower than 3% either side of its point: two intervals of the same Opus mix gave factors 2.3% either side of their mean, and the Sonnet factor rests on one interval.",
+    "The directly measured weights landed between 0.53 and 1.79 times the Atlas prior, which is where the unmeasured_factor [0.5, 2.0] comes from.",
+    "basis: measured = its own weight was fitted; joint = measured only together with other types in one workload mix (low and high are the range of the shared factor); assumed = a stand-in, low and high are point x unmeasured_factor; published = copied from an outside table."
+  ],
+  "meters": {
+    "all_models": {
+      "cli_key": "seven_day",
+      "models": {
+        "claude-fable-5-2": {
+          "input": {
+            "point": 1.4285714285714286,
+            "low": 0.7142857142857143,
+            "high": 2.857142857142857,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured: uncached input was under 1,500 tokens all night. Stand-in is the prior's weight."
+          },
+          "output": {
+            "point": 3.296613360515786,
+            "low": 3.142556551092954,
+            "high": 3.7350251575620437,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_read": {
+            "point": 0.02506646565503414,
+            "low": 0.015624937236395332,
+            "high": 0.031434543732289995,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_write_5m": {
+            "point": 1.0858893106871952,
+            "low": 0.9693765776280897,
+            "high": 1.1610858297624895,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_write_1h": {
+            "point": 0.8243968749741777,
+            "low": 0.7111884151138226,
+            "high": 1.2171309531257248,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          }
+        },
+        "claude-opus-5-5": {
+          "input": {
+            "point": 0.3333333333333333,
+            "low": 0.16666666666666666,
+            "high": 0.6666666666666666,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's weight."
+          },
+          "output": {
+            "point": 1.7645546443165139,
+            "low": 1.7020552691480273,
+            "high": 1.881445699383284,
+            "basis": "joint",
+            "source": "2026-11-19-night1",
+            "note": "Output and cache writes were measured together (about 1 part output to 2 parts cache write by weight)."
+          },
+          "cache_read": {
+            "point": 0.010554483594133173,
+            "low": 0.007154169197157455,
+            "high": 0.01136822952892872,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "Rests on one meter tick, so the range is wide."
+          },
+          "cache_write_5m": {
+            "point": 0.2531752315758477,
+            "low": 0.24420792992123874,
+            "high": 0.2699465568680364,
+            "basis": "joint",
+            "source": "2026-11-19-night1",
+            "note": "Output and cache writes were measured together (about 1 part output to 2 parts cache write by weight)."
+          },
+          "cache_write_1h": {
+            "point": 0.2531752315758477,
+            "low": 0.12658761578792385,
+            "high": 0.5063504631516954,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "On Fable a 1-hour write measured about the same per token as a 5-minute write."
+          }
+        },
+        "claude-sonnet-5-5": {
+          "input": {
+            "point": 0.2,
+            "low": 0.1,
+            "high": 0.4,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's weight."
+          },
+          "output": {
+            "point": 1.3384554919079583,
+            "low": 1.2983018271507196,
+            "high": 1.378609156665197,
+            "basis": "joint",
+            "source": "2026-11-19-night1",
+            "note": "Output and cache writes were measured together (about 1 part output to 2 parts cache write by weight)."
+          },
+          "cache_read": {
+            "point": 0.005076900141719842,
+            "low": 0.002538450070859921,
+            "high": 0.010153800283439684,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Stand-in is the mix factor times the prior. Cache reads were 7% of the measured mix, and Opus's cache-read weight was not predicted by its mix factor."
+          },
+          "cache_write_5m": {
+            "point": 0.1912079274154226,
+            "low": 0.18547168959295995,
+            "high": 0.19694416523788527,
+            "basis": "joint",
+            "source": "2026-11-19-night1",
+            "note": "Output and cache writes were measured together (about 1 part output to 2 parts cache write by weight)."
+          },
+          "cache_write_1h": {
+            "point": 0.1912079274154226,
+            "low": 0.0956039637077113,
+            "high": 0.3824158548308452,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "On Fable a 1-hour write measured about the same per token as a 5-minute write."
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": {
+            "point": 0.06666666666666667,
+            "low": 0.03333333333333333,
+            "high": 0.13333333333333333,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's Haiku row."
+          },
+          "output": {
+            "point": 0.303030303030303,
+            "low": 0.1515151515151515,
+            "high": 0.606060606060606,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's Haiku row."
+          },
+          "cache_read": {
+            "point": 0.001176470588235294,
+            "low": 0.000588235294117647,
+            "high": 0.002352941176470588,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's Haiku row."
+          },
+          "cache_write_5m": {
+            "point": 0.043478260869565216,
+            "low": 0.021739130434782608,
+            "high": 0.08695652173913043,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's Haiku row."
+          },
+          "cache_write_1h": {
+            "point": 0.043478260869565216,
+            "low": 0.021739130434782608,
+            "high": 0.08695652173913043,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is the prior's Haiku row."
+          }
+        }
+      }
+    },
+    "fable": {
+      "cli_key": "seven_day_overage_included",
+      "models": {
+        "claude-fable-5-2": {
+          "input": {
+            "point": 2.857142857142857,
+            "low": 1.4285714285714286,
+            "high": 5.714285714285714,
+            "basis": "assumed",
+            "source": "assumption",
+            "note": "Not measured. Stand-in is twice the all-models input weight."
+          },
+          "output": {
+            "point": 7.033705112896351,
+            "low": 6.937823222946865,
+            "high": 7.15703155506206,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_read": {
+            "point": 0.04068229630487051,
+            "low": 0.02097415562420017,
+            "high": 0.04289886909949404,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_write_5m": {
+            "point": 1.643211056855693,
+            "low": 1.6083023528573006,
+            "high": 1.9737109674088327,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          },
+          "cache_write_1h": {
+            "point": 1.657402986273369,
+            "low": 1.147793322071806,
+            "high": 2.2499862976590888,
+            "basis": "measured",
+            "source": "2026-11-20-night2",
+            "note": "measured during the Fable 5.2 launch offer"
+          }
+        }
+      }
+    }
+  }
+}

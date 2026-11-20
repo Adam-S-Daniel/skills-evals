@@ -7,7 +7,7 @@ results tree (#572 part 1) and, for each improve or guidance-improve fire:
   * matches it one-to-one, oldest first, to the record of its mode and
     target whose run id's stamp falls within -2/+30 minutes of the fire's
     `run_started_at`, and charges the record's measured dollars at
-    `points_per_usd` instead of `improve_charge`; unmatched fires keep that
+    `legacy_usd_per_point` instead of `improve_charge`; unmatched fires keep that
     rule;
   * recomputes `IMPROVE_FIRE_UNITS` from the records' dollar measures (the
     75th percentile once at least 6 records measured something, the largest
@@ -46,8 +46,10 @@ import propose_skill_edit as pse  # noqa: E402
 
 NOW = datetime(2026, 11, 12, 12, 0, 0, tzinfo=timezone.utc)
 START = datetime(2026, 11, 10, 8, 0, 0, tzinfo=timezone.utc)
+#: Dollars per point; a record is charged dollars / RATE / 100 of the week.
+RATE = 12.35
 LIMITS = {"weekly_cap": 0.25, "per_run_cap": 0.01, "per_run_overrun": 0.0005,
-          "stop_when_account_above": 0.80, "points_per_usd": 0.0015}
+          "stop_when_account_above": 0.80, "legacy_usd_per_point": RATE}
 SINCE = datetime(2026, 11, 9, 17, 0, 0, tzinfo=timezone.utc)
 
 
@@ -134,8 +136,8 @@ class MatchingTests(TreeCase):
                      guard_usd=0.25, proposal=0.25)
         self.put(doc)
         state = self.account([fire()])
-        # 3.0 dollars at 0.0015 points per dollar, full precision.
-        self.assertAlmostEqual(state["spent"], 3.0 * 0.0015, places=15)
+        # 3.0 dollars at the legacy rate of RATE dollars per point, full precision.
+        self.assertAlmostEqual(state["spent"], 3.0 / RATE / 100, places=15)
         self.assertEqual(state["improve_matched"], 1)
         self.assertEqual(state["pending"], 0.0)
         self.assertEqual(state["improve_fires"], 1)
@@ -179,7 +181,7 @@ class MatchingTests(TreeCase):
         self.put(second)
         state = self.account([fire(START), fire(START + timedelta(minutes=5))])
         self.assertEqual(state["improve_matched"], 2)
-        self.assertAlmostEqual(state["spent"], 4.0 * 0.0015, places=15)
+        self.assertAlmostEqual(state["spent"], 4.0 / RATE / 100, places=15)
         self.assertEqual(state["pending"], 0.0)
 
     def test_a_record_with_no_trial_is_a_matched_fire_that_cost_nothing(self):
@@ -197,7 +199,7 @@ class MatchingTests(TreeCase):
         self.assertEqual(state["pending"], 0.0)
 
     def test_an_incomplete_measure_with_a_clean_bracket_takes_the_larger_of_dollars_and_delta(self):
-        for delta, expected in ((0.02, 0.02), (0.0, 2.25 * 0.0015)):
+        for delta, expected in ((0.02, 0.02), (0.0, 2.25 / RATE / 100)):
             with self.subTest(delta=delta):
                 shutil.rmtree(self.tree / "improve-costs", ignore_errors=True)
                 self.put(record(stamp(START), trigger_calls=60, busy=800.0,
@@ -215,7 +217,7 @@ class MatchingTests(TreeCase):
 
     def test_no_dollar_rate_means_no_matching(self):
         self.put(record(stamp(START)))
-        limits = {k: v for k, v in LIMITS.items() if k != "points_per_usd"}
+        limits = {k: v for k, v in LIMITS.items() if k != "legacy_usd_per_point"}
         state = self.account([fire()], limits)
         self.assertEqual(state["improve_matched"], 0)
 
@@ -273,7 +275,7 @@ class ReadingBoundTests(TreeCase):
         self.put(record(stamp(NOW - timedelta(minutes=30)), agent=2.0, proposal=0.0))
         state = self.account([fire(NOW - timedelta(minutes=31))])
         self.assertEqual(state["improve_covered"], 0)
-        self.assertAlmostEqual(state["bound"], self.baseline() + 2.0 * 0.0015, places=12)
+        self.assertAlmostEqual(state["bound"], self.baseline() + 2.0 / RATE / 100, places=12)
 
     def test_a_matched_fire_before_the_reading_is_already_inside_it(self):
         reading = NOW - timedelta(hours=1)
@@ -284,7 +286,7 @@ class ReadingBoundTests(TreeCase):
         self.assertEqual(state["improve_matched"], 1)
         # Not added to the bound (the reading holds it) and not held again.
         self.assertAlmostEqual(state["bound"], self.baseline(), places=12)
-        self.assertAlmostEqual(state["eval_inside"], 2.0 * 0.0015, places=12)
+        self.assertAlmostEqual(state["eval_inside"], 2.0 / RATE / 100, places=12)
 
 
 class MainWiringTests(TreeCase):
@@ -294,7 +296,7 @@ class MainWiringTests(TreeCase):
         budget_file = self.tree / "budget.yml"
         budget_file.write_text(
             "weekly_cap: 0.25\nper_run_cap: 0.01\nper_run_overrun: 0.0005\n"
-            "stop_when_account_above: 0.80\npoints_per_usd: 0.0015\n", encoding="utf-8")
+            "stop_when_account_above: 0.80\nlegacy_usd_per_point: 12.35\n", encoding="utf-8")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = guard.main(["check", "--results-tree", str(self.tree), "--budget",

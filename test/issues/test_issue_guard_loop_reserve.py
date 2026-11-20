@@ -29,7 +29,7 @@ spec.loader.exec_module(build)
 
 NOW = datetime(2026, 11, 16, 12, 0, 0, tzinfo=timezone.utc)
 LIMITS = {"weekly_cap": 0.25, "per_run_cap": 0.01, "per_run_overrun": 0.005,
-          "stop_when_account_above": 0.80, "points_per_usd": 0.0015}
+          "stop_when_account_above": 0.80, "legacy_usd_per_point": 12.35}
 SCHEMA = json.loads((ROOT / "explorer" / "schema.json").read_text(encoding="utf-8"))
 
 
@@ -69,10 +69,10 @@ class ProducerTests(unittest.TestCase):
 
     def test_loop_jobs_is_the_measured_meter_use_in_points(self):
         got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
-        # One daily fire at $2 is $14 a week; 0.0015 of the allowance per dollar is 2.1 points.
+        # One daily fire at $2 is $14 a week; at $12.35 a point that is 14 / 12.35 points.
         self.assertEqual(got["as_of"], iso(NOW))
         self.assertAlmostEqual(got["usd_per_week"], 14.0)
-        self.assertAlmostEqual(got["points_per_week"], 2.1)
+        self.assertAlmostEqual(got["points_per_week"], 14.0 / 12.35)
 
     def test_without_a_ledger_there_is_no_block(self):
         self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, None))

@@ -70,7 +70,7 @@ import stakes  # noqa: E402
 #: records every value used.
 ASSUMPTION_KEYS = {
     "usd_per_point_low": (None, "low end of the measured $ per weekly-meter point; "
-                                "default: budget.yml points_per_usd"),
+                                "default: budget.yml legacy_usd_per_point"),
     "usd_per_point_high": (None, "high end of the same; default: as low"),
     "measured_usd_per_pair": (None, "mean run cost per pair over recent fires (cost_estimate.json); "
                                     "scales the verdict document's per-model costs to it"),
@@ -381,8 +381,11 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
     prior_pairs = float(batch_policy["pairs_per_cell"])
     a = {k: assumptions.get(k, default) for k, (default, _) in ASSUMPTION_KEYS.items()}
-    # budget.yml values are fractions of the allowance: 0.01 is one point.
-    rate = 1 / (budget["points_per_usd"] * 100)
+    # Eval runs are charged from tokens by type (harness/allowance_points.py);
+    # the forecast works in dollars, and the legacy rate is the eval mix's
+    # measured dollars per point (night 1, 2026-11-19), the lower of its two
+    # models, so the forecast is never short of points.
+    rate = budget["legacy_usd_per_point"]
     low_rate = a["usd_per_point_low"] or rate
     high_rate = a["usd_per_point_high"] or low_rate
     cap_points = budget["weekly_cap"] * 100
@@ -508,7 +511,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         "inputs": {
             "verdict_as_of": gates.get("as_of"), "newest_run": gates.get("newest_run"),
             "weekly_cap_points": cap_points, "usd_per_point": [low_rate, high_rate],
-            "points_per_usd_source": "evals/budget.yml points_per_usd",
+            "points_per_usd_source": "evals/budget.yml legacy_usd_per_point",
             "max_runs_per_cell": gates["policy"]["max_runs_per_cell"],
             "pairs_per_cell_prior": prior_pairs,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,

@@ -4735,7 +4735,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
-               "harness/**", "scripts/**", "test/**", "tool/**", "explorer/**",
+               "harness/**", "vendor/**", "scripts/**", "test/**", "tool/**", "explorer/**",
                "README.md",
                "DESIGN.md",
                # The rules restatement check reads every doc (docs/rules.md).

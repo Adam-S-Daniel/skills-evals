@@ -108,7 +108,7 @@ class Forecast(unittest.TestCase):
         {"skill": "b", "model": "m", "pairs": 0, "class": "insufficient"},
         {"skill": "b", "model": "m", "pairs": 0, "class": "missing"},
     ]
-    BUDGET = {"weekly_cap": 0.25, "points_per_usd": 0.0015}
+    BUDGET = {"weekly_cap": 0.25, "legacy_usd_per_point": 1 / 0.15}
     BATCH = {"pairs_per_cell": 15, "rates": {"skill": 1.0, "guidance": 1.0}}
 
     def run_forecast(self, cells=None, gates=None, budget=None, **assumptions):
