@@ -62,6 +62,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import allowance_guard  # noqa: E402
+import allowance_points  # noqa: E402
 import plan_week  # noqa: E402
 import stakes  # noqa: E402
 
@@ -316,6 +318,45 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
 RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
 
 
+def measured_usd_per_point(results_tree: Path, legacy_rate) -> dict | None:
+    """Eval dollars per allowance point measured on the ingested runs under
+    `results_tree`: each routine run's trial `usage.measured` blocks priced
+    from token counts by type (`allowance_points.estimate_blocks`, as
+    allowance_guard.run_points and dashboard/build.py eval_run_points read
+    them), summed over the runs priced wholly from tokens. `central` is those
+    dollars over the estimate's points; `low` is over its high points and
+    `high` over its low points (more points per dollar means fewer dollars per
+    point). None when no run is priced wholly from tokens."""
+    usd = points = low = high = 0.0
+    runs = 0
+    for run_dir in allowance_guard.all_runs(results_tree):
+        blocks = []
+        for path in allowance_guard._summary_paths(run_dir):
+            summary = allowance_guard._load_summary(path)
+            use = summary.get("usage") if isinstance(summary, dict) else None
+            measured = use.get("measured") if isinstance(use, dict) else None
+            if isinstance(measured, dict) and measured.get("scope") == "trial":
+                blocks.append(measured)
+        if not blocks:
+            continue
+        found = allowance_points.estimate_blocks(blocks, legacy_rate)
+        if not (found["complete"] and found["roles_from_tokens"]) or found["points"] <= 0:
+            continue
+        usd += sum(float(block[role]["cost_usd"]) for block in blocks
+                   for role in allowance_points.ROLES
+                   if isinstance(block.get(role), dict) and block[role].get("calls")
+                   and allowance_points._number(block[role].get("cost_usd")))
+        points += found["points"]
+        low += found["low"]
+        high += found["high"]
+        runs += 1
+    if not runs or not usd or not points or not high:
+        return None
+    return {"central": usd / points, "low": usd / high,
+            "high": usd / low if low else usd / points, "runs": runs,
+            "usd": usd, "points": points, "points_low": low, "points_high": high}
+
+
 def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
                           min_days: float = 2.0) -> dict | None:
     """Measured non-eval meter points a week over the account's current
@@ -330,8 +371,12 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
     points (routine-results/*/cost_estimate.json) come off the rise, but
     never more than the meter rose while evals ran (first run to an hour
     after the last), since their calibration can overstate them. The rise
-    sums increases between consecutive readings. None when fewer than two
-    readings fall in the span."""
+    sums increases between consecutive readings. The readings are whole
+    percents the usage endpoint rounds, so the rise is also a range
+    (`meter_rise_points_low`/`_high`, and `points_per_week_low`/`_high`
+    with the eval points taken off as they are): each run of readings that
+    never falls is one `allowance_points.delta_range`, and the runs add. None
+    when fewer than two readings fall in the span."""
     start = RESET_ANCHOR + timedelta(days=7) * math.floor(
         (end - RESET_ANCHOR) / timedelta(days=7))
     if (end - start) < timedelta(days=min_days):
@@ -346,16 +391,29 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
         first = max((i for i, x in enumerate(span) if x[0] <= lo), default=0)
         last = min((i for i, x in enumerate(span) if x[0] >= hi), default=len(span) - 1)
         pts = span[first:last + 1]
-        return sum(max(0.0, b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+        low = high = 0.0
+        begin = 0
+        for k in range(1, len(pts) + 1):
+            if k == len(pts) or pts[k][1] < pts[k - 1][1]:
+                if k - 1 > begin:
+                    seg = allowance_points.delta_range(
+                        pts[begin][1], pts[k - 1][1], allowance_points.USAGE_ENDPOINT)
+                    low += max(0.0, seg[0])
+                    high += max(0.0, seg[1])
+                begin = k
+        return sum(max(0.0, b[1] - a[1]) for a, b in zip(pts, pts[1:])), low, high
 
-    total = rise(span[0][0], span[-1][0])
+    total, total_low, total_high = rise(span[0][0], span[-1][0])
     runs = sorted((t, p) for t, p in eval_runs if span[0][0] <= t <= span[-1][0])
     calibrated = sum(p for _, p in runs)
-    while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1)) if runs else 0.0
+    while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1))[0] if runs else 0.0
     evals = min(calibrated, while_running)
     covered = (span[-1][0] - span[0][0]).total_seconds() / 86400
     return {"points_per_week": max(0.0, total - evals) * 7 / covered,
-            "meter_rise_points": total, "eval_points": evals,
+            "points_per_week_low": max(0.0, total_low - evals) * 7 / covered,
+            "points_per_week_high": max(0.0, total_high - evals) * 7 / covered,
+            "meter_rise_points": total, "meter_rise_points_low": total_low,
+            "meter_rise_points_high": total_high, "eval_points": evals,
             "eval_points_calibrated": calibrated, "eval_rise_while_running": while_running,
             "from": span[0][0].isoformat(), "to": span[-1][0].isoformat(),
             "readings": len(span)}
@@ -375,19 +433,28 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              skipped_sections: frozenset = frozenset(),
              stakes_table: dict | None = None,
              automatic: dict | None = None,
-             measured_non_eval: dict | None = None) -> dict:
+             measured_non_eval: dict | None = None,
+             measured_rate: dict | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
     central figure with a low-high range, and every input with its source."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
     prior_pairs = float(batch_policy["pairs_per_cell"])
     a = {k: assumptions.get(k, default) for k, (default, _) in ASSUMPTION_KEYS.items()}
     # Eval runs are charged from tokens by type (harness/allowance_points.py);
-    # the forecast works in dollars, and the legacy rate is the eval mix's
-    # measured dollars per point (night 1, 2026-11-19), the lower of its two
-    # models, so the forecast is never short of points.
-    rate = budget["legacy_usd_per_point"]
-    low_rate = a["usd_per_point_low"] or rate
-    high_rate = a["usd_per_point_high"] or low_rate
+    # the forecast works in dollars. Dollars per point is measured on the
+    # ingested runs' own estimates (`measured_rate`, from
+    # `measured_usd_per_point`: low and high from the estimate's high and
+    # low points); with no run priced from tokens it falls back to the
+    # legacy rate, the eval mix's measured dollars per point (night 1,
+    # 2026-11-19), the lower of its two models. An assumption wins.
+    rate = measured_rate["central"] if measured_rate else budget["legacy_usd_per_point"]
+    low_rate = a["usd_per_point_low"] or (measured_rate["low"] if measured_rate else rate)
+    high_rate = a["usd_per_point_high"] or (
+        measured_rate["high"] if measured_rate and not a["usd_per_point_low"] else low_rate)
+    rate_source = (
+        f"measured on {measured_rate['runs']} ingested runs priced from token counts "
+        "(routine-results trial usage.measured through allowance_points.estimate_blocks)"
+        if measured_rate else "evals/budget.yml legacy_usd_per_point")
     cap_points = budget["weekly_cap"] * 100
     # Non-eval meter use by category (scripts/automatic_spend.py): each
     # automatic category's meter points, estimated from its fires' token
@@ -519,7 +586,8 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         "inputs": {
             "verdict_as_of": gates.get("as_of"), "newest_run": gates.get("newest_run"),
             "weekly_cap_points": cap_points, "usd_per_point": [low_rate, high_rate],
-            "points_per_usd_source": "evals/budget.yml legacy_usd_per_point",
+            "usd_per_point_central": rate,
+            "points_per_usd_source": rate_source,
             "max_runs_per_cell": gates["policy"]["max_runs_per_cell"],
             "pairs_per_cell_prior": prior_pairs,
             "pair_usd_by_model": costs, "fire_overhead_per_pair_usd": overhead,
@@ -671,7 +739,8 @@ def main(argv: list | None = None) -> int:
                 f"routine-results: median over {measured_pace['weeks']} week(s) of the hours "
                 "from the reset until evals spent the cap")
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
-                   automatic, measured)
+                   automatic, measured,
+                   measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"]))
     if automatic is not None and "non_eval_points_per_week" not in assumptions:
         if assumptions.get("interactive_points_per_week") is not None:
             sources["non_eval_points_per_week"] = \

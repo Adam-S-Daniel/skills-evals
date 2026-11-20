@@ -26,7 +26,8 @@ What it reads, and nothing else (2026-11-02):
     "list"`; the rest are counted as `usd_unpriced_trials`), call counts,
     own run times, and weekly-window meter snapshots;
   * `<results>/proposal-<ts>.json`, the proposer's numbers-only record of its
-    one `claude -p` call (`Runner.last_usage`), same cap and no-symlink rule;
+    one `claude -p` call (`Runner.last_usage`), same cap and no-symlink rule
+    (four keys before 2026-11-20, six since: the cache reads and writes);
   * the loop record `<results>/(guidance-)improvements/<target>/<ts>.json`
     (1 MiB cap): only `models.arm`, `models.proposal` and, for a skill, the
     trigger loop's `description_half.usage.total_calls`.
@@ -41,6 +42,17 @@ last snapshot by PARSED time across all trials, because one trial's own
 between trials, so they fall inside the bracket whenever a candidate is
 measured (a run that stops before the candidate leaves them after the last
 snapshot: uncovered).
+
+Allowance points (schema 2, 2026-11-20): `points` prices what the record can
+from token counts by type, with the weight table evals/usage-weights.lock pins
+(harness/allowance_points.py): each trial whose every role has token counts,
+and the proposal call when its counts and `models.proposal` are known.
+`points.usd` is the dollars of those parts, so a reader charges the rest of
+the record's dollars at `legacy_usd_per_point`; `complete` says nothing in
+the trials or the proposal was left to dollars. The trigger loop's calls
+report no tokens and are never in it. Null when nothing was priced from
+tokens. Records written before (schema 1) carry no `points` and a four-key
+`proposal`, and still validate.
 """
 
 from __future__ import annotations
@@ -61,7 +73,15 @@ if str(SCRIPTS) not in sys.path:
 
 import improve_outcomes  # noqa: E402  - stdlib-only: the shared name patterns
 
-SCHEMA_VERSION = 1
+HARNESS = SCRIPTS.parent / "harness"
+if str(HARNESS) not in sys.path:
+    sys.path.insert(0, str(HARNESS))
+
+import allowance_points  # noqa: E402  - the weight table evals/usage-weights.lock pins
+
+SCHEMA_VERSION = 2
+#: Schema 1 (2026-11-02 to 2026-11-20): no `points`, a four-key proposal.
+SCHEMA_VERSIONS = (1, 2)
 MODES = ("improve", "guidance-improve")
 #: The target pattern per mode: the fire workflow's own (improve_outcomes.KINDS).
 TARGET_RE = {mode: improve_outcomes.KINDS[mode]["name_re"] for mode in MODES}
@@ -89,6 +109,9 @@ MAX_USD = 1000
 MAX_TOKENS = 10 ** 9
 MAX_SECONDS = 86400
 MAX_COUNT = 10 ** 4
+#: Allowance points: 100 is the whole week; a record never charges more than
+#: a hundred weeks, a sanity bound only.
+MAX_POINTS = 10 ** 4
 #: A sanity bound only (section 4, later, decides what gets charged): a
 #: snapshot or the end time sits within [stamp - 5 min, stamp + 24 h] of the
 #: run id's stamp, which the fire workflow mints before the routine starts.
@@ -112,9 +135,16 @@ RECORD_KEYS = ("schema_version", "run_id", "mode", "target", "exit_code",
                "judge_calls", "agent_usd", "judge_usd", "guard_usd",
                "usd_unpriced_trials", "sides", "proposal", "trigger_calls",
                "models", "busy_seconds", "span_seconds", "snapshots",
-               "omitted", "first", "last", "delta", "delta_reason", "ended_at")
+               "omitted", "first", "last", "delta", "delta_reason", "ended_at",
+               "points")
 SIDE_KEYS = ("trials", "usd")
-PROPOSAL_KEYS = ("calls", "usd", "input_tokens", "output_tokens")
+PROPOSAL_TOKENS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                   "cache_creation_input_tokens")
+PROPOSAL_KEYS = ("calls", "usd") + PROPOSAL_TOKENS
+POINTS_KEYS = ("points", "low", "high", "usd", "complete")
+#: What schema 1 had, before `points` and the proposal's cache tokens.
+RECORD_KEYS_V1 = RECORD_KEYS[:-1]
+PROPOSAL_KEYS_V1 = PROPOSAL_KEYS[:4]
 POINT_KEYS = ("at", "utilization", "resets_at")
 MODEL_KEYS = ("arm", "proposal")
 
@@ -220,9 +250,11 @@ def check_record(doc) -> None:
     writes one: exact keys, every value typed and bounded, and the derived
     values (outcome, stage, sums, span, delta) consistent with their
     inputs. It never trusts a derived field it can recompute."""
-    _keys(doc, "record", RECORD_KEYS)
-    if doc["schema_version"] != SCHEMA_VERSION or not _is_int(doc["schema_version"]):
+    version = doc.get("schema_version") if isinstance(doc, dict) else None
+    if not _is_int(version) or version not in SCHEMA_VERSIONS:
+        _keys(doc, "record", RECORD_KEYS)
         raise Invalid("schema_version: unsupported")
+    _keys(doc, "record", RECORD_KEYS if version == 2 else RECORD_KEYS_V1)
     stamp = stamp_of(doc["run_id"])
     if doc["mode"] not in MODES:
         raise Invalid("mode: not improve or guidance-improve")
@@ -258,13 +290,14 @@ def check_record(doc) -> None:
         raise Invalid("sides: dollars do not add up to agent+judge+guard")
     proposal = doc["proposal"]
     if proposal is not None:
-        _keys(proposal, "proposal", PROPOSAL_KEYS)
+        _keys(proposal, "proposal", PROPOSAL_KEYS if version == 2 else PROPOSAL_KEYS_V1)
         _int(proposal["calls"], "proposal.calls", MAX_COUNT)
         # A call that failed or timed out was still billed: usd and tokens
         # are null then (#577, the 2026-11-02 review).
         _num(proposal["usd"], "proposal.usd", 0, MAX_USD, null=True)
-        _int(proposal["input_tokens"], "proposal.input_tokens", MAX_TOKENS, null=True)
-        _int(proposal["output_tokens"], "proposal.output_tokens", MAX_TOKENS, null=True)
+        for name in proposal:
+            if name in PROPOSAL_TOKENS:
+                _int(proposal[name], f"proposal.{name}", MAX_TOKENS, null=True)
     stage = doc["stage_reached"]
     expected = ("candidate" if trials["candidate"] else
                 "none" if not trials["baseline"] else
@@ -308,6 +341,29 @@ def check_record(doc) -> None:
     if not isinstance(ended, str) or not AT_RE.fullmatch(ended) \
             or not _in_window(parse_at(ended), stamp):
         raise Invalid("ended_at: not a UTC timestamp in the run id's window")
+    if version == 2:
+        _check_points(doc)
+
+
+def _check_points(doc: dict) -> None:
+    """`points`: null, or its numbers bounded, `low <= points <= high`, and
+    `usd` no more than the dollars the record holds."""
+    points = doc["points"]
+    if points is None:
+        return
+    _keys(points, "points", POINTS_KEYS)
+    for name in ("points", "low", "high"):
+        _num(points[name], f"points.{name}", 0, MAX_POINTS)
+    if not points["low"] - TOLERANCE <= points["points"] <= points["high"] + TOLERANCE:
+        raise Invalid("points: not within low..high")
+    _num(points["usd"], "points.usd", 0, MAX_USD)
+    proposal = doc["proposal"]
+    held = sum(doc[f"{role}_usd"] for role in ROLES) + (
+        proposal["usd"] if proposal is not None and proposal["usd"] is not None else 0)
+    if points["usd"] > held + TOLERANCE:
+        raise Invalid("points.usd: more than the record's dollars")
+    if not isinstance(points["complete"], bool):
+        raise Invalid("points.complete: not a bool")
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +460,8 @@ def collect_trials(results: Path, mode: str, stamp: datetime) -> dict:
              "side_usd": {side: 0 for side in SIDES},
              "role_usd": {role: 0 for role in ROLES},
              "unpriced": 0, "agent_calls": 0, "judge_calls": 0,
-             "busy": 0, "busy_known": False, "omitted": 0, "points": set()}
+             "busy": 0, "busy_known": False, "omitted": 0, "points": set(),
+             "token_blocks": [], "token_usd": 0, "token_trials": 0}
     runs = results / "runs"
     for path in summary_paths(runs):
         side = side_of(path.parent.relative_to(runs), mode)
@@ -427,6 +484,10 @@ def collect_trials(results: Path, mode: str, stamp: datetime) -> dict:
             for role, cost in usd.items():
                 tally["role_usd"][role] += cost
                 tally["side_usd"][side] += cost
+        if _from_tokens(measured):
+            tally["token_blocks"].append(measured)
+            tally["token_trials"] += 1
+            tally["token_usd"] += sum(usd.values()) if usd is not None else 0
         seconds = _seconds(measured)
         if seconds is not None:
             tally["busy"] += seconds
@@ -442,6 +503,46 @@ def collect_trials(results: Path, mode: str, stamp: datetime) -> dict:
             if point is not None:
                 tally["points"].add(point)
     return tally
+
+
+def _from_tokens(measured: dict) -> bool:
+    """Whether every role of one trial that made a call has token counts the
+    pinned table prices (no legacy rate is given, so any other role reads
+    as unpriced)."""
+    estimate = allowance_points.estimate_blocks([measured])
+    return not estimate["unpriced_roles"] and not estimate["legacy_roles"]
+
+
+def _proposal_records(proposal: dict | None, model: str | None) -> list | None:
+    """The package records of the proposal call, [] when there was none, or
+    None when it cannot be priced from tokens (a schema 1 file, a failed
+    call, no model id, or a model the table does not price)."""
+    if proposal is None or not proposal["calls"]:
+        return []
+    if model is None or any(proposal.get(name) is None for name in PROPOSAL_TOKENS):
+        return None
+    block = {"calls": proposal["calls"], "models": {model: {
+        name: proposal[name] for name in PROPOSAL_TOKENS}}}
+    estimate = allowance_points.estimate_blocks([{"agent": block}])
+    return None if estimate["unpriced_roles"] or estimate["legacy_roles"] else [block]
+
+
+def allowance(tally: dict, proposal: dict | None, model: str | None) -> dict | None:
+    """The record's `points` (module docstring, schema 2), or None when
+    nothing was priced from tokens."""
+    blocks = list(tally["token_blocks"])
+    usd = tally["token_usd"]
+    proposal_blocks = _proposal_records(proposal, model)
+    if proposal_blocks:
+        blocks.append({"agent": proposal_blocks[0]})
+        usd += proposal["usd"] or 0
+    if not blocks:
+        return None
+    estimate = allowance_points.estimate_blocks(blocks)
+    trials = sum(tally["trials"].values())
+    return {"points": estimate["points"], "low": estimate["low"],
+            "high": estimate["high"], "usd": usd,
+            "complete": tally["token_trials"] == trials and proposal_blocks is not None}
 
 
 def _snapshot_point(shot, stamp: datetime) -> tuple | None:
@@ -480,15 +581,17 @@ def read_proposal(results: Path) -> dict | None:
     type-checked and copied by name, or None."""
     path = _one(_timestamped(results, "proposal-"))
     doc = _load(path, PROPOSAL_CAP) if path else None
-    if not isinstance(doc, dict) or set(doc) != set(PROPOSAL_KEYS):
+    if not isinstance(doc, dict) or set(doc) not in (set(PROPOSAL_KEYS),
+                                                      set(PROPOSAL_KEYS_V1)):
         return None
+    # A file from before the cache tokens were kept reads them as unknown.
     out = {"calls": doc["calls"], "usd": doc["usd"],
-           "input_tokens": doc["input_tokens"], "output_tokens": doc["output_tokens"]}
+           **{name: doc.get(name) for name in PROPOSAL_TOKENS}}
     try:
         _int(out["calls"], "calls", MAX_COUNT)
         _num(out["usd"], "usd", 0, MAX_USD, null=True)
-        _int(out["input_tokens"], "input_tokens", MAX_TOKENS, null=True)
-        _int(out["output_tokens"], "output_tokens", MAX_TOKENS, null=True)
+        for name in PROPOSAL_TOKENS:
+            _int(out[name], name, MAX_TOKENS, null=True)
     except Invalid:
         return None
     return out
@@ -554,6 +657,7 @@ def summarize(results: Path, run_id: str, mode: str, target: str,
         "first": None, "last": None, "delta": None,
         "delta_reason": "fewer_than_two_snapshots",
         "ended_at": format_at(now.astimezone(timezone.utc)),
+        "points": allowance(tally, proposal, loop["models"]["proposal"]),
     }
     if len(points) >= 2:
         (start, u0, r0), (end, u1, r1) = points[0], points[-1]

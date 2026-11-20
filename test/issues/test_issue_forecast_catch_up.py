@@ -4,8 +4,10 @@ no results tree, no network, no clock."""
 
 from __future__ import annotations
 
+import json
 import math
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -111,7 +113,8 @@ class Forecast(unittest.TestCase):
     BUDGET = {"weekly_cap": 0.25, "legacy_usd_per_point": 1 / 0.15}
     BATCH = {"pairs_per_cell": 15, "rates": {"skill": 1.0, "guidance": 1.0}}
 
-    def run_forecast(self, cells=None, gates=None, budget=None, **assumptions):
+    def run_forecast(self, cells=None, gates=None, budget=None, measured_rate=None,
+                     **assumptions):
         def proj(cell, ctx):
             if cell["skill"] == "a":
                 return projection(pairs=4, keep=4, remove=math.inf, remaining=20)
@@ -121,7 +124,8 @@ class Forecast(unittest.TestCase):
             return fc.forecast(gates or self.GATES, cells or self.CELLS, budget or self.BUDGET,
                                self.BATCH, None,
                                {"fire_overhead_usd": 0.0, **assumptions},
-                               frozenset({"skipped-one"}))
+                               frozenset({"skipped-one"}),
+                               measured_rate=measured_rate)
 
     def test_automatic_spend_breaks_down_non_eval_points(self):
         automatic = {"as_of": "2026-11-15T18:00:00+00:00", "unmeasured": ["Job x"],
@@ -393,3 +397,90 @@ class EvalsRunFirst(unittest.TestCase):
         pace = fc.eval_pace(runs, 25.0, reset + fc.timedelta(days=14))
         self.assertEqual(pace, {"points_per_hour": 1.25, "weeks": 1})
         self.assertIsNone(fc.eval_pace(runs[-1:], 25.0, reset + fc.timedelta(days=14)))
+
+
+class MeterRange(unittest.TestCase):
+    """The usage endpoint rounds, so the rise is a range."""
+
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    END = _dt(2026, 11, 15, 12, tzinfo=_tz.utc)
+
+    def test_the_rise_is_a_range_beside_the_central_figure(self):
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        h = lambda x: reset + self._td(hours=x)  # noqa: E731
+        # 10 -> 30 -> 50 never falls (one run, 40 points read, truly 39 to 41);
+        # the drop to 20 starts a second run, 20 -> 25 (4 to 6 points).
+        readings = [(h(0), 10.0), (h(20), 30.0), (h(40), 50.0), (h(41), 20.0), (self.END, 25.0)]
+        m = fc.meter_non_eval_points(readings, [], self.END)
+        self.assertEqual(m["meter_rise_points"], 45.0)
+        self.assertAlmostEqual(m["meter_rise_points_low"], 39.0 + 4.0)
+        self.assertAlmostEqual(m["meter_rise_points_high"], 41.0 + 6.0)
+        days = (self.END - reset).total_seconds() / 86400
+        self.assertAlmostEqual(m["points_per_week_low"], 43.0 * 7 / days)
+        self.assertAlmostEqual(m["points_per_week_high"], 47.0 * 7 / days)
+        self.assertLess(m["points_per_week_low"], m["points_per_week"])
+        self.assertLess(m["points_per_week"], m["points_per_week_high"])
+
+
+def _trial_blocks(cost):
+    return {"scope": "trial", "agent": {
+        "calls": 1, "cost_usd": cost, "models": {"claude-sonnet-5-5": {
+            "input_tokens": 1000, "output_tokens": 2000, "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400, "cost_usd": cost}}}}
+
+
+class MeasuredRate(unittest.TestCase):
+    """Eval dollars per point come from the ingested runs' token estimates."""
+
+    def tree(self, runs):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        for run_id, measured in runs.items():
+            path = root / "routine-results" / run_id / "s" / "t1" / "summary.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"usage": {"measured": measured}}), encoding="utf-8")
+        return root
+
+    def test_dollars_over_the_estimates_points_with_its_range(self):
+        import allowance_points
+        root = self.tree({"20261030T100000Z-aaaaaa": _trial_blocks(2.0),
+                          "20261030T110000Z-bbbbbb": _trial_blocks(3.0)})
+        got = fc.measured_usd_per_point(root, 1 / 0.15)
+        est = [allowance_points.estimate_blocks([_trial_blocks(c)]) for c in (2.0, 3.0)]
+        points, low, high = (sum(e[k] for e in est) for k in ("points", "low", "high"))
+        self.assertEqual(got["runs"], 2)
+        self.assertAlmostEqual(got["central"], 5.0 / points)
+        self.assertAlmostEqual(got["low"], 5.0 / high)
+        self.assertAlmostEqual(got["high"], 5.0 / low)
+        self.assertLessEqual(got["low"], got["central"])
+        self.assertLessEqual(got["central"], got["high"])
+
+    def test_a_run_not_priced_wholly_from_tokens_is_left_out_and_none_means_none(self):
+        no_tokens = {"scope": "trial", "agent": {"calls": 1, "cost_usd": 1.0}}
+        self.assertIsNone(fc.measured_usd_per_point(
+            self.tree({"20261030T100000Z-aaaaaa": no_tokens}), 1 / 0.15))
+        self.assertIsNone(fc.measured_usd_per_point(self.tree({}), 1 / 0.15))
+
+    def test_forecast_uses_the_measured_rate_and_records_its_source(self):
+        measured = {"central": 6.0, "low": 5.0, "high": 8.0, "runs": 3}
+        doc = Forecast("run_forecast").run_forecast(measured_rate=measured)
+        inputs = doc["inputs"]
+        self.assertEqual(inputs["usd_per_point"], [5.0, 8.0])
+        self.assertEqual(inputs["usd_per_point_central"], 6.0)
+        self.assertIn("3 ingested runs priced from token counts", inputs["points_per_usd_source"])
+        # Capacity at the cap's 25 points follows the measured range.
+        self.assertAlmostEqual(doc["capacity_usd_per_week"]["plan_central"], 25 * 6.5)
+
+    def test_an_assumption_still_wins_over_the_measured_rate(self):
+        measured = {"central": 6.0, "low": 5.0, "high": 8.0, "runs": 3}
+        doc = Forecast("run_forecast").run_forecast(
+            measured_rate=measured, usd_per_point_low=4.0, usd_per_point_high=9.0)
+        self.assertEqual(doc["inputs"]["usd_per_point"], [4.0, 9.0])
+
+    def test_with_no_measured_rate_the_legacy_rate_is_the_fallback(self):
+        doc = Forecast("run_forecast").run_forecast()
+        self.assertEqual(doc["inputs"]["usd_per_point"], [1 / 0.15, 1 / 0.15])
+        self.assertEqual(doc["inputs"]["points_per_usd_source"],
+                         "evals/budget.yml legacy_usd_per_point")
+

@@ -219,6 +219,31 @@ def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None)
             "complete": legacy_roles == 0 and unpriced == 0}
 
 
+#: Who read a whole-percent weekly-meter value, as `usage_weights.reading_bounds`
+#: names them: the CLI's meter event (run_eval's snapshots) truncates, and the
+#: usage endpoint BOXY's collector stores (spend/meter-history.csv) rounds.
+CLI = "cli"
+USAGE_ENDPOINT = "usage_endpoint"
+
+
+def reading_range(percent, reader: str) -> tuple[float, float]:
+    """[low, high) in points that the true meter value lies in, given a
+    whole-percent reading from `reader` (`CLI` or `USAGE_ENDPOINT`). A run's
+    snapshot stores a fraction (0.63): pass it times 100."""
+    low, high = _package().reading_bounds(percent, reader)
+    return float(low), float(high)
+
+
+def delta_range(before, after, reader: str) -> tuple[float, float]:
+    """(low, high) in points of how far the meter truly moved between two
+    whole-percent readings from `reader`: the later reading's range less the
+    earlier one's. A CLI delta of 0 is anything below a point either way, so a
+    one-run delta under a point says nothing of the run's own use."""
+    b_low, b_high = reading_range(before, reader)
+    a_low, a_high = reading_range(after, reader)
+    return a_low - b_high, a_high - b_low
+
+
 def estimate_session(models, usd=None, legacy_usd_per_point=None,
                      lock: Path | None = None) -> dict:
     """The allowance estimate of one session's calls (a scheduled-task fire

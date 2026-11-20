@@ -9,8 +9,38 @@ the public explorer document carries the same rows and summaries for public subj
 Nothing is rounded here.
 """
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+import allowance_points  # noqa: E402
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def meter_range(week):
+    """(low, high) points the weekly meter truly moved over a run, from the
+    seven_day window's `from` and `to` fractions as the CLI read them (whole
+    percents, truncated: allowance_points.delta_range), the low end held at
+    zero. (None, None) when the delta is missing or the window reset."""
+    if not (isinstance(week, dict) and _number(week.get("delta"))
+            and _number(week.get("from")) and _number(week.get("to"))
+            and week.get("window_reset") is not True):
+        return None, None
+    low, high = allowance_points.delta_range(
+        week["from"] * 100, week["to"] * 100, allowance_points.CLI)
+    return max(0.0, low), max(0.0, high)
+
+
+def estimated_points(usage):
+    """`usage.allowance_estimate.points`: the run's allowance points
+    estimated from its token counts by type, None when absent."""
+    estimate = usage.get("allowance_estimate") if isinstance(usage, dict) else None
+    points = estimate.get("points") if isinstance(estimate, dict) else None
+    return float(points) if _number(points) else None
 
 
 def iso(dt):
@@ -102,7 +132,9 @@ def scored_runs(er, report_base):
                     "judge": "skipped: checks decided" if (g.get("judge") or {}).get("status") == "skipped" else "not run",
                     "with_share": wp / tot if tot else None, "without_share": wop / tot if tot else None,
                     "cost_usd": add_costs(cost(g), cost(gm)),
-                    "meter_points": None, "account_week_after": None,
+                    "meter_points": None, "meter_points_low": None,
+                    "meter_points_high": None, "estimated_points": None,
+                    "account_week_after": None,
                     "cli": cli_version(g), "report_url": url,
                 })
                 continue
@@ -132,6 +164,7 @@ def scored_runs(er, report_base):
             woj, _ = judge(wo)
             sub = path.relative_to(base).parts
             md = ((w.get("usage") or {}).get("meter_delta") or {}).get("windows", {}).get("seven_day") or {}
+            meter_low, meter_high = meter_range(md)
             rows.append({
                 "run_id": run.name, "fired_at": fired_at(run.name),
                 "fixture": rel[0] + ("/" + sub[0] if len(sub) > 2 else ""), "skill": rel[0],
@@ -142,6 +175,8 @@ def scored_runs(er, report_base):
                 "with_share": wp / tot if tot else None, "without_share": wop / tot if tot else None,
                 "cost_usd": add_costs(cost(w), cost(wo)),
                 "meter_points": None if md.get("delta") is None else md["delta"] * 100,
+                "meter_points_low": meter_low, "meter_points_high": meter_high,
+                "estimated_points": estimated_points(w.get("usage")),
                 "account_week_after": None if md.get("to") is None else md["to"] * 100,
                 "cli": cli_version(w), "report_url": url,
             })

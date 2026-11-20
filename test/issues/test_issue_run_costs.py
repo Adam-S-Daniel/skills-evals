@@ -107,11 +107,66 @@ class RunCostsTests(unittest.TestCase):
         # Adam's standing rule: the overrun is the p95 of the largest call.
         # Largest calls are 1.00 (run A) and 2.00 (run B) dollars: p95 1.95.
         expected = 1.95 * 3 / 4.05 / 100
-        self.assertIn(f"per_run_overrun for evals/budget.yml (p95 of the largest call): "
-                      f"{expected:.4f}", printed.getvalue())
-        self.assertIn("points_per_usd for evals/budget.yml (allowance per dollar): "
-                      f"{3 / 4.05 / 100:.5f}", printed.getvalue())
+        self.assertIn("per_run_overrun for evals/budget.yml (p95 of the largest call, "
+                      f"at the meter rate): {expected:.4f}", printed.getvalue())
+        # The key no longer exists in budget.yml, so no line suggests it.
+        self.assertNotIn("points_per_usd for evals/budget.yml", printed.getvalue())
         self.assertEqual(len(out.read_text(encoding="utf-8").splitlines()), 4)
+
+
+    def test_meter_delta_range_columns(self):
+        # Run A's delta reads 40 to 41 in the CLI's truncated whole
+        # percents: the meter truly moved more than 0 and less than 2.
+        row = self.table()["run-a"]
+        self.assertAlmostEqual(row["meter_delta_points_low"], 0.0)
+        self.assertAlmostEqual(row["meter_delta_points_high"], 2.0)
+        self.assertEqual(self.table()["run-c"]["meter_delta_points_low"], "")
+        self.assertEqual(self.table()["run-c"]["meter_delta_points_high"], "")
+
+
+def _tokens_trial(cost, delta=None):
+    """A trial whose agent role carries token counts by type."""
+    doc = _trial(cost, delta=delta)
+    doc["usage"]["measured"] = {"scope": "trial", "agent": {
+        "calls": 1, "cost_usd": cost, "models": {"claude-sonnet-5-5": {
+            "input_tokens": 1000, "output_tokens": 2000, "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400, "cost_usd": cost}}}}
+    return doc
+
+
+class EstimatedPointsTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.tree = Path(self.tmp.name)
+        base = self.tree / "routine-results"
+        _write(base / "run-a/demo/case/with_skill/trial-1/summary.json",
+               _tokens_trial(2.0, delta=0.02))
+        _write(base / "run-b/demo/case/with_skill/trial-1/summary.json", _trial(1.0, delta=0.01))
+        self.table = {r["run_id"]: r for r in run_costs.rows(run_costs.collect(self.tree))}
+
+    def test_rows_carry_estimated_points_when_tokens_priced_them(self):
+        import allowance_points
+        a = self.table["run-a"]
+        expected = allowance_points.estimate_blocks(
+            [_tokens_trial(2.0)["usage"]["measured"]])["points"]
+        self.assertGreater(expected, 0)
+        self.assertAlmostEqual(a["estimated_points"], expected)
+        self.assertEqual(a["estimated_points_from_tokens"], "yes")
+        self.assertEqual(self.table["run-b"]["estimated_points"], "")
+
+    def test_summary_reports_estimated_points_per_dollar_and_charges_the_call_at_it(self):
+        summary = run_costs.summarize(list(self.table.values()))
+        rate = self.table["run-a"]["estimated_points"] / 2.0
+        self.assertAlmostEqual(summary["estimated_points_per_usd"], rate)
+        self.assertEqual(summary["estimated_runs"], 1)
+        self.assertEqual(summary["largest_call_rate"], "estimated")
+        # Run A's 2.00 call is the largest, at the estimated rate.
+        self.assertAlmostEqual(summary["largest_call_points"][1.0], 2.0 * rate)
+        self.assertAlmostEqual(summary["points_per_usd"], 3 / 3.0)
+        text = "\n".join(run_costs.report(summary))
+        self.assertIn("estimated points per dollar", text)
+        self.assertIn("at the estimated rate", text)
 
 
 if __name__ == "__main__":

@@ -242,6 +242,22 @@ def telemetry_usage(role_blocks, budget_limits) -> dict:
     return run_eval._TELEMETRY._run_level()
 
 
+class ReadingRangeTests(unittest.TestCase):
+
+    def test_a_cli_reading_truncates_and_an_endpoint_reading_rounds(self):
+        self.assertEqual(ap.reading_range(63, ap.CLI), (63.0, 64.0))
+        self.assertEqual(ap.reading_range(63, ap.USAGE_ENDPOINT), (62.5, 63.5))
+
+    def test_a_delta_is_the_later_range_less_the_earlier_one(self):
+        self.assertEqual(ap.delta_range(63, 64, ap.CLI), (0.0, 2.0))
+        self.assertEqual(ap.delta_range(63, 63, ap.CLI), (-1.0, 1.0))
+        self.assertEqual(ap.delta_range(63, 66, ap.USAGE_ENDPOINT), (2.0, 4.0))
+
+    def test_an_unknown_reader_is_refused(self):
+        with self.assertRaises(ValueError):
+            ap.reading_range(63, "guess")
+
+
 class BudgetKeyTests(unittest.TestCase):
 
     def parse(self, rate) -> dict:

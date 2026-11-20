@@ -1523,6 +1523,67 @@ class EstimateTests(unittest.TestCase):
             code = ingest.main(["estimate", "--tree", str(self.tree), "--run-id", RUN_ID])
         self.assertEqual((code, out.getvalue()), (0, "estimated=true\n"))
 
+    @staticmethod
+    def tokens(cost: float) -> dict:
+        """A trial's `usage.measured` with token counts by type."""
+        return {"scope": "trial", "agent": {
+            "calls": 1, "cost_usd": cost, "models": {"claude-sonnet-5-5": {
+                "input_tokens": 1000, "output_tokens": 2000,
+                "cache_read_input_tokens": 3000,
+                "cache_creation_input_tokens": 400, "cost_usd": cost}}}}
+
+    def write_trial(self, run_id: str, name: str, usage: dict) -> None:
+        path = self.tree / "routine-results" / run_id / "s" / name / "summary.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"usage": usage}), encoding="utf-8")
+
+    def test_calibration_reports_the_meter_range_and_rate_range(self):
+        # Meter 40 to 42 in the CLI's truncated whole percents: it truly
+        # moved 1 to 3 points, 2 as read; 50 to 50 is 0 to 1 once clamped.
+        # Fractions of the week, like meter_points.
+        for k, (before, after) in enumerate(((0.40, 0.42), (0.50, 0.50))):
+            self.write_trial(self.EARLIER, f"t{k}", {
+                "started_at": f"invocation-{k}", "cost_estimate": self.cost(1.0, 0.5),
+                "meter_delta": {"windows": {"seven_day": {
+                    "from": before, "to": after,
+                    "delta": round(after - before, 6), "window_reset": False}}},
+                "measured": {}})
+        found = ingest.calibrate(self.tree, RUN_ID)
+        self.assertEqual(found["invocations"], 2)
+        self.assertAlmostEqual(found["meter_points"], 0.02)
+        self.assertAlmostEqual(found["meter_points_low"], 0.01)
+        self.assertAlmostEqual(found["meter_points_high"], 0.04)
+        self.assertAlmostEqual(found["points_per_usd_low"], 0.01 / 1.0)
+        self.assertAlmostEqual(found["points_per_usd_high"], 0.04 / 1.0)
+
+    def test_estimated_points_come_from_each_invocations_tokens(self):
+        import allowance_points
+        for k, cost in enumerate((0.5, 1.5)):
+            self.write_trial(RUN_ID, f"t{k}", {
+                "started_at": f"invocation-{k}", "meter_delta": None,
+                "cost_estimate": self.cost(cost), "measured": self.tokens(cost)})
+        # An invocation with only dollars-free, token-free trials is unpriced.
+        self.write_trial(RUN_ID, "t2", {
+            "started_at": "invocation-2", "meter_delta": None,
+            "cost_estimate": self.cost(0.1), "measured": {}})
+        ingest.estimate(self.tree, RUN_ID)
+        doc = self.written()
+        self.assertEqual(doc["schema_version"], 2)
+        first, second, third = doc["invocations"]
+        want = [allowance_points.estimate_blocks([self.tokens(c)]) for c in (0.5, 1.5)]
+        for got, expect in zip((first, second), want):
+            self.assertAlmostEqual(got["estimated_points"]["points"], expect["points"])
+            self.assertAlmostEqual(got["estimated_points"]["low"], expect["low"])
+            self.assertAlmostEqual(got["estimated_points"]["high"], expect["high"])
+            self.assertTrue(got["estimated_points"]["complete"])
+        self.assertIsNone(third["estimated_points"])
+        self.assertAlmostEqual(doc["estimated_points"]["points"],
+                               want[0]["points"] + want[1]["points"])
+        # Not every invocation is priced, so the sum is a floor.
+        self.assertFalse(doc["estimated_points"]["complete"])
+        # The meter figure stays beside it, labeled as before.
+        self.assertIsNone(doc["points"])
+
     def test_the_workflow_estimates_after_placing_and_before_adding(self):
         bodies = [body for _, body in run_blocks(load(INGEST))
                   if "ingest_routine_results.py estimate" in body]
