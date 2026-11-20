@@ -310,6 +310,11 @@ class ReadingBoundTests(TreeCase):
 
 class MainWiringTests(TreeCase):
 
+    def setUp(self):
+        super().setUp()
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
+
     def test_main_matches_with_the_fire_details(self):
         self.put(record(stamp(START)))
         budget_file = self.tree / "budget.yml"

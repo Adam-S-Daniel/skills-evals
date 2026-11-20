@@ -229,6 +229,29 @@ an `as_of` more than `LOOP_RESERVE_MAX_AGE` (3 days) old, refuses with a
 message naming the file and the fix: no hidden default. `pace_room` and the
 account stop are unchanged.
 
+Pace hold (Adam, 2026-11-20: "I am far ahead of usage pace", put "the
+kibosh on such runs"): the cap above is the loop's share of the week, but it
+was a floor, so with the whole account well ahead of pace the loop still
+spent its share (2026-11-20: 74% used with 57.5% of the week gone, and the
+guard still let two fires through). Now `account` sets `pace_hold` when the
+newest usable reading, taken from the top of its range as `pace` takes it,
+is above the same pace line `pace` releases room under,
+`stop_when_account_above` times the share of the week gone. While it holds,
+`room` is at most zero, `fits` is 0 and `check` refuses every mode with
+`PACE_REFUSAL`, the improve per-kind floor included: Adam's own work comes
+first. It lifts by itself once the reading falls back under the line (time
+passing raises the line) or the week resets.
+
+It fails safe: no usable reading (none ingested, older than `PACE_MAX_AGE`,
+from the week before the reset, or out of range) holds too. Only an eval
+fire's ingested results bring a reading, so that hold would never lift; one
+eval fire may go as the pace probe (`pace_probe`, through `refresh`, so the
+weekly planner plans it) when there is no usable reading, no eval fire is
+still without results from the last `PENDING_FULL_HOLD`, and no eval fire
+started in the last `PACE_PROBE_INTERVAL`. The probe's own run still stops at
+`stop_when_account_above`, and its results bring the reading that decides the
+hold. With the start times of the week's eval fires unknown, no probe goes.
+
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
 
@@ -305,6 +328,10 @@ EPSILON = 1e-9
 #: release room on; one more than PACE_CLOCK_SKEW ahead of `now` is not read.
 PACE_MAX_AGE = timedelta(hours=12)
 PACE_CLOCK_SKEW = timedelta(minutes=5)
+#: With no usable reading, one eval fire may go as the pace probe at most this
+#: often (module docstring, "Pace hold"): a reading lasts `PACE_MAX_AGE`, so
+#: a held account sees about two probes a day.
+PACE_PROBE_INTERVAL = timedelta(hours=6)
 #: What one improve fire costs, in eval runs' dollars, for a fire no cost
 #: record matches. Recomputed 2026-11-13 (#577) by `allowance_guard.py units`
 #: from the records on persistent/eval-results: (agent + judge + guard +
@@ -361,6 +388,11 @@ IMPROVE_CAP_REFUSAL = ("::error::improve cap: share allows {allowed}, used {used
 #: The 5-hour stop's refusal (skills-evals#921): no number, only which limit.
 SESSION_REFUSAL = ("::error::the account's 5-hour window is at or above "
                    "stop_when_session_above; nothing was fired (evals/budget.yml, #921)")
+
+
+#: The pace hold's refusal (Adam, 2026-11-20): no number, only which limit.
+PACE_REFUSAL = ("::error::the account is ahead of its weekly pace, or has no recent "
+                "reading; nothing was fired (allowance_guard.py, pace hold)")
 
 
 class GuardError(Exception):
@@ -874,6 +906,27 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     return room, float(used), elapsed
 
 
+def ahead_of_pace(used, elapsed, limits: dict) -> bool:
+    """Whether the account reading `used` (a fraction, as `pace` returns it)
+    is above the pace line, `stop_when_account_above` times `elapsed`, from
+    the top of its range as `pace` reads it (module docstring, "Pace hold").
+    No reading (`used` or `elapsed` None) counts as ahead: fail safe."""
+    if used is None or elapsed is None:
+        return True
+    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    return top / 100 > limits["stop_when_account_above"] * elapsed + EPSILON
+
+
+def pace_probe(used, recent: int, eval_started, now: datetime) -> bool:
+    """Whether one eval fire may go only to bring a reading while there is
+    none (module docstring, "Pace hold"): no usable reading, no eval fire
+    from the last `PENDING_FULL_HOLD` still without results, and the week's
+    eval fire start times known with none in the last `PACE_PROBE_INTERVAL`."""
+    if used is not None or recent or eval_started is None:
+        return False
+    return not any(start > now - PACE_PROBE_INTERVAL for start in eval_started)
+
+
 def session_hold(runs: list[Path], limits: dict, now: datetime) -> bool:
     """Whether the newest snapshot's 5-hour window reads at or above
     `stop_when_session_above` and has not reset yet (skills-evals#921).
@@ -1110,7 +1163,10 @@ def account(tree: Path, limits: dict, now: datetime,
     if improve_started:
         finished = min(improve_7d - covered, max(0, sum(
             1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
+    hold = ahead_of_pace(used, elapsed, limits)
     return {"session_hold": session_hold(runs, limits, now),
+            "pace_hold": hold,
+            "pace_probe": hold and pace_probe(used, recent, eval_started, now),
             "spent": spent, "pending": pending, "committed": committed,
             "bound": bound, "stop_left": stop_left,
             "stop": limits["stop_when_account_above"], "runs": len(runs),
@@ -1171,6 +1227,9 @@ def room(state: dict) -> float:
                state.get("pace_room", 0.0) - state["pending"])
     if state.get("stop_left") is not None:
         left = min(left, state["stop_left"])
+    if state.get("pace_hold"):
+        # Ahead of pace, or no reading: nothing for the loop (Pace hold).
+        left = min(left, 0.0)
     return left
 
 
@@ -1181,7 +1240,7 @@ def fits(state: dict) -> int:
     week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
     both: the snapshot behind the pace room may predate those fires, and
     without it every fire would fit until the next snapshot is ingested."""
-    if state.get("session_hold"):
+    if state.get("session_hold") or state.get("pace_hold"):
         return 0
     left = room(state) + EPSILON
     if left < state["reservation"]:
@@ -1272,6 +1331,10 @@ def describe(state: dict) -> str:
         allowed, used, _ = improve_numbers(state, IMPROVE_MODES[0])
         line += (f"; improve cap {'none' if allowed is None else allowed}, "
                  f"used {used}")
+    if state.get("pace_hold"):
+        line += ("; PACE HOLD: no fire goes"
+                 + (" but one pace probe, to bring a reading"
+                    if state.get("pace_probe") else ""))
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -1292,6 +1355,9 @@ def check(state: dict, mode: str = "eval") -> str | None:
     window at its stop (`session_hold`, #921) refuses every mode first."""
     if state.get("session_hold"):
         return SESSION_REFUSAL
+    if state.get("pace_hold"):
+        # Only the pace probe goes: an eval fire, to bring a reading.
+        return None if mode == "eval" and state.get("pace_probe") else PACE_REFUSAL
     if mode in IMPROVE_MODES:
         if not improve_cap(state, mode):
             allowed, used, mine = improve_numbers(state, mode)
@@ -1313,6 +1379,9 @@ def refresh(state: dict) -> bool:
     and no eval fire from the last `PENDING_FULL_HOLD` is still without
     results. Its own reservation is held in full, and the in-run stop
     still bounds it."""
+    if state.get("pace_hold"):
+        # Held: only the pace probe, when there is no reading at all.
+        return bool(state.get("pace_probe"))
     if not state.get("improve_finished") or state.get("recent"):
         return False
     # A reading at or past the in-run stop: the fire would stop at once.
@@ -1538,7 +1607,9 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     if refusal is not None:
         print(refusal)
         return REFUSED_EXIT
-    if args.mode not in IMPROVE_MODES and fits(state) < 1:
+    if state.get("pace_hold"):
+        print("allowed as the pace probe: its results bring an account reading")
+    elif args.mode not in IMPROVE_MODES and fits(state) < 1:
         print("allowed as the one refresh fire: its results bring a newer account reading")
     return 0
 
