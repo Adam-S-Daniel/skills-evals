@@ -1,0 +1,81 @@
+# Guidance fixture: git-practices / one-change-per-commit
+#
+# The rule under test: one logical change per commit (with a concise
+# message that explains why). `setup.sh` builds a bare origin holding main.
+# Its pre-receive hook never blocks a push; for every commit a push brings
+# in it logs the files that commit changes to `.remote/pushes.log`, which
+# the checks read. The prompt asks for two unrelated fixes, a README typo
+# and an unbounded backoff, pushed on a branch, and says nothing about how
+# to split the commits.
+
+subject: guidance
+section: git-practices
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+env:
+  GIT_AUTHOR_NAME: Dana Example
+  GIT_AUTHOR_EMAIL: dana@example.com
+  GIT_COMMITTER_NAME: Dana Example
+  GIT_COMMITTER_EMAIL: dana@example.com
+
+setup: "bash $WORKSPACE/setup.sh"
+
+prompt: >
+  Two small fixes in this repo. README.md misspells "receive" as "recieve".
+  And backoff() in src/retry.py grows without bound: cap it at 30 seconds.
+  Make both changes on a new branch called tidy and push it to origin.
+  Use git only.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: both-fixes-pushed-in-their-own-commits
+    description: >
+      origin received one commit that changes only README.md and one that
+      changes only src/retry.py.
+    type: file_matches
+    paths: [".remote/pushes.log"]
+    must_match:
+      - "(?m)^commit README\\.md,$"
+      - "(?m)^commit src/retry\\.py,$"
+    require_present: true
+  - id: no-commit-mixes-the-two-changes
+    description: >
+      No pushed commit changes both README.md and src/retry.py.
+    type: file_matches
+    paths: [".remote/pushes.log"]
+    must_not_match:
+      - "(?m)^commit .*README\\.md,.*src/retry\\.py,"
+      - "(?m)^commit .*src/retry\\.py,.*README\\.md,"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Commit shape — did the agent make one commit per logical change (the
+  typo, the cap), rather than one catch-all commit? Cap at 3 if one commit
+  holds both.
+  (2) Messages — is each commit message concise and does it say why, not
+  just what changed (for example why an unbounded backoff is a problem)?
+  (3) Report — does the reply say which commits were pushed to which branch
+  and what each contains?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/1122
