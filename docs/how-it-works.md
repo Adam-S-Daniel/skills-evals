@@ -211,8 +211,10 @@ above the pace line, `stop_when_account_above` times the share of the week
 gone; the weekly planner, the draft-skill lane and the scaffold supply read
 the same zero room. No usable reading holds too (fail safe), except for one
 eval fire, the pace probe, at most every six hours, whose results bring the
-reading that decides the hold. The module docstring's "Pace hold" section has
-the details.
+reading that decides the hold. No probe goes while an older reading from the
+same account week is already above the line now: the weekly meter only rises
+inside a week, so that reading settles the hold without spending a fire
+(2026-11-21). The module docstring's "Pace hold" section has the details.
 
 ### The weekly allowance guard
 

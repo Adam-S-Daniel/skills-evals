@@ -1369,6 +1369,46 @@ class PaceHoldTests(unittest.TestCase):
         self.assertTrue(state["pace_hold"])
         self.assertTrue(state["pace_probe"])
 
+    def test_an_old_reading_from_this_week_above_the_line_holds_without_a_probe(self):
+        # 2026-11-21: the probe fired with the account at 83% and spent an
+        # Opus arm to learn it. The meter only rises inside a week, so a
+        # reading too old for `pace` is still a floor on use now.
+        old = NOW - guard.PACE_MAX_AGE - timedelta(hours=1)
+        self.assertGreaterEqual(old, guard.window_start(NOW))
+        self.metered(0.83, at=old)
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertFalse(guard.refresh(state))
+        self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+        self.assertNotIn("probe", guard.describe(state))
+
+    def test_an_old_reading_that_could_now_be_under_the_line_still_probes(self):
+        # 5% is under the 10.7% line at NOW: use may have stayed there.
+        self.metered(0.05, at=NOW - guard.PACE_MAX_AGE - timedelta(hours=1))
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+        # The floor is the reading itself, not the top of its range: 10% is
+        # under the line, though 10.99% would not be.
+        self.metered(0.10, at=NOW - guard.PACE_MAX_AGE - timedelta(hours=1))
+        self.assertTrue(self.state(fires=(0, 0), eval_started=[])["pace_probe"])
+
+    def test_an_old_reading_from_before_the_week_or_a_reset_is_no_floor(self):
+        cases = {
+            "last week's window": dict(at=guard.window_start(NOW) - timedelta(hours=1),
+                                       reset=self.RESET - guard.WINDOW),
+            "before this week's start": dict(at=guard.window_start(NOW) - timedelta(minutes=1)),
+            "ahead of the clock": dict(at=NOW + timedelta(hours=1)),
+        }
+        for name, given in cases.items():
+            with self.subTest(name):
+                self.metered(0.95, **given)
+                runs = sorted((self.tree / "routine-results").iterdir())
+                self.assertFalse(guard.stale_ahead(runs, LIMITS, NOW))
+                self.assertTrue(self.state(fires=(0, 0), eval_started=[])["pace_probe"])
+
     def test_the_probe_waits_for_the_interval_and_for_pending_results(self):
         self.metered(0.05, at=NOW + timedelta(hours=1))
         just_inside = NOW - guard.PACE_PROBE_INTERVAL + timedelta(minutes=1)
