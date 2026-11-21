@@ -57,6 +57,7 @@ sys.path.insert(0, str(TEST_DIR))
 
 import allowance_guard as guard  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
+import allowance_points  # noqa: E402
 import budget  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
@@ -72,7 +73,7 @@ HOLD_H = guard.PENDING_FULL_HOLD.total_seconds() / 3600
 #: The hold window's `created` bound for NOW, as the runs API query carries it.
 HOLD_QUERY = "%3E%3D" + (NOW - guard.PENDING_FULL_HOLD).strftime("%Y-%m-%dT%H%%3A%M%%3A%SZ")
 VALID_BUDGET = ("weekly_cap: 0.30\nper_run_cap: 0.03\nper_run_overrun: 0.005\n"
-                "stop_when_account_above: 0.80\n")
+                "stop_when_account_above: 0.80\nclaude_plan: ultra\n")
 
 
 def meter(week: float, resets: int = 1791824400) -> dict:
@@ -111,12 +112,13 @@ class BudgetFileTests(unittest.TestCase):
         # the 2026-11-09 17:00 UTC reset, after the finish week's raise).
         # 2026-11-01 (permanent):
         # the per-run cap is 1 point, the overrun the p95 of a run's largest
-        # call. 2026-11-11: $6.67 per point, the rate measured on 2026-11-10.
+        # call. 2026-11-20: eval runs are charged estimated points from token
+        # counts; the legacy rate ($12.35 per point) prices only what has none.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 0.25,
                           "stop_when_account_above": 0.80,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
-                          "points_per_usd": 0.0015})
+                          "legacy_usd_per_point": 12.35, "claude_plan": "ultra"})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -150,7 +152,7 @@ class BudgetFileTests(unittest.TestCase):
 
     def test_one_and_integers_are_numbers_in_range(self):
         loaded = budget.parse_budget("weekly_cap: 1\nper_run_cap: 1\n"
-                                     "per_run_overrun: 0.5\nstop_when_account_above: 1\n")
+                                     "per_run_overrun: 0.5\nstop_when_account_above: 1\nclaude_plan: ultra\n")
         self.assertEqual(loaded["weekly_cap"], 1.0)
 
     def test_a_missing_file_is_a_budget_error(self):
@@ -191,54 +193,55 @@ class StopReadingTests(unittest.TestCase):
 
 
 class OwnCostStopTests(unittest.TestCase):
-    """per_run_cap charges the run's own calls' dollars at points_per_usd,
-    not the account meter (2026-11-03: a whole-point tick from Adam's own
-    use stranded one run's second arm in six)."""
+    """per_run_cap charges the run's own estimated points (a fraction of the
+    week), not the account meter (2026-11-03: a whole-point tick from Adam's
+    own use stranded one run's second arm in six)."""
 
-    COSTED = {**LIMITS, "per_run_cap": 0.01, "points_per_usd": 0.00214}
+    COSTED = {**LIMITS, "per_run_cap": 0.01, "legacy_usd_per_point": 1.0}
 
     def test_a_meter_tick_mid_pair_does_not_stop_a_cheap_run(self):
-        # The meter moves a whole point while the run itself spent $0.13,
-        # 0.028 points: the second arm still runs.
+        # The meter moves a whole point while the run itself spent 0.028
+        # points: the second arm still runs.
         self.assertIsNone(run_eval.budget_stop_reading(
-            [(0.28, 1), (0.29, 1)], self.COSTED, own_usd=0.13))
+            [(0.28, 1), (0.29, 1)], self.COSTED, own=0.00028))
 
     def test_the_run_stops_once_its_own_cost_reaches_the_cap(self):
         self.assertEqual(
             run_eval.budget_stop_reading([(0.28, 1), (0.28, 1)], self.COSTED,
-                                         own_usd=5.0),
+                                         own=0.0107),
             {"reason": "per_run_cap", "utilization": 0.28, "moved": 0.0107,
              "limit": 0.01})
         self.assertIsNone(run_eval.budget_stop_reading(
-            [(0.28, 1)], self.COSTED, own_usd=4.6))
+            [(0.28, 1)], self.COSTED, own=0.0098))
 
-    def test_an_unknown_cost_or_no_rate_falls_back_to_the_meter(self):
+    def test_an_unknown_cost_falls_back_to_the_meter(self):
         tick = [(0.28, 1), (0.29, 1)]
-        for limits, own in ((self.COSTED, None),
-                            ({**LIMITS, "per_run_cap": 0.01}, 0.13)):
-            with self.subTest(own=own, rate="points_per_usd" in limits):
-                self.assertEqual(
-                    run_eval.budget_stop_reading(tick, limits, own_usd=own)["reason"],
-                    "per_run_cap")
+        self.assertEqual(
+            run_eval.budget_stop_reading(tick, self.COSTED, own=None)["reason"],
+            "per_run_cap")
 
     def test_the_account_limit_still_reads_the_meter(self):
         self.assertEqual(
             run_eval.budget_stop_reading([(0.79, 1), (0.80, 1)], self.COSTED,
-                                         own_usd=0.01)["reason"],
+                                         own=0.0001)["reason"],
             "account_above")
 
     def test_telemetry_sums_the_run_s_recorded_and_queued_call_costs(self):
+        # A role with no token counts is priced from its dollars at the
+        # legacy rate ($1 a point here): $0.10 + $0.03 is 0.13 points.
         run_eval._TELEMETRY.begin(flags())
         self.addCleanup(run_eval._TELEMETRY.begin)
         run_eval._TELEMETRY.budget = dict(self.COSTED)
-        run_eval._TELEMETRY.call_costs = [("agent", 0.10)]
+        run_eval._TELEMETRY.role_blocks = [
+            {"agent": {"calls": 1, "models": None, "cost_usd": 0.10}}]
         now = datetime(2026, 10, 12, 17, 0, tzinfo=timezone.utc)
         run_eval._TELEMETRY.record("judge", [{
             "started": now, "ended": now, "outcome": "ok",
             "events": [{"at": None, "info": meter(week)} for week in (0.28, 0.29)]}],
             [{"total_cost_usd": 0.03}])
         self.assertIsNone(run_eval._TELEMETRY.budget_stop())
-        run_eval._TELEMETRY.call_costs = [("agent", 4.80)]
+        run_eval._TELEMETRY.role_blocks = [
+            {"agent": {"calls": 1, "models": None, "cost_usd": 1.50}}]
         self.assertEqual(run_eval._TELEMETRY.budget_stop()["reason"], "per_run_cap")
 
 
@@ -376,8 +379,8 @@ class EndToEndStopTests(unittest.TestCase):
 
     def test_a_meter_tick_from_other_use_leaves_the_second_arm_running(self):
         # 2026-11-03: the account meter moved past the cap mid-pair while the
-        # run's own calls cost cents. With the committed points_per_usd the
-        # cap charges the run's own dollars, so both arms and judges run.
+        # run's own calls cost cents. The cap charges the run's own estimated
+        # points, so both arms and judges run.
         self.fixture(batches=[[meter(0.28)], [meter(0.30)], [meter(0.31)],
                               [meter(0.31)]])
         proc = self.run_eval("--judge", "always", "--run-billing", "subscription")
@@ -387,7 +390,8 @@ class EndToEndStopTests(unittest.TestCase):
             self.assertNotIn("budget_stop", summary["usage"])
 
     def test_the_per_run_cap_stops_new_trials_and_judge_calls(self):
-        # Without points_per_usd the cap falls back to the meter's movement.
+        # A call that cannot be priced (no tokens, no dollars, and no legacy
+        # rate) makes the cap fall back to the meter's movement.
         meter_only = self.tmp / "budget.yml"
         meter_only.write_text(VALID_BUDGET, encoding="utf-8")
         self.fixture(batches=[[meter(0.70)], [meter(0.74)], [meter(0.74)],
@@ -566,6 +570,8 @@ def usage_block(delta=0.02, *, reset=False, started="2026-10-19T10:00:00Z"):
 class GuardTests(unittest.TestCase):
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -624,64 +630,95 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(state["runs"], 1)
         self.assertAlmostEqual(state["spent"], 0.025, places=12)
 
-    # A run is charged its own dollars when it has them: the meter delta is the
-    # whole account's movement while the run went (2026-11-04).
-    PRICED = {**LIMITS, "points_per_usd": 0.0005}
+    # A run is charged its own estimated points when its trial summaries have
+    # token counts: the meter delta is the whole account's movement while the
+    # run went (2026-11-04).
+    TOKENS = {"input_tokens": 1_000_000, "output_tokens": 100_000,
+              "cache_read_input_tokens": 500_000,
+              "cache_creation_input_tokens": 200_000, "cost_usd": 1.0}
 
-    def priced_usage(self, dollars, delta=0.30):
+    def token_block(self, **counts):
+        return {"calls": 1, "models": {"claude-sonnet-5-5": {**self.TOKENS, **counts}}}
+
+    def priced_usage(self, role_blocks=None, delta=0.30):
         block = usage_block(delta)
-        block["cost_estimate"] = {"usd": dollars}
+        block["measured"]["agent"] = role_blocks or self.token_block()
         return block
 
-    def test_a_run_with_dollars_is_charged_them_not_the_meter_delta(self):
-        run = self.run_dir("20261019T100000Z")
-        self.summary(run, "k/20261019T100000Z/with_skill",
-                     self.priced_usage(10.0, delta=0.30))
-        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                              since=NOW - guard.WINDOW)
-        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+    def points(self, block, rate=None):
+        return allowance_points.estimate_blocks([{"agent": block}], rate)["points"]
 
-    def test_a_run_whose_dollars_cannot_be_used_keeps_the_meter_charge(self):
-        cases = {"no cost_estimate": None, "nan": float("nan"),
-                 "infinity": float("inf"), "bool": True, "negative": -1.0,
-                 "string": "4.0"}
-        for name, dollars in cases.items():
+    def spent_of(self, limits=None):
+        return guard.account(self.tree, limits or LIMITS, NOW, (0, 0),
+                             since=NOW - guard.WINDOW)
+
+    def test_a_run_with_tokens_is_charged_their_points_not_the_meter_delta(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill/trial-1",
+                     self.priced_usage(delta=0.30))
+        expected = self.points(self.token_block()) / 100 + 0.005
+        self.assertGreater(expected, 0.005)
+        self.assertLess(expected, 0.30)
+        self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
+
+    def test_an_arm_aggregate_s_measured_block_is_not_counted_again(self):
+        run = self.run_dir("20261019T100000Z")
+        for rel, scope in (("with_skill", "arm"), ("with_skill/trial-1", "trial")):
+            block = self.priced_usage(delta=0.30)
+            block["measured"]["scope"] = scope
+            block["measured"]["started_at"] = rel
+            self.summary(run, f"k/20261019T100000Z/{rel}", block)
+        expected = self.points(self.token_block()) / 100 + 0.005
+        self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
+
+    def test_a_role_without_tokens_is_charged_its_dollars_at_the_legacy_rate(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.priced_usage(
+            {"calls": 1, "models": None, "cost_usd": 10.0}, delta=0.30))
+        limits = {**LIMITS, "legacy_usd_per_point": 12.5}
+        self.assertAlmostEqual(self.spent_of(limits)["spent"],
+                               10.0 / 12.5 / 100 + 0.005, places=12)
+
+    def test_a_run_that_cannot_be_priced_keeps_the_meter_charge(self):
+        cases = {
+            "no measured block": (lambda b: b.pop("measured"), None),
+            "no calls recorded": (lambda b: b["measured"].update(
+                agent={"calls": 0}), None),
+            "no tokens, no dollars": (lambda b: b["measured"].update(
+                agent={"calls": 1, "models": None, "cost_usd": None}),
+                {**LIMITS, "legacy_usd_per_point": 12.35}),
+            "dollars but no legacy rate": (lambda b: b["measured"].update(
+                agent={"calls": 1, "models": None, "cost_usd": 4.0}), None),
+            "a null token count": (lambda b: b["measured"].update(
+                agent=self.token_block(output_tokens=None, cost_usd=None)),
+                {**LIMITS, "legacy_usd_per_point": 12.35}),
+        }
+        for name, (edit, limits) in cases.items():
             with self.subTest(case=name):
                 shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
                 run = self.run_dir("20261019T100000Z")
                 block = usage_block(0.02)
-                if dollars is not None:
-                    block["cost_estimate"] = {"usd": dollars}
-                self.summary(run, "k/20261019T100000Z/with_skill", block)
-                state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                                      since=NOW - guard.WINDOW)
-                self.assertAlmostEqual(state["spent"], 0.025, places=12)
-
-    def test_no_usable_rate_keeps_the_meter_charge(self):
-        for name, rate in {"absent": None, "zero": 0, "bool": True,
-                           "nan": float("nan")}.items():
-            with self.subTest(rate=name):
-                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
-                run = self.run_dir("20261019T100000Z")
-                self.summary(run, "k/20261019T100000Z/with_skill",
-                             self.priced_usage(10.0, delta=0.02))
-                limits = dict(LIMITS)
-                if rate is not None:
-                    limits["points_per_usd"] = rate
-                state = guard.account(self.tree, limits, NOW, (0, 0),
-                                      since=NOW - guard.WINDOW)
-                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+                block["measured"]["agent"] = self.token_block()
+                edit(block)
+                self.summary(run, "k/20261019T100000Z/with_skill/trial-1", block)
+                self.assertAlmostEqual(self.spent_of(limits)["spent"], 0.025, places=12)
 
     def test_priced_summaries_of_one_invocation_are_counted_once(self):
         run = self.run_dir("20261019T100000Z")
         for rel in ("with_skill", "with_skill/trial-1", "without_skill/trial-2"):
-            block = self.priced_usage(10.0)
+            block = self.priced_usage()
             block["measured"]["started_at"] = rel  # differs per summary
+            if rel == "with_skill":
+                block["measured"]["scope"] = "arm"
+            if rel.endswith("trial-2"):
+                block["measured"]["agent"] = self.token_block(output_tokens=200_000)
             self.summary(run, f"k/20261019T100000Z/{rel}", block)
-        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
-                              since=NOW - guard.WINDOW)
+        state = self.spent_of()
         self.assertEqual(state["runs"], 1)
-        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+        # The arm aggregate adds nothing; the two trials are each priced once.
+        expected = (self.points(self.token_block())
+                    + self.points(self.token_block(output_tokens=200_000))) / 100 + 0.005
+        self.assertAlmostEqual(state["spent"], expected, places=12)
 
     def test_two_invocations_in_one_run_are_each_charged(self):
         run = self.run_dir("20261019T100000Z")
@@ -1036,6 +1073,8 @@ class PaceRoomTests(unittest.TestCase):
     under pace"); the fixed cap left stays a floor."""
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1066,9 +1105,10 @@ class PaceRoomTests(unittest.TestCase):
         self.metered([snapshot(0.36)])
         state = self.state((1, 1))
         # Spent 0.025, nothing pending: the cap alone leaves 0.275, 7 fires.
-        # One day of seven left at 36%: 0.80 * 6/7 - 0.36 = 0.326, 9 fires.
+        # One day of seven left at 36%, which the CLI truncated, so up to
+        # 37%: 0.80 * 6/7 - 0.37 = 0.316, 9 fires.
         self.assertEqual(state["pending"], 0)
-        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.36, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.37, places=12)
         self.assertAlmostEqual(state["account_used"], 0.36, places=12)
         self.assertAlmostEqual(state["week_elapsed"], 6 / 7, places=12)
         self.assertEqual(guard.fits(state), 9)
@@ -1112,10 +1152,14 @@ class PaceRoomTests(unittest.TestCase):
         state = self.state()
         self.assertAlmostEqual(state["week_elapsed"], 1 / 3, places=9)
         self.assertEqual(state["pace_room"], 0)
-        # Just under pace, the gap is the room.
+        # Just under pace, the gap to the top of the reading's range is the room.
         shutil.rmtree(self.tree / "routine-results")
         self.metered([snapshot(0.20, resets_in=timedelta(days=7) * 2 / 3)])
-        self.assertAlmostEqual(self.state()["pace_room"], 0.80 / 3 - 0.20, places=9)
+        self.assertAlmostEqual(self.state()["pace_room"], 0.80 / 3 - 0.21, places=9)
+        # Within a point of pace, a truncated reading may already be at it.
+        shutil.rmtree(self.tree / "routine-results")
+        self.metered([snapshot(0.26, resets_in=timedelta(days=7) * 2 / 3)])
+        self.assertEqual(self.state()["pace_room"], 0)
 
     def test_at_or_over_pace_there_is_no_pace_room(self):
         for week in (0.80, 0.95, 1.0):
@@ -1196,7 +1240,7 @@ class PaceRoomTests(unittest.TestCase):
                      stamp="20261020T120000Z", suffix="d4e5f6")
         state = self.state()
         self.assertAlmostEqual(state["account_used"], 0.50, places=12)
-        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.50, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.80 * 6 / 7 - 0.51, places=12)
 
     def test_a_newest_snapshot_that_is_unusable_is_not_passed_over(self):
         # A fresh reading that cannot be read never falls back to an older,
@@ -1210,10 +1254,225 @@ class PaceRoomTests(unittest.TestCase):
         self.metered([snapshot(0.36)])
         line = guard.describe(self.state())
         self.assertIn("; account at 36.0% with 85.7% of its week gone, so pace "
-                      "allows 32.6 points", line)
+                      "allows 31.6 points", line)
         shutil.rmtree(self.tree / "routine-results")
         self.assertTrue(guard.describe(self.state()).endswith(
             "; no recent account reading, so no pace room"))
+
+
+class PaceHoldTests(unittest.TestCase):
+    """Adam, 2026-11-20: "I am far ahead of usage pace", so put "the kibosh
+    on such runs". The loop's cap was a floor whatever the account's pace:
+    at 74% with 57.5% of the week gone the guard still let two fires go. Now
+    a reading above the pace line (stop times the share of the week gone,
+    from the top of the reading's range) refuses every fire, and no usable
+    reading refuses too (fail safe), but for one pace probe that brings one."""
+
+    #: The account's reset after NOW (Monday 2026-10-26 17:00 UTC).
+    RESET = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    def metered(self, week, *, at=NOW - timedelta(hours=1), reset=None):
+        stamp = "20261020T100000Z"
+        path = (self.tree / "routine-results" / f"{stamp}-a1b2c3" / "k" / stamp
+                / "with_skill" / "summary.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        block = usage_block(0.02)
+        snap = snapshot(week, at=at, resets_in=(reset or self.RESET) - NOW)
+        block["measured"]["meter"] = {"snapshots": [snap], "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+
+    def state(self, fires=(1, 1), eval_started=()):
+        started = None if eval_started is None else list(eval_started)
+        return guard.account(self.tree, LIMITS, NOW, fires, eval_started=started)
+
+    def elapsed(self):
+        return 1 - (self.RESET - NOW) / guard.WINDOW
+
+    def test_the_line_is_the_stop_times_the_week_gone_from_the_top_of_the_reading(self):
+        # 0.45 truncated may be up to 0.46: at a 0.46 line it is on pace.
+        self.assertFalse(guard.ahead_of_pace(0.45, 0.46 / 0.80, LIMITS))
+        self.assertTrue(guard.ahead_of_pace(0.46, 0.46 / 0.80, LIMITS))
+        # The 2026-11-20 shape: 74% with 57.5% of the week gone.
+        self.assertTrue(guard.ahead_of_pace(0.74, 0.575, LIMITS))
+        self.assertFalse(guard.ahead_of_pace(0.30, 0.575, LIMITS))
+        # No reading is ahead: fail safe.
+        self.assertTrue(guard.ahead_of_pace(None, None, LIMITS))
+
+    def test_ahead_of_pace_refuses_every_mode_with_the_cap_left(self):
+        # About 13% of the week gone (a 10.7% line); 20% used is ahead, while
+        # the 30-point cap is nearly untouched.
+        self.metered(0.20)
+        state = self.state()
+        self.assertTrue(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertGreater(state["cap"] - state["spent"], 7 * RESERVE)
+        self.assertLessEqual(guard.room(state), 0)
+        self.assertEqual(guard.fits(state), 0)
+        self.assertFalse(guard.refresh(state))
+        for mode in ("eval", "scaffold", "draft", *guard.IMPROVE_MODES):
+            with self.subTest(mode=mode):
+                self.assertEqual(guard.check(state, mode), guard.PACE_REFUSAL)
+        self.assertIn("PACE HOLD: no fire goes;", guard.describe(state))
+        self.assertNotIn("probe", guard.describe(state))
+
+    def test_ahead_of_pace_overrides_the_refresh_fire(self):
+        self.metered(0.20)
+        finished = NOW - guard.IMPROVE_MAX_RUN - timedelta(minutes=1)
+        state = guard.account(self.tree, LIMITS, NOW, (2, 0), (1, 0),
+                              improve_started=[finished])
+        self.assertTrue(state["improve_finished"])
+        self.assertFalse(guard.refresh(state))
+        self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+
+    def test_under_pace_leaves_the_cap_as_it_was(self):
+        self.metered(0.05)
+        state = self.state()
+        self.assertFalse(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertEqual(guard.fits(state), 7)
+        self.assertIsNone(guard.check(state, "eval"))
+        self.assertNotIn("PACE HOLD", guard.describe(state))
+
+    def test_the_hold_lifts_as_the_week_goes_on(self):
+        # The same 20% reading, taken late in the week: under the line.
+        late = self.RESET - timedelta(days=1)
+        self.metered(0.20, at=late - timedelta(hours=1))
+        state = guard.account(self.tree, LIMITS, late, (0, 0))
+        self.assertFalse(state["pace_hold"])
+        self.assertGreater(guard.fits(state), 0)
+
+    def test_no_reading_holds_but_allows_one_pace_probe(self):
+        self.metered(0.05, at=NOW + timedelta(hours=1))  # ahead of the clock: not read
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+        self.assertEqual(guard.fits(state), 0)
+        self.assertTrue(guard.refresh(state))
+        self.assertIsNone(guard.check(state, "eval"))
+        for mode in ("scaffold", "draft", *guard.IMPROVE_MODES):
+            with self.subTest(mode=mode):
+                self.assertEqual(guard.check(state, mode), guard.PACE_REFUSAL)
+        self.assertIn("but one pace probe", guard.describe(state))
+
+    def test_a_reading_from_before_the_reset_is_no_reading(self):
+        # Last week's snapshot (its window reset at the week's start) is not
+        # read, so the new week starts held, with a probe.
+        self.metered(0.10, at=NOW - timedelta(hours=2),
+                     reset=self.RESET - guard.WINDOW)
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+
+    def test_an_old_reading_from_this_week_above_the_line_holds_without_a_probe(self):
+        # 2026-11-21: the probe fired with the account at 83% and spent an
+        # Opus arm to learn it. The meter only rises inside a week, so a
+        # reading too old for `pace` is still a floor on use now.
+        old = NOW - guard.PACE_MAX_AGE - timedelta(hours=1)
+        self.assertGreaterEqual(old, guard.window_start(NOW))
+        self.metered(0.83, at=old)
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertIsNone(state["account_used"])
+        self.assertTrue(state["pace_hold"])
+        self.assertFalse(state["pace_probe"])
+        self.assertFalse(guard.refresh(state))
+        self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+        self.assertNotIn("probe", guard.describe(state))
+
+    def test_an_old_reading_that_could_now_be_under_the_line_still_probes(self):
+        # 5% is under the 10.7% line at NOW: use may have stayed there.
+        self.metered(0.05, at=NOW - guard.PACE_MAX_AGE - timedelta(hours=1))
+        state = self.state(fires=(0, 0), eval_started=[])
+        self.assertTrue(state["pace_hold"])
+        self.assertTrue(state["pace_probe"])
+        # The floor is the reading itself, not the top of its range: 10% is
+        # under the line, though 10.99% would not be.
+        self.metered(0.10, at=NOW - guard.PACE_MAX_AGE - timedelta(hours=1))
+        self.assertTrue(self.state(fires=(0, 0), eval_started=[])["pace_probe"])
+
+    def test_an_old_reading_from_before_the_week_or_a_reset_is_no_floor(self):
+        cases = {
+            "last week's window": dict(at=guard.window_start(NOW) - timedelta(hours=1),
+                                       reset=self.RESET - guard.WINDOW),
+            "before this week's start": dict(at=guard.window_start(NOW) - timedelta(minutes=1)),
+            "ahead of the clock": dict(at=NOW + timedelta(hours=1)),
+        }
+        for name, given in cases.items():
+            with self.subTest(name):
+                self.metered(0.95, **given)
+                runs = sorted((self.tree / "routine-results").iterdir())
+                self.assertFalse(guard.stale_ahead(runs, LIMITS, NOW))
+                self.assertTrue(self.state(fires=(0, 0), eval_started=[])["pace_probe"])
+
+    def test_the_probe_waits_for_the_interval_and_for_pending_results(self):
+        self.metered(0.05, at=NOW + timedelta(hours=1))
+        just_inside = NOW - guard.PACE_PROBE_INTERVAL + timedelta(minutes=1)
+        just_outside = NOW - guard.PACE_PROBE_INTERVAL
+        cases = {
+            "an eval fire inside the interval": dict(fires=(1, 0), eval_started=[just_inside]),
+            "start times unknown": dict(fires=(0, 0), eval_started=None),
+            "a recent fire without results": dict(fires=(1, 1),
+                                                  eval_started=[NOW - timedelta(minutes=5)]),
+        }
+        for name, given in cases.items():
+            with self.subTest(name):
+                state = self.state(**given)
+                self.assertTrue(state["pace_hold"])
+                self.assertFalse(state["pace_probe"])
+                self.assertFalse(guard.refresh(state))
+                self.assertEqual(guard.check(state, "eval"), guard.PACE_REFUSAL)
+        state = self.state(fires=(1, 0), eval_started=[just_outside])
+        self.assertTrue(state["pace_probe"])
+
+    def main(self, eval_starts):
+        budget_path = self.tree / "budget.yml"
+        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        quiet = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"}
+        with mock.patch.dict(os.environ, quiet, clear=True), \
+             contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", str(self.tree),
+                               "--budget", str(budget_path)], now=NOW,
+                              fire_count=lambda now: (0, 0),
+                              improve_count=lambda now: (0, 0),
+                              eval_starts=lambda now: eval_starts)
+        return code, out.getvalue()
+
+    def test_main_refuses_ahead_of_pace_with_exit_3(self):
+        self.metered(0.20)
+        code, out = self.main([])
+        self.assertEqual(code, guard.REFUSED_EXIT, out)
+        self.assertIn(guard.PACE_REFUSAL, out)
+
+    def hold(self):
+        budget_path = self.tree / "budget.yml"
+        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["hold", "--results-tree", str(self.tree),
+                               "--budget", str(budget_path)], now=NOW)
+        return code, out.getvalue().strip()
+
+    def test_hold_prints_the_pace_hold_with_no_api_call(self):
+        # The Loop worker's gate (_agent-guidance fleet-worker-fire.yml):
+        # main gets no fire counters here, so any API call would fail.
+        self.metered(0.20)
+        self.assertEqual(self.hold(), (0, "pace_hold=true"))
+        self.metered(0.05)
+        self.assertEqual(self.hold(), (0, "pace_hold=false"))
+        # No usable reading holds: fail safe.
+        self.metered(0.05, at=NOW + timedelta(hours=1))
+        self.assertEqual(self.hold(), (0, "pace_hold=true"))
+
+    def test_main_lets_the_pace_probe_go(self):
+        code, out = self.main([])
+        self.assertEqual(code, 0, out)
+        self.assertIn("allowed as the pace probe", out)
 
 
 class ImproveCoverageTests(unittest.TestCase):
@@ -1490,6 +1749,8 @@ class ReadingBoundTests(unittest.TestCase):
     WIDE = {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 1.0}
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -1759,6 +2020,8 @@ class ImproveCapTests(unittest.TestCase):
     kind per account week."""
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 

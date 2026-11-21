@@ -54,6 +54,8 @@ on:
       - ".claude/hooks/**"
       - "skills.lock"
       - "harness/**"
+      - "vendor/**"
+      - "evals/usage-weights.lock"
       - "scripts/eval_coverage.py"
       - "scripts/eval_scope.py"
       - "scripts/stakes.py"

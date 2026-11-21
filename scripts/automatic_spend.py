@@ -33,6 +33,12 @@ not use is flagged `model_mismatch` (a project-made task runs its project's
 model whatever its page says). A job with no measured cost is listed under
 `unmeasured`, never guessed.
 
+Points per fire (approximate weekly-allowance points, the pages' unit): each
+fire's token counts by model priced with the weight table
+evals/usage-weights.lock pins (harness/allowance_points.py), a fire with no
+token counts at evals/budget.yml `legacy_usd_per_point`; the median over the
+same current-model fires. Dollars stay beside them for reference.
+
 Loop membership: every job is marked `in_loop` true (part of the continuous
 improvement system) or false, from its category's `in_loop` (`other_in_loop` for a job no category
 matches) unless a regex in `outside_loop` or `inside_loop` names it. A job
@@ -62,6 +68,10 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "harness"))
+
+import allowance_points  # noqa: E402
+import budget as budget_file  # noqa: E402
 
 #: Lexical markers in a workflow file (tokens, not code shape).
 FIRES_ROUTINE = re.compile(r"claude_code/routines|_FIRE_BEARER\b")
@@ -176,6 +186,15 @@ def _cost(row: dict):
         if isinstance(row.get(k), (int, float)):
             return float(row[k])
     return None
+
+
+def fire_points(row: dict, legacy_usd_per_point=None):
+    """One fire's approximate allowance points from its token counts by
+    model (harness/allowance_points.py), its dollars at
+    `legacy_usd_per_point` when it has none; None when neither prices it."""
+    estimate = allowance_points.estimate_session(row.get("models"), _cost(row),
+                                                 legacy_usd_per_point)
+    return None if estimate["unpriced_roles"] else estimate["points"]
 
 
 def _when(text):
@@ -296,13 +315,20 @@ def categorize(name: str, categories: list, extra: str = "") -> str:
     return "other"
 
 
-def _meter(jobs: list, in_loop) -> float:
-    return sum(j["usd_per_week"] or 0.0 for j in jobs
+def _meter(jobs: list, in_loop, key: str = "usd_per_week") -> float:
+    return sum(j[key] or 0.0 for j in jobs
                if j["lane"] == "meter" and j["in_loop"] is in_loop)
 
 
+def _weekly(rate, per_fire):
+    return 0.0 if rate == 0 else None if rate is None or per_fire is None else rate * per_fire
+
+
 def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
-              boxy: list, now: datetime, window_days: int) -> dict:
+              boxy: list, now: datetime, window_days: int,
+              legacy_usd_per_point=None) -> dict:
+    """The breakdown document. `legacy_usd_per_point` prices a fire with no
+    token counts (evals/budget.yml); without it such a fire has no points."""
     cats = config["categories"]
     fired_by = config.get("fired_by") or {}
     eval_cap = config.get("eval_cap_triggers") or []
@@ -339,6 +365,10 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
             rate = len(recent) * 7 / window_days
             rate_source = f"ledger fires in {window_days} days"
         per_fire = statistics.median(costs) if costs else None
+        current = [r for r in rows if model is None or r.get("last_served_model") == model]
+        points = [p for p in (fire_points(r, legacy_usd_per_point) for r in current)
+                  if p is not None]
+        points_per_fire = statistics.median(points) if points else None
         lane = "eval_cap" if any(re.search(m, t["name"], re.I) for m in eval_cap) else "meter"
         cat = categorize(t["name"], cats)
         jobs.append({"kind": "scheduled task", "id": tid, "name": t["name"],
@@ -347,8 +377,9 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
                      "fires_per_week": rate, "rate_source": rate_source,
                      "usd_per_fire": per_fire, "cost_fires": len(costs),
                      "cost_fires_other_model": dropped, "model_mismatch": mismatch,
-                     "usd_per_week": 0.0 if rate == 0 else
-                     None if rate is None or per_fire is None else rate * per_fire})
+                     "usd_per_week": _weekly(rate, per_fire),
+                     "points_per_fire": points_per_fire, "points_fires": len(points),
+                     "points_per_week": _weekly(rate, points_per_fire)})
 
     for w in workflows:
         path = f"{w['repo']}/{w['file']}"
@@ -367,7 +398,8 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
                      "in_loop": loop_membership(w["name"], cat, config, path), "lane": lane,
                      "events": w["events"], "fires_per_week": rate,
                      "rate_source": "cron" if w["crons"] else "events only",
-                     "usd_per_fire": None, "usd_per_week": usd})
+                     "usd_per_fire": None, "usd_per_week": usd,
+                     "points_per_fire": None, "points_per_week": usd})
 
     for b in boxy:
         lane = "meter" if b["runs_claude"] else "actions_only"
@@ -376,7 +408,9 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
                      "in_loop": loop_membership(b["name"], cat, config), "lane": lane,
                      "fires_per_week": b["fires_per_week"], "rate_source": "register-tasks.ps1",
                      "usd_per_fire": None, "local_only": lane == "actions_only",
-                     "usd_per_week": 0.0 if lane == "actions_only" else None})
+                     "usd_per_week": 0.0 if lane == "actions_only" else None,
+                     "points_per_fire": None,
+                     "points_per_week": 0.0 if lane == "actions_only" else None})
 
     labels = {c["id"]: c["label"] for c in cats}
     labels["other"] = "Other automatic jobs"
@@ -386,14 +420,20 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         if not members:
             continue
         lanes: dict = {}
+        meter_points = 0.0
         for j in members:
             if j["usd_per_week"] is not None:
                 lanes[j["lane"]] = lanes.get(j["lane"], 0.0) + j["usd_per_week"]
+            if j["lane"] == "meter" and j["points_per_week"] is not None:
+                meter_points += j["points_per_week"]
         out_cats.append({"id": cid, "label": labels[cid], "jobs": len(members),
                          "usd_per_week_by_lane": lanes,
                          "meter_usd_per_week": lanes.get("meter", 0.0),
                          "loop_meter_usd_per_week": _meter(members, True),
                          "outside_loop_meter_usd_per_week": _meter(members, False),
+                         "meter_points_per_week": meter_points,
+                         "loop_meter_points_per_week": _meter(members, True, "points_per_week"),
+                         "outside_loop_meter_points_per_week": _meter(members, False, "points_per_week"),
                          "unmeasured": sorted(j["name"] for j in members
                                               if j["usd_per_week"] is None
                                               and j["lane"] in ("meter", "api"))})
@@ -403,10 +443,16 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         "notes": ["GitHub Actions minutes are counted as $0 (lane actions_only).",
                   "lane meter adds to the forecast's non-eval points; eval_cap is "
                   "already inside the eval cap; api is Anthropic API dollars, no meter.",
+                  "points_* are approximate weekly-allowance points from each fire's "
+                  "token counts by type (harness/allowance_points.py); usd_* are "
+                  "API-equivalent dollars, for reference.",
                   "A job under `unmeasured` has no recorded cost and adds nothing."],
         "meter_usd_per_week": meter,
         "loop_meter_usd_per_week": _meter(jobs, True),
         "outside_loop_meter_usd_per_week": _meter(jobs, False),
+        "meter_points_per_week": sum(c["meter_points_per_week"] for c in out_cats),
+        "loop_meter_points_per_week": _meter(jobs, True, "points_per_week"),
+        "outside_loop_meter_points_per_week": _meter(jobs, False, "points_per_week"),
         "loop_unassigned": sorted(j["name"] for j in jobs if j["in_loop"] is None),
         "categories": out_cats,
         "jobs": jobs,
@@ -436,14 +482,16 @@ def main(argv: list | None = None) -> int:
     doc = breakdown(config, load_triggers(args.triggers, routines), load_fires(args.fires),
                     scan_workflows(args.workflows_root) if args.workflows_root else [],
                     scan_boxy_tasks(args.wsl_automation) if args.wsl_automation else [],
-                    now, args.window_days)
+                    now, args.window_days,
+                    budget_file.load_budget().get(budget_file.LEGACY_RATE))
     args.out_json.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
     for c in doc["categories"]:
-        print(f"{c['label']}: ${c['meter_usd_per_week']:.0f}/wk meter, {c['jobs']} jobs"
+        print(f"{c['label']}: about {c['meter_points_per_week']:.1f} points/wk "
+              f"(${c['meter_usd_per_week']:.0f}), {c['jobs']} jobs"
               + (f", unmeasured: {', '.join(c['unmeasured'])}" if c["unmeasured"] else ""))
-    print(f"total meter ${doc['meter_usd_per_week']:.0f}/wk: "
-          f"${doc['loop_meter_usd_per_week']:.0f} in the loop, "
-          f"${doc['outside_loop_meter_usd_per_week']:.0f} outside it")
+    print(f"total meter about {doc['meter_points_per_week']:.1f} points/wk: "
+          f"{doc['loop_meter_points_per_week']:.1f} in the loop, "
+          f"{doc['outside_loop_meter_points_per_week']:.1f} outside it")
     if doc["loop_unassigned"]:
         print(f"not marked in or out of the loop: {len(doc['loop_unassigned'])} jobs")
     return 0

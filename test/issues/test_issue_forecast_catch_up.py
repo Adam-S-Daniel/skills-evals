@@ -4,8 +4,10 @@ no results tree, no network, no clock."""
 
 from __future__ import annotations
 
+import json
 import math
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -108,10 +110,11 @@ class Forecast(unittest.TestCase):
         {"skill": "b", "model": "m", "pairs": 0, "class": "insufficient"},
         {"skill": "b", "model": "m", "pairs": 0, "class": "missing"},
     ]
-    BUDGET = {"weekly_cap": 0.25, "points_per_usd": 0.0015}
+    BUDGET = {"weekly_cap": 0.25, "legacy_usd_per_point": 1 / 0.15}
     BATCH = {"pairs_per_cell": 15, "rates": {"skill": 1.0, "guidance": 1.0}}
 
-    def run_forecast(self, cells=None, gates=None, budget=None, **assumptions):
+    def run_forecast(self, cells=None, gates=None, budget=None, measured_rate=None,
+                     **assumptions):
         def proj(cell, ctx):
             if cell["skill"] == "a":
                 return projection(pairs=4, keep=4, remove=math.inf, remaining=20)
@@ -121,7 +124,8 @@ class Forecast(unittest.TestCase):
             return fc.forecast(gates or self.GATES, cells or self.CELLS, budget or self.BUDGET,
                                self.BATCH, None,
                                {"fire_overhead_usd": 0.0, **assumptions},
-                               frozenset({"skipped-one"}))
+                               frozenset({"skipped-one"}),
+                               measured_rate=measured_rate)
 
     def test_automatic_spend_breaks_down_non_eval_points(self):
         automatic = {"as_of": "2026-11-15T18:00:00+00:00", "unmeasured": ["Job x"],
@@ -141,6 +145,45 @@ class Forecast(unittest.TestCase):
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
         self.assertEqual(doc["inputs"]["automatic_unmeasured_jobs"], 1)
 
+    def test_each_scheduled_task_is_listed_in_points(self):
+        # Adam, 2026-11-20: "add individual scheduled tasks".
+        automatic = {"categories": [{"id": "dash", "label": "Dashboard",
+                                     "meter_points_per_week": 9.0},
+                                    {"id": "personal", "label": "Personal",
+                                     "meter_points_per_week": 4.0}],
+                     "jobs": [
+                         {"kind": "scheduled task", "name": "Small job", "category": "dash",
+                          "in_loop": True, "lane": "meter", "model": "m",
+                          "fires_per_week": 7.0, "points_per_week": 1.0},
+                         {"kind": "scheduled task", "name": "Dashboard refresh",
+                          "category": "dash", "in_loop": True, "lane": "meter", "model": "m",
+                          "fires_per_week": 7.0, "points_per_week": 8.0},
+                         {"kind": "scheduled task", "name": "Private errand",
+                          "category": "personal", "in_loop": False, "lane": "meter",
+                          "model": "m", "fires_per_week": 1.0, "points_per_week": 4.0},
+                         {"kind": "scheduled task", "name": "Priced in dollars",
+                          "category": "dash", "in_loop": True, "lane": "meter",
+                          "fires_per_week": 1.0, "points_per_week": None,
+                          "usd_per_week": 3 / 0.15},
+                         {"kind": "scheduled task", "name": "Unmeasured", "category": "dash",
+                          "in_loop": True, "lane": "meter", "points_per_week": None},
+                         {"kind": "scheduled task", "name": "Eval fire", "category": "dash",
+                          "in_loop": True, "lane": "eval_cap", "points_per_week": 5.0},
+                         {"kind": "workflow", "name": "A workflow", "category": "dash",
+                          "in_loop": True, "lane": "meter", "points_per_week": 2.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0}, frozenset({"skipped-one"}),
+                              None, automatic)
+        tasks = doc["inputs"]["scheduled_tasks"]
+        self.assertEqual([(t["task"], t["points_per_week"]) for t in tasks], [
+            ("Dashboard refresh", 8.0), ("Personal (outside the loop)", 4.0),
+            ("Priced in dollars", 3.0), ("Small job", 1.0), ("Unmeasured", None)])
+        # Nothing outside the loop is named, nor its model.
+        self.assertNotIn("Private errand", json.dumps(doc))
+        self.assertIsNone(tasks[1]["model"])
+
     def test_loop_jobs_spend_from_the_eval_cap(self):
         # Adam, 2026-11-15: the loop's automatic jobs fit in the same 25 points.
         automatic = {"loop_meter_usd_per_week": 15 / 0.15,
@@ -153,6 +196,20 @@ class Forecast(unittest.TestCase):
                                   frozenset({"skipped-one"}), None, automatic)
             self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], cap)
             self.assertAlmostEqual(doc["inputs"]["loop_jobs_points_per_week"], 15.0)
+
+    def test_estimated_points_win_over_dollars_at_a_rate(self):
+        # A breakdown with points (from each fire's token counts) is read as points, its dollars ignored.
+        automatic = {"loop_meter_usd_per_week": 999.0, "loop_meter_points_per_week": 4.0,
+                     "categories": [{"label": "Dashboard", "meter_usd_per_week": 999.0,
+                                     "meter_points_per_week": 6.0}]}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(self.GATES, self.CELLS, self.BUDGET, self.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "interactive_points_per_week": 1.0},
+                              frozenset({"skipped-one"}), None, automatic)
+        self.assertEqual(doc["inputs"]["non_eval_points_breakdown"],
+                         {"Dashboard": 6.0, "Interactive threads and local sessions": 1.0})
+        self.assertAlmostEqual(doc["inputs"]["loop_jobs_points_per_week"], 4.0)
 
     def test_given_non_eval_points_win_over_the_breakdown(self):
         automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 3.0}]}
@@ -356,7 +413,8 @@ class EvalsRunFirst(unittest.TestCase):
     def test_heavy_other_use_still_leaves_evals_the_cap_and_squeezes_the_owner(self):
         # 25 points at 1 an hour take 25 hours; 168 other points a week accrue
         # 25 meanwhile; 50 < 80, so the whole cap runs.
-        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0)
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=1.0,
+                                pace_hold=0.0)
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
         sq = doc["inputs"]["owner_squeeze"]
         self.assertAlmostEqual(sq["week_total_points"], 193.0)
@@ -364,8 +422,17 @@ class EvalsRunFirst(unittest.TestCase):
 
     def test_slow_evals_meet_the_stop_part_way(self):
         # At 0.1 an hour, E + 168 * E / 16.8 = 80, so E = 80 / 11.
-        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1)
+        doc = self.run_forecast(non_eval_points_per_week=168.0, eval_points_per_hour=0.1,
+                                pace_hold=0.0)
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 80 / 11)
+
+    def test_the_pace_hold_takes_the_stop_off_the_whole_week(self):
+        # allowance_guard.py's pace hold (2026-11-20): evals no longer run
+        # first, so 70 points of other use leave them 80 - 70, not the cap.
+        doc = self.run_forecast(non_eval_points_per_week=70.0, eval_points_per_hour=1.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 10.0)
+        self.assertIsNone(doc["inputs"]["owner_squeeze"])
+        self.assertIs(doc["inputs"]["assumptions"]["pace_hold"], True)
 
     def test_without_a_pace_the_stop_comes_off_the_whole_week(self):
         doc = self.run_forecast(non_eval_points_per_week=70.0)
@@ -379,3 +446,90 @@ class EvalsRunFirst(unittest.TestCase):
         pace = fc.eval_pace(runs, 25.0, reset + fc.timedelta(days=14))
         self.assertEqual(pace, {"points_per_hour": 1.25, "weeks": 1})
         self.assertIsNone(fc.eval_pace(runs[-1:], 25.0, reset + fc.timedelta(days=14)))
+
+
+class MeterRange(unittest.TestCase):
+    """The usage endpoint rounds, so the rise is a range."""
+
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    END = _dt(2026, 11, 15, 12, tzinfo=_tz.utc)
+
+    def test_the_rise_is_a_range_beside_the_central_figure(self):
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        h = lambda x: reset + self._td(hours=x)  # noqa: E731
+        # 10 -> 30 -> 50 never falls (one run, 40 points read, truly 39 to 41);
+        # the drop to 20 starts a second run, 20 -> 25 (4 to 6 points).
+        readings = [(h(0), 10.0), (h(20), 30.0), (h(40), 50.0), (h(41), 20.0), (self.END, 25.0)]
+        m = fc.meter_non_eval_points(readings, [], self.END)
+        self.assertEqual(m["meter_rise_points"], 45.0)
+        self.assertAlmostEqual(m["meter_rise_points_low"], 39.0 + 4.0)
+        self.assertAlmostEqual(m["meter_rise_points_high"], 41.0 + 6.0)
+        days = (self.END - reset).total_seconds() / 86400
+        self.assertAlmostEqual(m["points_per_week_low"], 43.0 * 7 / days)
+        self.assertAlmostEqual(m["points_per_week_high"], 47.0 * 7 / days)
+        self.assertLess(m["points_per_week_low"], m["points_per_week"])
+        self.assertLess(m["points_per_week"], m["points_per_week_high"])
+
+
+def _trial_blocks(cost):
+    return {"scope": "trial", "agent": {
+        "calls": 1, "cost_usd": cost, "models": {"claude-sonnet-5-5": {
+            "input_tokens": 1000, "output_tokens": 2000, "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400, "cost_usd": cost}}}}
+
+
+class MeasuredRate(unittest.TestCase):
+    """Eval dollars per point come from the ingested runs' token estimates."""
+
+    def tree(self, runs):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        for run_id, measured in runs.items():
+            path = root / "routine-results" / run_id / "s" / "t1" / "summary.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"usage": {"measured": measured}}), encoding="utf-8")
+        return root
+
+    def test_dollars_over_the_estimates_points_with_its_range(self):
+        import allowance_points
+        root = self.tree({"20261030T100000Z-aaaaaa": _trial_blocks(2.0),
+                          "20261030T110000Z-bbbbbb": _trial_blocks(3.0)})
+        got = fc.measured_usd_per_point(root, 1 / 0.15)
+        est = [allowance_points.estimate_blocks([_trial_blocks(c)]) for c in (2.0, 3.0)]
+        points, low, high = (sum(e[k] for e in est) for k in ("points", "low", "high"))
+        self.assertEqual(got["runs"], 2)
+        self.assertAlmostEqual(got["central"], 5.0 / points)
+        self.assertAlmostEqual(got["low"], 5.0 / high)
+        self.assertAlmostEqual(got["high"], 5.0 / low)
+        self.assertLessEqual(got["low"], got["central"])
+        self.assertLessEqual(got["central"], got["high"])
+
+    def test_a_run_not_priced_wholly_from_tokens_is_left_out_and_none_means_none(self):
+        no_tokens = {"scope": "trial", "agent": {"calls": 1, "cost_usd": 1.0}}
+        self.assertIsNone(fc.measured_usd_per_point(
+            self.tree({"20261030T100000Z-aaaaaa": no_tokens}), 1 / 0.15))
+        self.assertIsNone(fc.measured_usd_per_point(self.tree({}), 1 / 0.15))
+
+    def test_forecast_uses_the_measured_rate_and_records_its_source(self):
+        measured = {"central": 6.0, "low": 5.0, "high": 8.0, "runs": 3}
+        doc = Forecast("run_forecast").run_forecast(measured_rate=measured)
+        inputs = doc["inputs"]
+        self.assertEqual(inputs["usd_per_point"], [5.0, 8.0])
+        self.assertEqual(inputs["usd_per_point_central"], 6.0)
+        self.assertIn("3 ingested runs priced from token counts", inputs["points_per_usd_source"])
+        # Capacity at the cap's 25 points follows the measured range.
+        self.assertAlmostEqual(doc["capacity_usd_per_week"]["plan_central"], 25 * 6.5)
+
+    def test_an_assumption_still_wins_over_the_measured_rate(self):
+        measured = {"central": 6.0, "low": 5.0, "high": 8.0, "runs": 3}
+        doc = Forecast("run_forecast").run_forecast(
+            measured_rate=measured, usd_per_point_low=4.0, usd_per_point_high=9.0)
+        self.assertEqual(doc["inputs"]["usd_per_point"], [4.0, 9.0])
+
+    def test_with_no_measured_rate_the_legacy_rate_is_the_fallback(self):
+        doc = Forecast("run_forecast").run_forecast()
+        self.assertEqual(doc["inputs"]["usd_per_point"], [1 / 0.15, 1 / 0.15])
+        self.assertEqual(doc["inputs"]["points_per_usd_source"],
+                         "evals/budget.yml legacy_usd_per_point")
+

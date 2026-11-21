@@ -175,7 +175,9 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
    "refresh did not land" banner reads it.
    For each changed file, run Artifact `publish` with the dashboard's `url`, `asset: true` and
    `file_path`, one file per call. Then run one ArtifactData `batch` of `update` writes on
-   `datasets/<id>`, pinned with `if_version`, that sets
+   `datasets/<id>`, pinned with `if_version` (read the versions with ArtifactData `list` on
+   collection `datasets` only; never list `files`, whose `index.html` doc carries the whole page,
+   254k characters on 2026-11-19, which every later call then re-reads), that sets
    `source: {kind: "file", url: "/_blob/<id>", name}` and `updated: {at, by}`. Delete any
    `datasets/<id>` doc that `page/datasets.json` no longer names.
    On `PAGE-CHANGED`, build the page in `explorer/` (`npm ci && npm run build`), smoke-test it with
@@ -292,9 +294,10 @@ carries them.
 
 Scheduled-task spend is the system's: `scripts/automatic_spend.py` over `inputs/triggers.json`,
 the fire ledger and `--workflows-root` gives each task's runs a week (its cron, or its firing
-workflow's) and its median run cost on its current model. A week's `sched_points` is the sum
-over the tasks with a measured cost (lane `meter`; the eval runner's spend is already in eval
-runs), at `scheduled_task_usd_per_point`, from the week of the ledger's first recorded run
+workflow's) and its median run's approximate points on its current model, each run priced from
+its token counts by model (`automatic_spend.fire_points`; a run with none at `evals/budget.yml`
+`legacy_usd_per_point`). A week's `sched_points` is the sum over the tasks with a measured cost
+(lane `meter`; the eval runner's spend is already in eval runs), from the week of the ledger's first recorded run
 (earlier weeks read as no value) and for the current week's elapsed part only. It is an
 estimate at today's schedules, not a count of past runs: the ledger sees only each task's last
 run per refresh. Tasks not in `config/routines.json` are not read.
@@ -310,25 +313,28 @@ session id, and a run the ledger missed stays in development.
 ### Points, not dollars, for allowance spend
 
 Both pages show spend drawn from the weekly Max allowance (eval runs fired by routines,
-scheduled tasks, and development apart) only as approximate points, marked "≈" with the rate
-in a tooltip; spend paid from the monthly API credit (API-billed eval runs) stays in dollars
-and never joins a points total. The rates:
+scheduled tasks, and development apart) only as approximate points, marked "≈"; spend paid
+from the monthly API credit (API-billed eval runs) stays in dollars and never joins a points
+total. No display rate is typed in anywhere:
 
-- **Eval runs**: `eval_usd_per_point` in [`evals/points.yml`](../evals/points.yml), measured on
-  quiet nights when eval runs were the only use. It is the only place a display rate is
-  written; `build.py` exits with the reason when it is missing or not positive.
-- **Scheduled tasks**: `scheduled_task_usd_per_point` in the same file. No direct measurement is
-  possible (whole-point meter ticks, and a ledger that misses runs), so it is the eval run rate,
-  the closest measured one; the page's tooltip says so.
+- **Eval runs**: each ingested run under `routine-results/` is its trial summaries' token
+  counts by type priced with the weight table `evals/usage-weights.lock` pins
+  (`allowance_guard.run_points`, `harness/allowance_points.py`); a role with no token counts,
+  or a run whose summaries cannot be priced, at `evals/budget.yml` `legacy_usd_per_point`
+  (`build.py` exits with the reason when it is missing). The overrun the guard adds is a
+  safety margin, not spend, so the pages leave it out.
+- **Scheduled tasks**: the fire ledger's token counts per run, priced the same way (above).
 - **Development (project threads)**: derived on every refresh by `thread_usd_per_point`: each
   complete week's account meter reading less that week's eval and scheduled-task points, against
   the week's thread dollars,
   summed over the weeks. The meter also counts use outside the project, so development points are
   an upper bound. With no reading yet there is no rate, and development points read as no value.
 
-The rates travel in `spend/weekly.json` `rates` to the public document, where
-`explorer/src/core/points.js` converts every allowance figure. The allowance guard does not
-read `evals/points.yml`: it charges eval runs at `evals/budget.yml` `points_per_usd`.
+`spend/weekly.json` carries the weekly and total points (`run_points`, `scheduled_points`)
+to the public document, and `rates`: eval and scheduled-task dollars over their estimated
+points (measured, for reference) and the development rate. `explorer/src/core/points.js`
+shows a week or total's own points and converts a single run's dollars with the measured
+rate, the only figure the explorer document holds in dollars.
 
 ## What stays hand-maintained, and why
 

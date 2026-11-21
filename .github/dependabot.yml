@@ -67,6 +67,9 @@ updates:
       github-actions:
         patterns: ["*"]
         exclude-patterns: ["Adam-S-Daniel/*", "jodidaniel/*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # The real-work fixtures' seeds (evals/real-work/*/seed) are frozen copies of
   # other repositories, lockfiles included: a bump there changes what a fixture
@@ -94,6 +97,16 @@ updates:
   - package-ecosystem: bundler
     directories:
       - "/evals/real-work/**/*"
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+  - package-ecosystem: npm
+    directories:
+      - "/.githooks/dated-phrasing"
     schedule:
       interval: weekly
     ignore:

@@ -2030,7 +2030,7 @@ class PropagationTriggerTests(unittest.TestCase):
                 else:
                     continue
                 for mod in mods:
-                    for base in ("", "harness/", "scripts/"):
+                    for base in ("", "harness/", "scripts/", "vendor/"):
                         stem = base + mod.replace(".", "/")
                         todo += [stem + ".py", stem + "/__init__.py"]
         return seen

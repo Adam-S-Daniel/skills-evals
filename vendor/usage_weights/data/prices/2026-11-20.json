@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "2026-11-20",
+  "unit": "usd_per_million_tokens",
+  "notes": [
+    "API list prices.",
+    "The Opus and Sonnet rows reproduce the CLI's own dollar figures on 4,186 calls.",
+    "The Fable cache-read price reproduces the CLI's figure for the night-2 cache-read block ($8.27 computed, $8.29 reported)."
+  ],
+  "models": {
+    "claude-opus-5-5": {"input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write_5m": 5.0, "cache_write_1h": 8.0},
+    "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_write_5m": 2.5, "cache_write_1h": 4.0},
+    "claude-haiku-5-5": {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write_5m": 0.125, "cache_write_1h": 0.2},
+    "claude-fable-5-2": {"input": 8.0, "output": 40.0, "cache_read": 0.2, "cache_write_5m": 10.0, "cache_write_1h": 16.0}
+  }
+}

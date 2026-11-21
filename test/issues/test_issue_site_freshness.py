@@ -517,6 +517,14 @@ class WorkflowTests(unittest.TestCase):
         install = [s for s in self.steps if s.get("name") == "Install Playwright and Chromium"][0]
         self.assertRegex(install["run"], r"playwright==\d+\.\d+\.\d+")
 
+    def test_playwright_can_install_deps_on_ubuntu_26_04(self):
+        # ubuntu-latest moved to 26.04; 1.55 failed with "Cannot install
+        # dependencies for ubuntu26.04-x64", and 1.65 is the first the fleet
+        # has seen install them there.
+        install = [s for s in self.steps if s.get("name") == "Install Playwright and Chromium"][0]
+        major, minor = map(int, re.search(r"playwright==(\d+)\.(\d+)\.", install["run"]).groups())
+        self.assertGreaterEqual((major, minor), (1, 65))
+
 
 if __name__ == "__main__":
     unittest.main()

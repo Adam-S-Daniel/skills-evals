@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "id": "atlas-2026-10-29",
+  "plan": "max_20x",
+  "unit": "points_per_million_tokens",
+  "unmeasured_factor": [
+    0.5,
+    2.0
+  ],
+  "sources": {
+    "atlas-2026-10-29": "Atlas ADE, Plan usage burn data, model a5v3, checked 2026-10-29 on one Ultra (formerly Max 20x) account: https://atlas-ade.dev/docs/plan-usage-burn-data/",
+    "she-llac": "Haiku to Opus ratio of 0.2: https://she-llac.com/claude-limits (2026-01-25)"
+  },
+  "notes": [
+    "Weight = 1 / (millions of tokens that move the all-models weekly meter 1 point).",
+    "Atlas has one cache write figure; it is used for both 5-minute and 1-hour writes.",
+    "The Fable row is Atlas's Fable 5.1 estimate; Atlas says Fable 5.2 is unmeasured.",
+    "Haiku is not in Atlas's table. It is set to Opus x 0.2 by weight (5x the tokens per point), the Haiku to Opus ratio from she-llac.com/claude-limits (2026-01-25).",
+    "The fable meter is twice the all-models weight, because Atlas says Fable is capped at half the week."
+  ],
+  "meters": {
+    "all_models": {
+      "cli_key": "seven_day",
+      "models": {
+        "claude-opus-5-5": {
+          "input": {
+            "point": 0.3333333333333333,
+            "low": 0.3333333333333333,
+            "high": 0.3333333333333333,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "output": {
+            "point": 1.5151515151515151,
+            "low": 1.5151515151515151,
+            "high": 1.5151515151515151,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_read": {
+            "point": 0.0058823529411764705,
+            "low": 0.0058823529411764705,
+            "high": 0.0058823529411764705,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_5m": {
+            "point": 0.2173913043478261,
+            "low": 0.2173913043478261,
+            "high": 0.2173913043478261,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_1h": {
+            "point": 0.2173913043478261,
+            "low": 0.2173913043478261,
+            "high": 0.2173913043478261,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          }
+        },
+        "claude-sonnet-5-5": {
+          "input": {
+            "point": 0.2,
+            "low": 0.2,
+            "high": 0.2,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "output": {
+            "point": 0.9090909090909091,
+            "low": 0.9090909090909091,
+            "high": 0.9090909090909091,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_read": {
+            "point": 0.0034482758620689655,
+            "low": 0.0034482758620689655,
+            "high": 0.0034482758620689655,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_5m": {
+            "point": 0.12987012987012986,
+            "low": 0.12987012987012986,
+            "high": 0.12987012987012986,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_1h": {
+            "point": 0.12987012987012986,
+            "low": 0.12987012987012986,
+            "high": 0.12987012987012986,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          }
+        },
+        "claude-fable-5-2": {
+          "input": {
+            "point": 1.4285714285714286,
+            "low": 1.4285714285714286,
+            "high": 1.4285714285714286,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "output": {
+            "point": 6.25,
+            "low": 6.25,
+            "high": 6.25,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_read": {
+            "point": 0.024390243902439025,
+            "low": 0.024390243902439025,
+            "high": 0.024390243902439025,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_5m": {
+            "point": 0.9090909090909091,
+            "low": 0.9090909090909091,
+            "high": 0.9090909090909091,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          },
+          "cache_write_1h": {
+            "point": 0.9090909090909091,
+            "low": 0.9090909090909091,
+            "high": 0.9090909090909091,
+            "basis": "published",
+            "source": "atlas-2026-10-29"
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": {
+            "point": 0.06666666666666667,
+            "low": 0.03333333333333333,
+            "high": 0.13333333333333333,
+            "basis": "assumed",
+            "source": "atlas-2026-10-29",
+            "note": "Not in the published table: Opus weight x 0.2."
+          },
+          "output": {
+            "point": 0.303030303030303,
+            "low": 0.1515151515151515,
+            "high": 0.606060606060606,
+            "basis": "assumed",
+            "source": "atlas-2026-10-29",
+            "note": "Not in the published table: Opus weight x 0.2."
+          },
+          "cache_read": {
+            "point": 0.001176470588235294,
+            "low": 0.000588235294117647,
+            "high": 0.002352941176470588,
+            "basis": "assumed",
+            "source": "atlas-2026-10-29",
+            "note": "Not in the published table: Opus weight x 0.2."
+          },
+          "cache_write_5m": {
+            "point": 0.043478260869565216,
+            "low": 0.021739130434782608,
+            "high": 0.08695652173913043,
+            "basis": "assumed",
+            "source": "atlas-2026-10-29",
+            "note": "Not in the published table: Opus weight x 0.2."
+          },
+          "cache_write_1h": {
+            "point": 0.043478260869565216,
+            "low": 0.021739130434782608,
+            "high": 0.08695652173913043,
+            "basis": "assumed",
+            "source": "atlas-2026-10-29",
+            "note": "Not in the published table: Opus weight x 0.2."
+          }
+        }
+      }
+    },
+    "fable": {
+      "cli_key": "seven_day_overage_included",
+      "models": {
+        "claude-fable-5-2": {
+          "input": {
+            "point": 2.857142857142857,
+            "low": 2.857142857142857,
+            "high": 2.857142857142857,
+            "basis": "published",
+            "source": "atlas-2026-10-29",
+            "note": "Twice the all-models weight (Fable is capped at half the week)."
+          },
+          "output": {
+            "point": 12.5,
+            "low": 12.5,
+            "high": 12.5,
+            "basis": "published",
+            "source": "atlas-2026-10-29",
+            "note": "Twice the all-models weight (Fable is capped at half the week)."
+          },
+          "cache_read": {
+            "point": 0.04878048780487805,
+            "low": 0.04878048780487805,
+            "high": 0.04878048780487805,
+            "basis": "published",
+            "source": "atlas-2026-10-29",
+            "note": "Twice the all-models weight (Fable is capped at half the week)."
+          },
+          "cache_write_5m": {
+            "point": 1.8181818181818181,
+            "low": 1.8181818181818181,
+            "high": 1.8181818181818181,
+            "basis": "published",
+            "source": "atlas-2026-10-29",
+            "note": "Twice the all-models weight (Fable is capped at half the week)."
+          },
+          "cache_write_1h": {
+            "point": 1.8181818181818181,
+            "low": 1.8181818181818181,
+            "high": 1.8181818181818181,
+            "basis": "published",
+            "source": "atlas-2026-10-29",
+            "note": "Twice the all-models weight (Fable is capped at half the week)."
+          }
+        }
+      }
+    }
+  }
+}

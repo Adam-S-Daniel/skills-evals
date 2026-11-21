@@ -130,12 +130,14 @@ class AutoMemoryIsOffForEverySession(unittest.TestCase):
 
 class ForcedEnvIsSetNotInherited(unittest.TestCase):
     def test_the_forced_value_is_the_cli_off_switch(self):
-        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1", TTL: "5m"})
+        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1"})
 
     def test_cli_child_env_overrides_and_copies(self):
         parent = {"PATH": "/bin", FLAG: "0", TTL: "1h"}
         env = guidance.cli_child_env(parent)
-        self.assertEqual(env, {"PATH": "/bin", FLAG: "1", TTL: "5m"})
+        # the cache TTL is the lane-aware policy's (test_issue_cache_ttl.py)
+        self.assertEqual(env, {"PATH": "/bin", FLAG: "1", TTL: "1h",
+                               "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h"})
         self.assertEqual(parent[FLAG], "0")
 
     def test_the_subagent_model_never_reaches_a_child(self):
@@ -165,7 +167,7 @@ class ForcedEnvIsSetNotInherited(unittest.TestCase):
             with self.subTest(parent=parent):
                 child = local_eval.child_environment(parent)
                 self.assertEqual(child[FLAG], "1")
-                self.assertEqual(child[TTL], "5m")
+                self.assertEqual(child[TTL], "1h")
 
 
 if __name__ == "__main__":

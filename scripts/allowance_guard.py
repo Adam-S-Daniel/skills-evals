@@ -25,13 +25,17 @@ one week's sanctioned push to the next):
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
     run id's timestamp falls in the window, each invocation charged its own
-    dollars, `usage.cost_estimate.usd` times `points_per_usd`, plus
-    `per_run_overrun`. The weekly meter's delta is not used when the dollars
-    are known: it is the whole ACCOUNT's movement while the run went, so it
-    charges a run with every other thread's use, and overlapping runs are
+    estimated points plus `per_run_overrun`: its trial summaries' token
+    counts by type priced with the weight table evals/usage-weights.lock pins
+    (harness/allowance_points.py; since 2026-11-20, replacing dollars at a
+    flat rate, which charged eval runs about twice their real use). A role
+    recorded without token counts is charged its dollars at
+    `legacy_usd_per_point`. The weekly meter's delta is not used when the run
+    can be priced: it is the whole ACCOUNT's movement while the run went, so
+    it charges a run with every other thread's use, and overlapping runs are
     charged the same movement twice (2026-11-04: 116 points booked against
-    about 23 real). Without a usable rate or dollar figure (none, non-finite,
-    negative or a bool) the charge is the old one: the measured
+    about 23 real). When some role has neither tokens nor dollars, the
+    charge is the old one: the measured
     `usage.meter_delta.windows.seven_day.delta` plus `per_run_overrun` (the
     meter is read as a call begins, so the last call is outside the delta),
     or `per_run_cap + per_run_overrun` when there is no measured delta (null,
@@ -75,14 +79,19 @@ Measured improve cost (#577, 2026-11-13): ingest lands each improve run's
 cost record at `improve-costs/<run id>.json` (scripts/improve_cost.py). A
 fire is matched to one by mode, target and a run id stamp from 2 minutes
 before to 30 minutes after its `run_started_at`, one-to-one, oldest first,
-and is charged the record's dollars (agent + judge + guard + proposal) at
-`points_per_usd` in `spent`, like an ingested eval run; in the reading bound
+and is charged in `spent` like an ingested eval run: the record's `points`,
+priced from token counts by type (scripts/improve_cost.py schema 2, since
+2026-11-20), plus the rest of its dollars (agent + judge + guard + proposal)
+at `legacy_usd_per_point`; a record from before tokens were kept, all its
+dollars at that rate. In the reading bound
 it is inside the reading when it started `IMPROVE_MAX_RUN` before it and
-charged in full after. When the dollars are only a floor (the trigger loop's
-`claude -p` calls and a failed proposal call report none), the charge is the
-larger of the dollars and the meter delta of a clean bracket (busy/span at
-least `CLEAN_BRACKET`), else `improve_charge`. An unmatched fire, or no
-`points_per_usd`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
+charged in full after. When that is only a floor (the trigger loop's
+`claude -p` calls report no tokens or dollars, and a failed proposal call no
+dollars), the charge is the larger of it and the top of the meter delta's
+range in a clean bracket (busy/span at least `CLEAN_BRACKET`; the CLI
+truncates each reading, so a delta of d is anything below d plus a point),
+else `improve_charge`. An unmatched fire, or dollars left to price with no
+`legacy_usd_per_point`, keeps the rule above. `IMPROVE_FIRE_UNITS` is recomputed
 from the records by `allowance_guard.py units --results-tree <tree>`.
 
 That charge is an estimate and was never corrected by measurement: on
@@ -220,6 +229,39 @@ an `as_of` more than `LOOP_RESERVE_MAX_AGE` (3 days) old, refuses with a
 message naming the file and the fix: no hidden default. `pace_room` and the
 account stop are unchanged.
 
+Pace hold (Adam, 2026-11-20: "I am far ahead of usage pace", put "the
+kibosh on such runs"): the cap above is the loop's share of the week, but it
+was a floor, so with the whole account well ahead of pace the loop still
+spent its share (2026-11-20: 74% used with 57.5% of the week gone, and the
+guard still let two fires through). Now `account` sets `pace_hold` when the
+newest usable reading, taken from the top of its range as `pace` takes it,
+is above the same pace line `pace` releases room under,
+`stop_when_account_above` times the share of the week gone. While it holds,
+`room` is at most zero, `fits` is 0 and `check` refuses every mode with
+`PACE_REFUSAL`, the improve per-kind floor included: Adam's own work comes
+first. It lifts by itself once the reading falls back under the line (time
+passing raises the line) or the week resets.
+
+It fails safe: no usable reading (none ingested, older than `PACE_MAX_AGE`,
+from the week before the reset, or out of range) holds too. Only an eval
+fire's ingested results bring a reading, so that hold would never lift; one
+eval fire may go as the pace probe (`pace_probe`, through `refresh`, so the
+weekly planner plans it) when there is no usable reading, no eval fire is
+still without results from the last `PENDING_FULL_HOLD`, and no eval fire
+started in the last `PACE_PROBE_INTERVAL`. The probe's own run still stops at
+`stop_when_account_above`, and its results bring the reading that decides the
+hold. With the start times of the week's eval fires unknown, no probe goes.
+
+No probe when an old reading already settles it (2026-11-21: a probe fired
+with the account at 83%, above the 80% stop, and spent a full Opus arm and a
+routine session to learn what the last reading already said). The weekly
+meter only rises inside an account week, so a reading too old for `pace` but
+from this week (`window_start`, a manual reset included) is a floor on use
+now. The CLI truncates, so the reading itself is the bottom of its range.
+When that floor is above the pace line now (`stale_ahead`), the hold is
+certain and no probe goes; it is needed only when the floor could now be
+under the line, or there is no reading from this week at all.
+
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
 
@@ -250,6 +292,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import allowance_points  # noqa: E402
 import budget as budget_file  # noqa: E402
 import improve_cost  # noqa: E402
 import improve_outcomes  # noqa: E402
@@ -295,6 +338,10 @@ EPSILON = 1e-9
 #: release room on; one more than PACE_CLOCK_SKEW ahead of `now` is not read.
 PACE_MAX_AGE = timedelta(hours=12)
 PACE_CLOCK_SKEW = timedelta(minutes=5)
+#: With no usable reading, one eval fire may go as the pace probe at most this
+#: often (module docstring, "Pace hold"): a reading lasts `PACE_MAX_AGE`, so
+#: a held account sees about two probes a day.
+PACE_PROBE_INTERVAL = timedelta(hours=6)
 #: What one improve fire costs, in eval runs' dollars, for a fire no cost
 #: record matches. Recomputed 2026-11-13 (#577) by `allowance_guard.py units`
 #: from the records on persistent/eval-results: (agent + judge + guard +
@@ -350,7 +397,13 @@ IMPROVE_CAP_REFUSAL = ("::error::improve cap: share allows {allowed}, used {used
 
 #: The 5-hour stop's refusal (skills-evals#921): no number, only which limit.
 SESSION_REFUSAL = ("::error::the account's 5-hour window is at or above "
-                   "stop_when_session_above; nothing was fired (evals/budget.yml, #921)")
+                   "its stop (stop_when_session_above, or working_hours.session_stop "
+                   "in working hours); nothing was fired (evals/budget.yml, #921)")
+
+
+#: The pace hold's refusal (Adam, 2026-11-20): no number, only which limit.
+PACE_REFUSAL = ("::error::the account is ahead of its weekly pace, or has no recent "
+                "reading; nothing was fired (allowance_guard.py, pace hold)")
 
 
 class GuardError(Exception):
@@ -377,26 +430,26 @@ def _load_summary(path: Path):
         return None
 
 
-def _own_dollars_cost(usage, limits: dict) -> float | None:
-    """The charge from an invocation's own dollars, or None when it cannot be
-    made: `usage.cost_estimate.usd` (every call of the invocation that carries
-    a dollar figure) times `points_per_usd`, plus the overrun. Needs a positive
-    finite rate and a finite non-negative, non-bool dollar figure."""
-    rate = limits.get("points_per_usd")
-    estimate = usage.get("cost_estimate") if isinstance(usage, dict) else None
-    dollars = estimate.get("usd") if isinstance(estimate, dict) else None
-    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
-            or not math.isfinite(rate) or rate <= 0:
+def _own_points_cost(measured: list, limits: dict) -> float | None:
+    """The charge from an invocation's own calls, or None when it cannot be
+    made: its trial summaries' `usage.measured` blocks priced from their
+    token counts by type (harness/allowance_points.py, the table
+    evals/usage-weights.lock pins; a role without token counts at
+    `legacy_usd_per_point`), as a fraction of the week, plus the overrun.
+    None when no trial block records a call, or some role has neither tokens
+    nor dollars: nothing of the run's own was priced."""
+    estimate = allowance_points.estimate_blocks(
+        measured, limits.get(budget_file.LEGACY_RATE))
+    if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
+                                          or estimate["legacy_roles"]):
         return None
-    if isinstance(dollars, bool) or not isinstance(dollars, (int, float)) \
-            or not math.isfinite(dollars) or dollars < 0:
-        return None
-    return float(dollars) * rate + limits["per_run_overrun"]
+    return estimate["points"] / 100 + limits["per_run_overrun"]
 
 
-def _invocation_cost(usage, limits: dict) -> float:
-    """One run_eval invocation's charge from its run-level `usage` block."""
-    own = _own_dollars_cost(usage, limits)
+def _invocation_cost(usage, limits: dict, measured: list = ()) -> float:
+    """One run_eval invocation's charge from its run-level `usage` block and
+    its trial summaries' `usage.measured` blocks."""
+    own = _own_points_cost(list(measured), limits)
     if own is not None:
         return own
     reserve = budget_file.run_reservation(limits)
@@ -410,6 +463,18 @@ def _invocation_cost(usage, limits: dict) -> float:
     # A meter that went down in a window that did not reset spent nothing
     # measurable; the overrun is still charged.
     return max(0.0, float(moved)) + limits["per_run_overrun"]
+
+
+def _add_invocation(blocks: dict, usage: dict) -> None:
+    """File one summary's `usage` under its invocation (the run-level block
+    every summary of one run_eval invocation shares), keeping its
+    `measured` block when it is a trial's own (an arm aggregate's is a sum
+    of those, so it is not counted again)."""
+    level = {key: value for key, value in usage.items() if key != "measured"}
+    entry = blocks.setdefault(json.dumps(level, sort_keys=True), (usage, []))
+    measured = usage.get("measured")
+    if isinstance(measured, dict) and measured.get("scope") == "trial":
+        entry[1].append(measured)
 
 
 def run_cost(run_dir: Path, limits: dict) -> float:
@@ -426,11 +491,11 @@ def run_cost(run_dir: Path, limits: dict) -> float:
         if not isinstance(usage, dict):
             # A summary from before #370 says nothing of its spend.
             return reserve
-        level = {key: value for key, value in usage.items() if key != "measured"}
-        blocks[json.dumps(level, sort_keys=True)] = usage
+        _add_invocation(blocks, usage)
     if not blocks:
         return reserve
-    return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+    return sum(_invocation_cost(usage, limits, measured)
+               for usage, measured in blocks.values())
 
 
 def _unmeasured(usage) -> bool:
@@ -453,11 +518,42 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
         usage = summary.get("usage") if isinstance(summary, dict) else None
         if not isinstance(usage, dict) or _unmeasured(usage):
             return None
-        level = {key: value for key, value in usage.items() if key != "measured"}
-        blocks[json.dumps(level, sort_keys=True)] = usage
+        _add_invocation(blocks, usage)
     if not blocks:
         return None
-    return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+    return sum(_invocation_cost(usage, limits, measured)
+               for usage, measured in blocks.values())
+
+
+def run_points(run_dir: Path, legacy_usd_per_point) -> dict | None:
+    """What the pages show one ingested routine run used of the weekly
+    allowance: `points` (all-models meter, percent of the week), the sum of
+    its trial summaries' `usage.measured` blocks priced from token counts by
+    type (a role with none at `legacy_usd_per_point`), with no overrun, plus
+    the `usd` those blocks record and whether every role was priced from
+    tokens (`from_tokens`). None when a summary cannot be read or some role
+    has neither tokens nor dollars: the caller then prices the run another
+    way, never as zero."""
+    blocks = []
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if not isinstance(usage, dict):
+            return None
+        measured = usage.get("measured")
+        if isinstance(measured, dict) and measured.get("scope") == "trial":
+            blocks.append(measured)
+    if not blocks:
+        return None
+    estimate = allowance_points.estimate_blocks(blocks, legacy_usd_per_point)
+    if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
+                                          or estimate["legacy_roles"]):
+        return None
+    usd = sum(float(block[role]["cost_usd"]) for block in blocks
+              for role in allowance_points.ROLES
+              if isinstance(block.get(role), dict) and block[role].get("calls")
+              and allowance_points._number(block[role].get("cost_usd")))
+    return {"points": estimate["points"], "usd": usd, "from_tokens": estimate["complete"]}
 
 
 def delta_inside(run_dir: Path, at: datetime) -> float:
@@ -602,22 +698,39 @@ def bracket_clean(record: dict) -> bool:
 
 
 def record_charge(record: dict, limits: dict, unit_charge: float) -> float | None:
-    """What a matched fire is charged, or None without a dollar rate. The
-    measured dollars at `points_per_usd`; when they are only a floor, the
-    larger of that and the meter delta of a clean bracket (an account-wide
-    figure, so a ceiling on the run's own use), and with no clean bracket the
-    unit charge, today's rule."""
-    rate = limits.get("points_per_usd")
+    """What a matched fire is charged, as a fraction of the week, or None
+    when dollars are left to price and there is no rate. The record's
+    `points` (priced from token counts by type) plus its other dollars at
+    `legacy_usd_per_point`; when that is only a floor, the larger of it and
+    the top of a clean bracket's meter delta range (an account-wide figure,
+    so a ceiling on the run's own use; a sub-point delta alone never sets the
+    charge below it), and with no clean bracket the unit charge."""
+    rate = limits.get(budget_file.LEGACY_RATE)
     if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
             or not math.isfinite(rate) or rate <= 0:
-        return None
+        rate = None
     dollars, complete = record_dollars(record)
-    points = dollars * rate
+    tokens = record.get("points")
+    if tokens is not None:
+        rest = max(0.0, dollars - tokens["usd"])
+        if rest > EPSILON and rate is None:
+            return None
+        charge = (tokens["points"] + (rest / rate if rest > EPSILON else 0.0)) / 100
+        complete = tokens["complete"] and not record["trigger_calls"]
+    elif rate is None:
+        return None
+    else:
+        charge = dollars / rate / 100
     if complete:
-        return points
+        return charge
     if bracket_clean(record) and record["delta"] is not None:
-        return max(points, record["delta"])
-    return max(points, unit_charge)
+        # The CLI truncates each reading, so the true movement is below the
+        # delta plus one point (allowance_points.delta_range).
+        _, high = allowance_points.delta_range(
+            record["first"]["utilization"] * 100, record["last"]["utilization"] * 100,
+            allowance_points.CLI)
+        return max(charge, high / 100)
+    return max(charge, unit_charge)
 
 
 def match_fires(fires: list[dict], records: list[dict]) -> list[tuple]:
@@ -779,7 +892,9 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     `(0.0, None, None)` when there is none usable: how far the account is
     under pace, `stop_when_account_above` times the share of its week gone
     less utilization, never below zero (Adam, 2026-11-11: room only when
-    the account is under pace)."""
+    the account is under pace). The CLI truncates the reading, so the room
+    is taken from the top of its range (allowance_points.reading_range):
+    a reading of 0.40 may be up to 0.41 used."""
     found = newest_snapshot(runs)
     if found is None:
         return 0.0, None, None
@@ -797,16 +912,67 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
         return 0.0, None, None
     elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
-    room = max(0.0, limits["stop_when_account_above"] * elapsed - used)
+    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    room = max(0.0, limits["stop_when_account_above"] * elapsed - top / 100)
     return room, float(used), elapsed
 
 
+def ahead_of_pace(used, elapsed, limits: dict) -> bool:
+    """Whether the account reading `used` (a fraction, as `pace` returns it)
+    is above the pace line, `stop_when_account_above` times `elapsed`, from
+    the top of its range as `pace` reads it (module docstring, "Pace hold").
+    No reading (`used` or `elapsed` None) counts as ahead: fail safe."""
+    if used is None or elapsed is None:
+        return True
+    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    return top / 100 > limits["stop_when_account_above"] * elapsed + EPSILON
+
+
+def stale_ahead(runs: list[Path], limits: dict, now: datetime) -> bool:
+    """Whether the newest snapshot, even one too old for `pace`, proves the
+    account above the pace line now (module docstring, "Pace hold"): it is
+    from this account week (at or after `window_start`, not ahead of the
+    clock), its weekly window has not reset, and its reading, the bottom of
+    its truncated range, is above `stop_when_account_above` times the share
+    of the week gone now. False whenever that cannot be shown."""
+    found = newest_snapshot(runs)
+    if found is None:
+        return False
+    at, snapshot = found
+    if not window_start(now) <= at <= now + PACE_CLOCK_SKEW:
+        return False
+    info = snapshot.get("info")
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    used = week.get("utilization") if isinstance(week, dict) else None
+    resets = week.get("resetsAt") if isinstance(week, dict) else None
+    if not _number(used) or not 0 <= used <= 1 or not _number(resets):
+        return False
+    left = resets - now.timestamp()
+    if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
+        return False
+    elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
+    return used > limits["stop_when_account_above"] * elapsed + EPSILON
+
+
+def pace_probe(used, recent: int, eval_started, now: datetime) -> bool:
+    """Whether one eval fire may go only to bring a reading while there is
+    none (module docstring, "Pace hold"): no usable reading, no eval fire
+    from the last `PENDING_FULL_HOLD` still without results, and the week's
+    eval fire start times known with none in the last `PACE_PROBE_INTERVAL`."""
+    if used is not None or recent or eval_started is None:
+        return False
+    return not any(start > now - PACE_PROBE_INTERVAL for start in eval_started)
+
+
 def session_hold(runs: list[Path], limits: dict, now: datetime) -> bool:
-    """Whether the newest snapshot's 5-hour window reads at or above
-    `stop_when_session_above` and has not reset yet (skills-evals#921).
+    """Whether the newest snapshot's 5-hour window reads at or above the
+    5-hour stop in force at `now` (`budget.session_limit`: the lower
+    `working_hours.session_stop` in the owner's working hours, else
+    `stop_when_session_above`) and has not reset yet (skills-evals#921).
     False when the budget sets no such stop or no snapshot carries a
     readable 5-hour window: the weekly checks still apply."""
-    limit = limits.get("stop_when_session_above")
+    limit = budget_file.session_limit(limits, now)
     found = newest_snapshot(runs) if limit is not None else None
     if found is None:
         return False
@@ -1037,7 +1203,11 @@ def account(tree: Path, limits: dict, now: datetime,
     if improve_started:
         finished = min(improve_7d - covered, max(0, sum(
             1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
+    hold = ahead_of_pace(used, elapsed, limits)
     return {"session_hold": session_hold(runs, limits, now),
+            "pace_hold": hold,
+            "pace_probe": hold and pace_probe(used, recent, eval_started, now)
+            and not stale_ahead(runs, limits, now),
             "spent": spent, "pending": pending, "committed": committed,
             "bound": bound, "stop_left": stop_left,
             "stop": limits["stop_when_account_above"], "runs": len(runs),
@@ -1098,6 +1268,9 @@ def room(state: dict) -> float:
                state.get("pace_room", 0.0) - state["pending"])
     if state.get("stop_left") is not None:
         left = min(left, state["stop_left"])
+    if state.get("pace_hold"):
+        # Ahead of pace, or no reading: nothing for the loop (Pace hold).
+        left = min(left, 0.0)
     return left
 
 
@@ -1108,7 +1281,7 @@ def fits(state: dict) -> int:
     week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
     both: the snapshot behind the pace room may predate those fires, and
     without it every fire would fit until the next snapshot is ingested."""
-    if state.get("session_hold"):
+    if state.get("session_hold") or state.get("pace_hold"):
         return 0
     left = room(state) + EPSILON
     if left < state["reservation"]:
@@ -1199,6 +1372,10 @@ def describe(state: dict) -> str:
         allowed, used, _ = improve_numbers(state, IMPROVE_MODES[0])
         line += (f"; improve cap {'none' if allowed is None else allowed}, "
                  f"used {used}")
+    if state.get("pace_hold"):
+        line += ("; PACE HOLD: no fire goes"
+                 + (" but one pace probe, to bring a reading"
+                    if state.get("pace_probe") else ""))
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -1219,6 +1396,9 @@ def check(state: dict, mode: str = "eval") -> str | None:
     window at its stop (`session_hold`, #921) refuses every mode first."""
     if state.get("session_hold"):
         return SESSION_REFUSAL
+    if state.get("pace_hold"):
+        # Only the pace probe goes: an eval fire, to bring a reading.
+        return None if mode == "eval" and state.get("pace_probe") else PACE_REFUSAL
     if mode in IMPROVE_MODES:
         if not improve_cap(state, mode):
             allowed, used, mine = improve_numbers(state, mode)
@@ -1240,6 +1420,9 @@ def refresh(state: dict) -> bool:
     and no eval fire from the last `PENDING_FULL_HOLD` is still without
     results. Its own reservation is held in full, and the in-run stop
     still bounds it."""
+    if state.get("pace_hold"):
+        # Held: only the pace probe, when there is no reading at all.
+        return bool(state.get("pace_probe"))
     if not state.get("improve_finished") or state.get("recent"):
         return False
     # A reading at or past the in-run stop: the fire would stop at once.
@@ -1404,6 +1587,31 @@ def print_units(tree: Path) -> int:
     return 0
 
 
+def live_state(tree: Path, limits: dict, now: datetime, fire_count=None,
+               improve_count=None, improve_starts=None, eval_starts=None,
+               improve_kinds=None, improve_details=None) -> dict:
+    """`account` for `now` with the fires read live from the GitHub API
+    (GITHUB_REPOSITORY, GH_TOKEN), as `check` and `fits` see it; `main`'s
+    stand-ins replace the API in tests. scripts/loop_status.py reads the
+    guard's state through this, so the status page never recomputes it.
+    Raises GuardError when the spend cannot be read."""
+    since = window_start(now)
+    fires = fire_count(now) if fire_count else _live_fires(now, since)
+    if improve_count:
+        improve = improve_count(now)
+        started = improve_starts(now) if improve_starts else None
+        evals = eval_starts(now) if eval_starts else None
+        by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
+        details = improve_details(now) if improve_details else None
+    else:
+        # One fetch feeds the counts and the start times.
+        improve, started, evals, (by_kind, in_flight), details = _live_improve_both(
+            now, since)
+    return account(tree, limits, now, fires, improve, since, started,
+                   eval_started=evals, improve_by_kind=by_kind,
+                   improve_in_flight=in_flight, improve_fires=details)
+
+
 def main(argv: list[str] | None = None, now: datetime | None = None,
          fire_count=None, improve_count=None, improve_starts=None,
          eval_starts=None, improve_kinds=None, improve_details=None) -> int:
@@ -1415,7 +1623,10 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     when it is not given), and `improve_details`, one returning `improve_details`'
     rows (no fire is matched to a cost record when it is not given)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("check", "fits", "units"))
+    # `hold` (2026-11-21): only whether the pace hold is on, from the results
+    # tree alone, with no GitHub API call, for loop jobs fired outside this
+    # repository (_agent-guidance's fleet-worker-fire.yml, the Loop worker).
+    parser.add_argument("command", choices=("check", "fits", "units", "hold"))
     parser.add_argument("--results-tree", type=Path, required=True,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
@@ -1431,23 +1642,21 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     now = now or datetime.now(timezone.utc)
     if args.command == "units":
         return print_units(args.results_tree)
+    if args.command == "hold":
+        try:
+            limits = budget_file.load_budget(args.budget)
+            _, used, elapsed = pace(ingested_runs(args.results_tree, now), limits, now)
+        except (GuardError, budget_file.BudgetError) as exc:
+            print(f"::error::allowance guard: {exc}; refusing")
+            return 1
+        # No usable reading holds too (fail safe); the eval lane's pace probe
+        # brings one.
+        print(f"pace_hold={'true' if ahead_of_pace(used, elapsed, limits) else 'false'}")
+        return 0
     try:
         limits = budget_file.load_budget(args.budget)
-        since = window_start(now)
-        fires = fire_count(now) if fire_count else _live_fires(now, since)
-        if improve_count:
-            improve = improve_count(now)
-            started = improve_starts(now) if improve_starts else None
-            evals = eval_starts(now) if eval_starts else None
-            by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
-            details = improve_details(now) if improve_details else None
-        else:
-            # One fetch feeds the counts and the start times.
-            improve, started, evals, (by_kind, in_flight), details = _live_improve_both(
-                now, since)
-        state = account(args.results_tree, limits, now, fires, improve, since, started,
-                        eval_started=evals, improve_by_kind=by_kind,
-                        improve_in_flight=in_flight, improve_fires=details)
+        state = live_state(args.results_tree, limits, now, fire_count, improve_count,
+                           improve_starts, eval_starts, improve_kinds, improve_details)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")
@@ -1465,7 +1674,9 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     if refusal is not None:
         print(refusal)
         return REFUSED_EXIT
-    if args.mode not in IMPROVE_MODES and fits(state) < 1:
+    if state.get("pace_hold"):
+        print("allowed as the pace probe: its results bring an account reading")
+    elif args.mode not in IMPROVE_MODES and fits(state) < 1:
         print("allowed as the one refresh fire: its results bring a newer account reading")
     return 0
 

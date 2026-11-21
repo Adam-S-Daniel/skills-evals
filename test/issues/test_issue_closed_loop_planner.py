@@ -233,6 +233,8 @@ def measured_summary(run_dir: Path, delta: float, name="k/20261019T100000Z/with_
 class GuardImproveChargeTests(unittest.TestCase):
 
     def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
         self.tree = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
 
@@ -275,7 +277,7 @@ class GuardImproveChargeTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             budget_path = self.tree / "budget.yml"
             budget_path.write_text("weekly_cap: 0.25\nper_run_cap: 0.03\n"
-                                   "per_run_overrun: 0.005\nstop_when_account_above: 0.80\n")
+                                   "per_run_overrun: 0.005\nstop_when_account_above: 0.80\nclaude_plan: ultra\n")
             code = guard.main(["check", "--results-tree", str(self.tree), "--mode", "improve",
                                "--budget", str(budget_path)],
                               now=NOW, fire_count=lambda now: (0, 0),
@@ -1812,6 +1814,10 @@ class BareBaselineTests(unittest.TestCase):
     """ADR 0012's 2026-10-27 addendum: one bare fire per (scheduled in-place
     fixture, roster model), once, after every other band, reserved as one
     arm; never an empty fire of the cell's pair, and one run to the guard."""
+
+    def setUp(self):
+        # Pins the cap, stop and improve math, not the pace hold (PaceHoldTests).
+        self.enterContext(mock.patch.object(guard, "ahead_of_pace", return_value=False))
 
     def scheduled_in_place(self):
         committed = plan_week.schedule.committed_fixtures(ROOT)

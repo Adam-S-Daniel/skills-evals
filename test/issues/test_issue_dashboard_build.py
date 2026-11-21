@@ -305,7 +305,7 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertAlmostEqual(row["room_points"], g.room(state) * 100)
         self.assertAlmostEqual(row["committed_points"], state["committed"] * 100)
         self.assertAlmostEqual(row["pending_points"], state["pending"] * 100)
-        self.assertGreater(row["points"], 10.0 * limits["points_per_usd"] * 100, "the unreadable run is charged in full")
+        self.assertGreaterEqual(row["points"], (limits["per_run_cap"] + limits["per_run_overrun"]) * 100, "the unreadable run is charged in full")
 
     def test_week_resets_at_is_the_next_scheduled_reset_even_in_a_manual_reset_week(self):
         sys.path.insert(0, str(REPO / "scripts"))
@@ -347,8 +347,8 @@ class DashboardBuildTests(unittest.TestCase):
                 self.assertEqual(out.get(key), value, key)
         for key, value in doc["total"].items():
             self.assertEqual(got["total"].get(key), value, key)
-        # The display rates travel from the build to the public document unchanged.
-        self.assertEqual(doc["rates"]["eval_usd_per_point"], build.eval_usd_per_point())
+        # The measured rates travel from the build to the public document unchanged.
+        self.assertGreater(doc["rates"]["eval_usd_per_point"], 0)
         self.assertEqual(got["rates"], doc["rates"])
         bad = dict(doc, rates=dict(doc["rates"], session_count=1))
         with self.assertRaisesRegex(ingest.Rejected, "not a display rate"):
@@ -610,33 +610,67 @@ class DashboardBuildTests(unittest.TestCase):
         starts = self.cb_starts()
         rows = [self.plan_row("2026-10-20T10:00:00Z", 5, after=20), self.plan_row("2026-10-22T10:00:00Z", 5, after=30),
                 self.plan_row("2026-11-03T10:00:00Z", 50, after=90)]  # the current week is not complete
-        rate, basis, weeks = build.thread_usd_per_point(rows, {0: 20, 2: 999}, starts, self.cb_now(), 0.5)
-        # The week's largest reading, 30, less its eval points ($10 at $0.50 a point, 20): 10 points for $20 of threads.
+        rate, basis, weeks = build.thread_usd_per_point(rows, {0: 20, 2: 999}, starts, self.cb_now(), {0: 20, 2: 100})
+        # The week's largest reading, 30, less its eval points (20): 10 points for $20 of threads.
         self.assertEqual((rate, weeks), (2.0, 1))
         self.assertIn("upper bound", basis)
         # No reading in a complete week, or readings the eval runs alone explain: no rate, and no default.
         rate, basis, weeks = build.thread_usd_per_point([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts,
-                                                        self.cb_now(), 0.5)
+                                                        self.cb_now(), {1: 10})
         self.assertEqual((rate, weeks), (None, 0))
         self.assertIn("no complete week", basis)
-        rate, basis, _ = build.thread_usd_per_point(rows, {0: 20}, starts, self.cb_now(), 0.1)
+        rate, basis, _ = build.thread_usd_per_point(rows, {0: 20}, starts, self.cb_now(), {0: 100})
         self.assertIsNone(rate)
         self.assertIn("leave no points", basis)
         self.assertFalse(hasattr(build, "DEFAULT_POINTS_PER_USD"), "no hard-coded rate fallback")
 
-    def test_the_eval_rate_comes_only_from_the_points_config(self):
-        self.assertEqual(build.eval_usd_per_point(), 6.67)
-        for text, why in (("other: 1\n", "eval_usd_per_point must be a positive number"),
-                          ("eval_usd_per_point: 0\n", "eval_usd_per_point must be a positive number"),
-                          ("eval_usd_per_point: true\n", "eval_usd_per_point must be a positive number")):
-            path = self.tmp / "points.yml"
-            path.write_text(text)
-            with self.assertRaises(SystemExit) as caught:
-                build.eval_usd_per_point(path)
-            self.assertIn(why, str(caught.exception))
+    def test_no_display_rate_is_typed_in_only_the_legacy_rate_for_calls_without_tokens(self):
+        self.assertFalse((REPO / "evals" / "points.yml").exists(), "the typed-in display rates are gone")
+        for gone in ("eval_usd_per_point", "scheduled_usd_per_point", "usd_per_point", "POINTS_CONFIG"):
+            self.assertFalse(hasattr(build, gone), gone)
+        self.assertEqual(build.legacy_usd_per_point(), 12.35)
+        path = self.tmp / "budget.yml"
+        path.write_text((REPO / "evals" / "budget.yml").read_text().replace("legacy_usd_per_point: 12.35", ""))
         with self.assertRaises(SystemExit) as caught:
-            build.eval_usd_per_point(self.tmp / "missing.yml")
-        self.assertIn("cannot read the points display config", str(caught.exception))
+            build.legacy_usd_per_point(path)
+        self.assertIn("legacy_usd_per_point is missing", str(caught.exception))
+        with self.assertRaises(SystemExit) as caught:
+            build.legacy_usd_per_point(self.tmp / "missing.yml")
+        self.assertIn("cannot read the budget", str(caught.exception))
+
+    def run_folder(self, er, run_id, agent):
+        """One ingested routine run with one trial summary whose agent role is `agent`."""
+        write(Path(er) / "routine-results" / run_id / "skill" / "ts" / "trial-1" / "summary.json",
+              {"usage": {"measured": {"scope": "trial", "agent": agent, "judge": {"calls": 0},
+                                      "guard": {"calls": 0}}}})
+
+    def test_eval_runs_are_their_estimated_points_from_token_counts(self):
+        sys.path.insert(0, str(REPO / "harness"))
+        import allowance_points
+        er = self.tmp / "res"
+        models = {"claude-sonnet-5-5": {"input_tokens": 1000, "output_tokens": 200000,
+                                        "cache_read_input_tokens": 5000000,
+                                        "cache_creation_input_tokens": 100000, "cost_usd": 6.0}}
+        tokens = {"calls": 3, "models": models, "cost_usd": 6.0}
+        self.run_folder(er, "20261021T100000Z-aaaaaa", tokens)
+        # A run recorded before token counts were kept is its dollars at the legacy rate.
+        self.run_folder(er, "20261022T100000Z-bbbbbb", {"calls": 1, "cost_usd": 4.0})
+        # A run whose summary says nothing of its spend is its scored rows' dollars at the legacy rate.
+        write(er / "routine-results" / "20261028T100000Z-cccccc" / "s" / "summary.json", {"arm": "with_skill"})
+        plan = [{"run_id": "20261028T100000Z-cccccc", "fired_at": "2026-10-28T10:00:00Z", "cost_usd": 3.0,
+                 "meter_points": None, "account_week_after": None}]
+        points, usd, token_usd, token_points = build.eval_run_points(er, plan, self.cb_starts(), 2.0)
+        expected = allowance_points.estimate_blocks([{"agent": tokens}], 2.0)["points"]
+        self.assertGreater(expected, 0)
+        self.assertAlmostEqual(points[0], expected + 4.0 / 2.0)
+        self.assertAlmostEqual(points[1], 3.0 / 2.0)
+        self.assertEqual((usd, token_usd), ({0: 10.0, 1: 3.0}, 6.0))
+        self.assertAlmostEqual(token_points, expected)
+        # The measured eval rate is the token-priced runs' dollars over their points, not a typed-in number.
+        raw = {}
+        self.cb(er=str(er), plan_rows=plan, raw=raw, legacy_rate=2.0)
+        self.assertAlmostEqual(raw["rates"]["eval_usd_per_point"], 6.0 / expected)
+        self.assertAlmostEqual(raw["total"]["run_points"], expected + 2.0 + 1.5)
 
     def test_loop_changes_parse_each_prefix_and_ignore_unmerged_prs(self):
         def pr(n, ref, merged="2026-10-27T10:00:00Z"):
@@ -696,20 +730,21 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertIn(build.API_BILLED, (REPO / "harness" / "run_eval.py").read_text())
         explorer = {"skills": [{"verdict": "keep"}, {"verdict": "insufficient"}, {"verdict": None}],
                     "guidance": {"sections": [{"verdict": "retire"}]}}
-        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=12, points=2)]
+        plan = [dict(self.plan_row("2026-10-21T10:00:00Z", 10, after=12, points=2), run_id="20261021T100000Z-aaaaaa")]
+        self.run_folder(self.tmp / "res", "20261021T100000Z-aaaaaa", {"calls": 1, "cost_usd": 10})
         # A project-made scheduled task's run is a thread session too; its id in the fire ledger keeps it
         # out of development.
         samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10),
                    dict(self.sample("2026-10-25T17:00:00Z", 0), session_id="cse_fired"),
                    dict(self.sample("2026-10-26T17:00:00Z", 30), session_id="cse_fired")]
-        sched = {"usd_per_week": 4.0, "since": datetime(2026, 10, 20, tzinfo=timezone.utc), "unmeasured": []}
+        sched = {"usd_per_week": 4.0, "points_per_week": 1.0, "since": datetime(2026, 10, 20, tzinfo=timezone.utc),
+                 "unmeasured": []}
         raw = {}
         weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer,
-                                      raw=raw, eval_rate=2.0, sched=sched, sched_rate=4.0,
-                                      fire_sessions={"cse_fired"})
+                                      raw=raw, legacy_rate=2.0, sched=sched, fire_sessions={"cse_fired"})
         w = weeks[0]
-        # Reading 12 less the eval run's 5 points ($10 at $2) and the scheduled tasks' 1 ($4 at $4) leaves
-        # 6 points for $10 of development.
+        # Reading 12 less the eval run's 5 points (recorded without token counts: $10 at the legacy $2) and the
+        # scheduled tasks' estimated 1 leaves 6 points for $10 of development.
         thread_rate = 10 / 6
         self.assertEqual((w["api_usd"], w["dev_usd"], w["dev_estimated"]), (1.0, 10.0, False))
         self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 5.0))
@@ -737,8 +772,9 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((raw["total"]["thread_spend_usd"], raw["total"]["scheduled_since"]), (10.0, "2026-10-19"))
 
     def test_scheduled_tasks_before_the_fire_ledger_read_as_no_value(self):
-        sched = {"usd_per_week": 7.0, "since": datetime(2026, 10, 28, tzinfo=timezone.utc), "unmeasured": ["New"]}
-        weeks, rows = self.cb(sched=sched, sched_rate=7.0)
+        sched = {"usd_per_week": 7.0, "points_per_week": 1.0, "since": datetime(2026, 10, 28, tzinfo=timezone.utc),
+                 "unmeasured": ["New"]}
+        weeks, rows = self.cb(sched=sched)
         self.assertEqual([w["sched_points"] for w in weeks], [None, 1.0, round(68 / 168, 2)])
         self.assertEqual([w["total_points"] for w in weeks][0], None)
         sm = {r["key"]: r for r in rows}
@@ -749,25 +785,17 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual({w["sched_points"] for w in weeks} | {w["total_points"] for w in weeks}, {None})
         self.assertIsNone({r["key"]: r for r in rows}["sched_points_per_week"]["value"])
 
-    def test_the_scheduled_task_rate_comes_only_from_the_points_config(self):
-        self.assertEqual(build.scheduled_usd_per_point(), 6.67)
-        path = self.tmp / "points.yml"
-        path.write_text("eval_usd_per_point: 6.67\n")
-        with self.assertRaises(SystemExit) as caught:
-            build.scheduled_usd_per_point(path)
-        self.assertIn("scheduled_task_usd_per_point must be a positive number", str(caught.exception))
-
     def test_each_scheduled_task_row_carries_its_cost_in_points_most_expensive_first(self):
         jobs = [{"kind": "scheduled task", "id": "t1", "name": "Worker", "lane": "meter", "in_loop": True, "fires_per_week": 28,
-                 "usd_per_fire": 2.0, "usd_per_week": 56.0},
+                 "usd_per_fire": 2.0, "usd_per_week": 56.0, "points_per_fire": 0.5, "points_per_week": 14.0},
                 {"kind": "scheduled task", "id": "t2", "name": "Runner", "lane": "eval_cap", "in_loop": True, "fires_per_week": 7,
-                 "usd_per_fire": 0.4, "usd_per_week": 2.8},
+                 "usd_per_fire": 0.4, "usd_per_week": 2.8, "points_per_fire": 0.1, "points_per_week": 0.7},
                 {"kind": "scheduled task", "id": "t3", "name": "Unmeasured", "lane": "meter", "in_loop": False, "fires_per_week": 7,
-                 "usd_per_fire": None, "usd_per_week": None},
+                 "usd_per_fire": None, "usd_per_week": None, "points_per_fire": None, "points_per_week": None},
                 {"kind": "workflow", "id": "w.yml", "lane": "actions_only", "usd_per_week": 0.0}]
         rows = [{"name": n, "id": i} for n, i in (("Unmeasured", "t3"), ("Workflow", "w.yml"), ("Runner", "t2"),
                                                   ("Worker", "t1"))]
-        got = build.task_costs(rows, ({"jobs": jobs}, []), 4.0)
+        got = build.task_costs(rows, ({"jobs": jobs}, []))
         self.assertEqual([r["name"] for r in got][:2], ["Worker", "Runner"])
         by = {r["name"]: r for r in got}
         self.assertEqual((by["Worker"]["runs_per_week"], by["Worker"]["points_per_run"], by["Worker"]["points_per_week"]),
@@ -779,7 +807,8 @@ class DashboardBuildTests(unittest.TestCase):
         sched = build.scheduled_tasks(({"jobs": jobs}, [{"fired_at": "2026-11-13T06:56:00Z", "session_id": "cse_a"},
                                                         {"fired_at": "2026-11-10T02:06:00Z"}]))
         # The eval runner is inside eval runs: only meter-lane tasks count.
-        self.assertEqual((sched["usd_per_week"], sched["unmeasured"], sched["sessions"]), (56.0, ["Unmeasured"], {"cse_a"}))
+        self.assertEqual((sched["usd_per_week"], sched["points_per_week"], sched["unmeasured"], sched["sessions"]),
+                         (56.0, 14.0, ["Unmeasured"], {"cse_a"}))
         self.assertEqual(sched["since"], datetime(2026, 11, 10, 2, 6, tzinfo=timezone.utc))
         self.assertIsNone(build.scheduled_tasks(None))
 
@@ -906,11 +935,12 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
         for w in doc["weeks"]:
             self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "scheduled_usd", "api_usd",
-                                      "thread_spend_usd"})
+                                      "run_points", "scheduled_points", "thread_spend_usd"})
             self.assertIsInstance(w["eval_runs"], int)
         total = doc["total"]
         self.assertEqual(total["since"], "2026-10-19")
-        for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd")):
+        for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd"),
+                          ("run_points", "run_points")):
             self.assertAlmostEqual(sum(w[part] for w in doc["weeks"]), total[key], msg=key)
         # The total is the system's use; development (thread_spend_usd) is never in it.
         self.assertAlmostEqual(total["usd"], total["run_usd"] + (total["scheduled_usd"] or 0) + total["api_usd"])

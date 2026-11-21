@@ -4735,7 +4735,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
-               "harness/**", "scripts/**", "test/**", "tool/**", "explorer/**",
+               "harness/**", "vendor/**", "scripts/**", "test/**", "tool/**", "explorer/**",
                "README.md",
                "DESIGN.md",
                # The rules restatement check reads every doc (docs/rules.md).
@@ -11302,6 +11302,11 @@ class TestIssue63Round2(unittest.TestCase):
             (skills_evals_root / "evals").mkdir()
             shutil.copy2(REPO_ROOT / "evals" / "budget.yml",
                          skills_evals_root / "evals" / "budget.yml")
+            # And the allowance estimate's pinned weight table.
+            shutil.copy2(REPO_ROOT / "evals" / "usage-weights.lock",
+                         skills_evals_root / "evals" / "usage-weights.lock")
+            shutil.copytree(REPO_ROOT / "vendor", skills_evals_root / "vendor",
+                            ignore=shutil.ignore_patterns("__pycache__"))
             (harness_dir / "registries.yml").write_text(
                 "registries:\n"
                 "  - name: scratch-registry\n"
@@ -27396,10 +27401,16 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                        (set(self.BASE_ENVIRONMENT) | set(self.PLANTED_FORWARDED)
                         | {"HOME", "TMPDIR", "XDG_CONFIG_HOME", "CLAUDE_BIN"})}
         fixture_env = set(run_eval.load_fixture(self.STUCK_DIR)["env"])
-        # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited.
+        seen_ttl = ({"FORCE_PROMPT_CACHING_5M"}
+                    if run_eval.guidance.cache_ttl.lane_bills_api(seen)
+                    else {"CLAUDE_CODE_PROMPT_CACHE_TTL",
+                          "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"})
+        # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited;
+        # so is the cache TTL policy (cache_ttl.ttl_env).
         # GIT_CEILING_DIRECTORIES is SET at the spawn too (#612): git must not
         # search the workspace's parents for a repository.
         expected = (allowlisted | fixture_env | set(run_eval.guidance.CLI_FORCED_ENV)
+                    | seen_ttl
                     | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN",
                        "GIT_CEILING_DIRECTORIES"})
         self.assertEqual(set(seen), expected,

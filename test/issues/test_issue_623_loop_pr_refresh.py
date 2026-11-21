@@ -151,6 +151,20 @@ class Merge(unittest.TestCase):
         self.assertEqual(self.run_git("rev-parse", "HEAD").strip(), head)
         self.assertEqual(self.run_git("status", "--porcelain"), "")
 
+    def test_a_runner_with_no_git_identity_still_merges(self):
+        """ubuntu-26.04 runners have no identity git can auto-detect, and git
+        checks one before it merges, even with --no-commit: the refresh must
+        bring its own rather than fail "without a conflict"."""
+        bare = {k: v for k, v in os.environ.items()
+                if not k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_")) and k != "EMAIL"}
+        bare["GIT_CONFIG_COUNT"] = "1"
+        bare["GIT_CONFIG_KEY_0"] = "user.useConfigOnly"
+        bare["GIT_CONFIG_VALUE_0"] = "true"
+        with mock.patch.dict(os.environ, bare, clear=True):
+            self.assertEqual(rlp.main(["merge", "--repo", str(self.repo), "--base", "main"]), 0)
+        self.assertEqual((self.repo / "docs/skill-impact.md").read_text(),
+                         HEADER + PR_ENTRY + MAIN_ENTRY + OLD)
+
 
 class Workflow(unittest.TestCase):
     PATH = REPO_ROOT / ".github/workflows/loop-pr-refresh.yml"

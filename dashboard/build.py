@@ -477,8 +477,8 @@ def waiting(snap, needs_owner, reviews, open_heads, thread_dump, link_states, si
 # A cost week starts Monday 17:00 UTC (the account's weekly reset) and is labeled by that date.
 COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
 WEEK = timedelta(days=7)
-#: The display rates' one home (evals/points.yml); no default exists anywhere else.
-POINTS_CONFIG = REPO / "evals" / "points.yml"
+#: The rate a run or fire with no token counts is priced at (evals/budget.yml, its one home).
+BUDGET_CONFIG = REPO / "evals" / "budget.yml"
 BAR_DUE = "2026-12-15"
 BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
 BAR_MIN_CHANGES = 3
@@ -564,38 +564,59 @@ def session_spend(samples, starts):
     return usd, estimated
 
 
-def usd_per_point(key, path=None):
-    """Dollars per point of the weekly allowance, from evals/points.yml `key`. Exits with what is wrong when
-    the file or the value is missing or not a positive number: the pages never guess a rate."""
-    import yaml
-    path = Path(path or POINTS_CONFIG)
+def legacy_usd_per_point(path=None):
+    """evals/budget.yml `legacy_usd_per_point`: what a run or fire with no token counts by type is priced at.
+    Exits with what is wrong when the file or the value is missing: the pages never guess a rate."""
+    sys.path.insert(0, str(REPO / "harness"))
+    import budget as budget_file
+    path = Path(path or BUDGET_CONFIG)
     try:
-        doc = yaml.safe_load(path.read_text())
-    except OSError as e:
-        sys.exit(f"{path}: cannot read the points display config ({e.strerror}); it must set {key}, "
-                 "dollars per point of the weekly allowance")
-    rate = doc.get(key) if isinstance(doc, dict) else None
-    if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0 or rate == float("inf"):
-        sys.exit(f"{path}: {key} must be a positive number of dollars per point, got {rate!r}")
-    return float(rate)
+        limits = budget_file.load_budget(path)
+    except (OSError, budget_file.BudgetError) as e:
+        sys.exit(f"{path}: cannot read the budget ({type(e).__name__}: {e}); it must set "
+                 f"{budget_file.LEGACY_RATE}, dollars per point for calls with no token counts")
+    rate = limits.get(budget_file.LEGACY_RATE)
+    if rate is None:
+        sys.exit(f"{path}: {budget_file.LEGACY_RATE} is missing: dollars per point for calls with no token counts")
+    return rate
 
 
-def eval_usd_per_point(path=None):
-    """Dollars of routine eval runs per point (evals/points.yml)."""
-    return usd_per_point("eval_usd_per_point", path)
+def eval_run_points(er, plan_rows, starts, legacy_rate):
+    """({week index: points}, {week index: dollars}, token dollars, token points) of the routine eval runs under
+    `routine-results/`, each run's approximate allowance points from its trial summaries' token counts by type
+    (scripts/allowance_guard.py run_points; a role with none at `legacy_rate`). A run whose summaries cannot be
+    priced that way is its scored rows' dollars (`plan_rows`, eval_facts.scored_runs) at `legacy_rate`. The
+    last two are summed over runs priced wholly from tokens: their ratio is the measured eval dollars per point."""
+    import allowance_guard
+    row_usd = {}
+    for r in plan_rows:
+        row_usd[r["run_id"]] = row_usd.get(r["run_id"], 0) + (r.get("cost_usd") or 0)
+    points, usd, token_usd, token_points = {}, {}, 0.0, 0.0
+    for run_dir in allowance_guard.all_runs(Path(er)):
+        try:
+            i = week_of(parse(fired_at(run_dir.name)), starts)
+        except ValueError:
+            continue
+        if i is None:
+            continue
+        found = allowance_guard.run_points(run_dir, legacy_rate)
+        if found is None:
+            spent = row_usd.get(run_dir.name, 0)
+            found = {"points": spent / legacy_rate, "usd": spent, "from_tokens": False}
+        points[i] = points.get(i, 0) + found["points"]
+        usd[i] = usd.get(i, 0) + found["usd"]
+        if found["from_tokens"]:
+            token_usd += found["usd"]
+            token_points += found["points"]
+    return points, usd, token_usd, token_points
 
 
-def scheduled_usd_per_point(path=None):
-    """Dollars of scheduled-task runs per point (evals/points.yml)."""
-    return usd_per_point("scheduled_task_usd_per_point", path)
-
-
-def thread_usd_per_point(rows, build_usd, starts, now, eval_rate, other_points=None):
+def thread_usd_per_point(rows, build_usd, starts, now, eval_points, other_points=None):
     """(project-thread dollars per point or None, basis, weeks used), derived from the account meter.
 
     For each complete cost week with an account reading (the largest `account_week_after`, a percent, so
-    points, among the eval runs fired in it): the reading less that week's eval points (eval dollars over
-    `eval_rate`) and its `other_points` ({week index: points}, the scheduled tasks') is what the threads
+    points, among the eval runs fired in it): the reading less that week's eval points (`eval_points`,
+    {week index: points}) and its `other_points` ({week index: points}, the scheduled tasks') is what the threads
     used. Thread dollars over those points, summed over the weeks. None, with the reason, when no week has a
     reading or the readings leave no points for the threads."""
     points = usd = weeks = 0
@@ -606,7 +627,7 @@ def thread_usd_per_point(rows, build_usd, starts, now, eval_rate, other_points=N
         seen = [r["account_week_after"] for r in mine if r.get("account_week_after") is not None]
         if not seen:
             continue
-        points += max(seen) - sum(r["cost_usd"] or 0 for r in mine) / eval_rate - ((other_points or {}).get(i) or 0)
+        points += max(seen) - (eval_points.get(i) or 0) - ((other_points or {}).get(i) or 0)
         usd += build_usd.get(i, 0)
         weeks += 1
     if not weeks:
@@ -677,51 +698,59 @@ def r2(v):
 
 
 def approx(value, unit):
-    """'≈12.3 points' for allowance spend (approximate: dollars at a rate); '$4.50' for API credit."""
+    """'≈12.3 points' for allowance spend (approximate: estimated from token counts); '$4.50' for API credit."""
     if value is None:
         return "no value"
     return f"\u2248{value:,.1f} points" if unit == "points" else f"${value:,.2f}"
 
 
-def scheduled_week_usd(sched, starts, now):
-    """{week index: dollars} of scheduled-task runs: `sched` (usd_per_week, since) a week from the week holding
-    `since` (the fire ledger's first recorded run; earlier weeks have no measurement), the current week only
-    for its elapsed part. An estimate: each task's runs a week times its median run cost."""
-    if not sched or sched.get("usd_per_week") is None or sched.get("since") is None:
+def scheduled_week_usd(sched, starts, now, key="usd_per_week"):
+    """{week index: amount} of scheduled-task runs: `sched[key]` (`usd_per_week` or `points_per_week`) a week
+    from the week holding `since` (the fire ledger's first recorded run; earlier weeks have no measurement), the
+    current week only for its elapsed part. An estimate: each task's runs a week times its median run cost."""
+    if not sched or sched.get(key) is None or sched.get("since") is None:
         return {}
     out = {}
     for i, s in enumerate(starts):
         if s + WEEK <= sched["since"]:
             continue
-        out[i] = sched["usd_per_week"] * min(1.0, (now - s) / WEEK)
+        out[i] = sched[key] * min(1.0, (now - s) / WEEK)
     return out
 
 
 def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
-                 raw=None, eval_rate=None, sched=None, sched_rate=None, fire_sessions=()):
+                 raw=None, legacy_rate=None, sched=None, fire_sessions=()):
     """(weeks rows, summary rows) for the Spend and use group's cost panel. `raw`, a
     dict, receives the week rows, the totals and the rates before rounding.
 
     What the system uses is eval runs and scheduled tasks, both from the weekly Max allowance and shown as
-    approximate points (`eval_rate` and `sched_rate`, evals/points.yml), plus API-billed eval runs, paid
-    from the monthly API credit, kept in dollars and never in a points total. `sched` is
-    {usd_per_week, since} from scheduled_tasks (None without the fire ledger: no value, never a guess).
+    approximate points estimated from their token counts by type (eval_run_points; scheduled_tasks'
+    `points_per_week`; anything with no token counts at `legacy_rate`, evals/budget.yml), plus API-billed eval
+    runs, paid from the monthly API credit, kept in dollars and never in a points total. `sched` is
+    {usd_per_week, points_per_week, since} from scheduled_tasks (None without the fire ledger: no value, never a
+    guess). The rates in `raw` are measured, not set: eval run dollars over their estimated points, scheduled-task
+    dollars over theirs; the pages convert a single run's dollars with them.
 
     Project threads are development (Adam building and refining the system, Adam 2026-11-17): reported
     apart (summary rows with group "development"), at the rate thread_usd_per_point derives from the
     account meter, and never added to a system total. A session in `fire_sessions` (the fire ledger's
     session ids) is a scheduled-task run that a project made, so it is left out of development.
     `run_meter_points`, the meter's movement during skill eval runs, stays in the data for reference only."""
-    eval_rate = eval_usd_per_point() if eval_rate is None else eval_rate
-    sched_rate = scheduled_usd_per_point() if sched_rate is None else sched_rate
+    legacy_rate = legacy_usd_per_point() if legacy_rate is None else legacy_rate
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
     starts = week_starts(start, now)
     fire_sessions = set(fire_sessions)
     dev_usd, dev_est = session_spend([r for r in samples if r.get("session_id") not in fire_sessions], starts)
+    run_pts, run_usd_week, token_usd, token_points = eval_run_points(er, plan, starts, legacy_rate)
+    eval_rate = token_usd / token_points if token_usd > 0 and token_points > 0 else legacy_rate
+    eval_rate_basis = ("measured: dollars over estimated points of the eval runs priced from token counts"
+                       if token_points > 0 else "no eval run has token counts yet: evals/budget.yml legacy_usd_per_point")
     sched_usd = scheduled_week_usd(sched, starts, now)
-    thread_rate, basis, _ = thread_usd_per_point(plan, dev_usd, starts, now, eval_rate,
-                                                 {i: u / sched_rate for i, u in sched_usd.items()})
+    sched_pts = scheduled_week_usd(sched, starts, now, "points_per_week")
+    sched_rate = (sched["usd_per_week"] / sched["points_per_week"]
+                  if sched and sched.get("points_per_week") and sched.get("usd_per_week") else None)
+    thread_rate, basis, _ = thread_usd_per_point(plan, dev_usd, starts, now, run_pts, sched_pts)
     # No thread dollars is no development points at any rate; any other amount needs the derived rate.
     to_dev_points = lambda usd: 0.0 if not usd else None if thread_rate is None else usd / thread_rate
     api = api_billed_usd(er, starts)
@@ -733,11 +762,11 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
         label, end = s.date().isoformat(), s + WEEK
         mine = [r for r in plan if week_of(parse(r["fired_at"]), starts) == i]
         run_meter_points = sum(r["meter_points"] or 0 for r in mine)
-        week_run_usd = sum(r["cost_usd"] or 0 for r in mine)
+        week_run_usd = run_usd_week.get(i, 0)
         run_usd += week_run_usd
         week_run_usds.append(week_run_usd)
-        run_points_est = week_run_usd / eval_rate
-        sched_points = sched_usd[i] / sched_rate if i in sched_usd else None
+        run_points_est = run_pts.get(i, 0)
+        sched_points = sched_pts.get(i)
         weeks.append({
             "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points,
             "sched_points": sched_points,
@@ -751,8 +780,8 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
     complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
     last = complete[-1] if complete else None
     thread_usd, api_usd, sched_total = sum(dev_usd.values()), sum(api.values()), sum(sched_usd.values())
-    run_points, dev_points = run_usd / eval_rate, to_dev_points(thread_usd)
-    sched_points = sched_total / sched_rate if sched_usd else None
+    run_points, dev_points = sum(run_pts.values()), to_dev_points(thread_usd)
+    sched_points = sum(sched_pts.values()) if sched_pts else None
     points = None if sched_points is None else run_points + sched_points
     reached = 0
     for c in changes:
@@ -764,21 +793,22 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
     due = f"Due {day_text(BAR_DUE)}"
     status = lambda ok: "Met" if ok else "Not met"
     since = day_text(start.date())
-    sched_since = day_text(starts[min(sched_usd)].date()) if sched_usd else None
-    sched_week = sched["usd_per_week"] / sched_rate if sched and sched.get("usd_per_week") is not None else None
+    sched_since = day_text(starts[min(sched_pts)].date()) if sched_pts else None
+    sched_week = sched.get("points_per_week") if sched else None
     summary = [
         {"key": "points_per_verdict", "label": "Allowance per decided verdict",
          "value": points / verdicts if verdicts and points is not None else None, "target": None, "status": None,
          "note": f"Approximate. What the system used of the weekly Max allowance since {since}: "
                  f"{approx(points, 'points')} (eval runs {approx(run_points, 'points')}, scheduled tasks "
-                 + (f"{approx(sched_points, 'points')} from {sched_since}" if sched_usd else "no value")
+                 + (f"{approx(sched_points, 'points')} from {sched_since}" if sched_pts else "no value")
                  + f") over {verdicts} decided verdicts. Development is not included"},
         {"key": "api_usd_per_verdict", "label": "API credit per decided verdict",
          "value": api_usd / verdicts if verdicts else None, "target": None, "status": None,
          "note": f"API-billed eval runs, paid from the monthly API credit, not the allowance: {approx(api_usd, 'usd')} "
                  f"since {since} over {verdicts} decided verdicts"},
         {"key": "sched_points_per_week", "label": "Scheduled tasks a week", "value": sched_week, "target": None,
-         "status": None, "note": "Estimated: each task's runs a week times its median run cost on its current model"
+         "status": None, "note": "Estimated: each task's runs a week times its median run's points, from its token "
+                                 "counts by type, on its current model"
                                  + (f"; {len(sched['unmeasured'])} unmeasured" if sched and sched.get("unmeasured") else "")
                                  + ". The eval runner is counted in eval runs"},
         {"key": "decision_yield", "label": "Decision yield", "value": f"{len(changes)} of {verdicts}",
@@ -792,9 +822,11 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
          "target": f"at least {BAR_MIN_CHANGES}", "status": status(bar_changes),
          "note": f"{due}. Merged loop changes whose target was used at least once after the merge"},
         {"key": "eval_usd_per_point", "label": "Eval run dollars per point", "value": eval_rate, "target": None,
-         "status": None, "note": "The measured rate in evals/points.yml (quiet overnight windows, Nov 10 to 12)"},
+         "status": None, "note": "For reference: " + eval_rate_basis},
         {"key": "sched_usd_per_point", "label": "Scheduled-task dollars per point", "value": sched_rate,
-         "target": None, "status": None, "note": "evals/points.yml: the eval run rate, the closest measured one"},
+         "target": None, "status": None,
+         "note": "For reference: the scheduled tasks' dollars a week over their estimated points a week"
+                 if sched_rate is not None else "No scheduled-task estimate yet"},
         {"key": "dev_points", "label": "Development since " + since, "value": dev_points, "target": None,
          "status": None, "group": "development",
          "note": "Approximate. Project threads: you building and refining the system, not its own use"},
@@ -815,12 +847,14 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
     if raw is not None:
         raw["weeks"] = [{**w, "run_usd": u, "scheduled_usd": sched_usd.get(i)}
                         for i, (w, u) in enumerate(zip(weeks, week_run_usds))]
+        # Rates are reference only, for the pages' per-run dollars; totals above are summed points.
         raw["rates"] = {"eval_usd_per_point": eval_rate, "scheduled_task_usd_per_point": sched_rate,
                         "thread_usd_per_point": thread_rate}
         system = run_usd + sched_total + api_usd
         raw["total"] = {"since": start.date().isoformat(), "usd": system, "run_usd": run_usd,
                         "scheduled_usd": sched_total if sched_usd else None,
-                        "scheduled_since": starts[min(sched_usd)].date().isoformat() if sched_usd else None,
+                        "run_points": run_points, "scheduled_points": sched_points,
+                        "scheduled_since": starts[min(sched_pts)].date().isoformat() if sched_pts else None,
                         "api_usd": api_usd, "thread_spend_usd": thread_usd, "verdicts": verdicts,
                         "cost_per_verdict": system / verdicts if verdicts else None}
     if not weeks:
@@ -871,13 +905,15 @@ def half_built(dump, now):
 def spend_file(raw, now, plan=None):
     """The weekly totals in spend/weekly.json's shape (explorer/schema.json,
     `spend_file`), from cost_benefit's unrounded weeks: totals only, never a
-    session or thread row. Each week carries the system's dollar parts (`run_usd`,
-    `api_usd`, `scheduled_usd`, null before the fire ledger) and development's
-    `thread_spend_usd`, never in a system total; cost per verdict is a total over all weeks,
-    so it lives once in `total`, never on a week. `rates` carries the dollars
-    per point the pages convert allowance spend with (cost_benefit)."""
+    session or thread row. Each week carries the system's allowance use as approximate points
+    estimated from token counts (`run_points`, `scheduled_points`, null before the fire ledger), its dollar
+    parts for reference (`run_usd`, `api_usd`, `scheduled_usd`) and development's `thread_spend_usd`,
+    never in a system total; cost per verdict is a total over all weeks, so it lives once in `total`, never on
+    a week. `rates` carries measured dollars per point, which the pages convert a single run's dollars
+    with (cost_benefit)."""
     out = [{"week": w["week"], "eval_runs": w["run_count"], "plan_meter_points": w["run_meter_points"],
             "run_usd": w.get("run_usd"), "scheduled_usd": w.get("scheduled_usd"), "api_usd": w["api_usd"],
+            "run_points": w.get("run_points_est"), "scheduled_points": w.get("sched_points"),
             "thread_spend_usd": w["dev_usd"]}
            for w in raw.get("weeks") or []]
     doc = {"schema": 1, "generated_at": iso(now), "weeks": out}
@@ -914,27 +950,30 @@ def task_breakdown(inputs, config, workflows_root, now, ledger=None, window_days
     cfg = yaml.safe_load(open(REPO / "evals" / "automatic-spend.yml"))
     fires = automatic_spend.load_fires([ledger])
     workflows = automatic_spend.scan_workflows(Path(workflows_root))
-    return automatic_spend.breakdown(cfg, triggers, fires, workflows, [], now, window_days), fires
+    return automatic_spend.breakdown(cfg, triggers, fires, workflows, [], now, window_days,
+                                     legacy_usd_per_point()), fires
 
 
 def scheduled_tasks(tb):
-    """{usd_per_week, since, unmeasured, sessions} for the cost panel from task_breakdown's result: the
-    measured weekly dollars of every scheduled task on the allowance meter (the eval runner, lane eval_cap, is
-    inside eval runs), the first recorded run, the unmeasured tasks' names and every recorded run's session
-    id. None without a breakdown."""
+    """{usd_per_week, points_per_week, since, unmeasured, sessions} for the cost panel from task_breakdown's
+    result: the measured weekly dollars and estimated points of every scheduled task on the allowance meter (the
+    eval runner, lane eval_cap, is inside eval runs), the first recorded run, the unmeasured tasks' names and
+    every recorded run's session id. None without a breakdown."""
     if not tb:
         return None
     doc, fires = tb
     tasks = [j for j in doc["jobs"] if j["kind"] == "scheduled task" and j["lane"] == "meter"]
     times = [t for t in (parse(r.get("fired_at")) for r in fires) if t is not None]
     return {"usd_per_week": sum(j["usd_per_week"] or 0 for j in tasks),
-            "unmeasured": sorted(j["name"] for j in tasks if j["usd_per_week"] is None),
+            "points_per_week": sum(j["points_per_week"] or 0 for j in tasks),
+            "unmeasured": sorted(j["name"] for j in tasks if j["points_per_week"] is None),
             "since": min(times) if times else None,
             "sessions": {r["session_id"] for r in fires if r.get("session_id")}}
 
 
-def task_costs(rows, tb, rate):
-    """Add each scheduled task's cost to its routines row, in approximate points at `rate`: `runs_per_week`,
+def task_costs(rows, tb):
+    """Add each scheduled task's cost to its routines row, in approximate points estimated from its fires'
+    token counts by type (scripts/automatic_spend.py): `runs_per_week`,
     `points_per_run`, `points_per_week`, `in_loop` and `lane` (`meter`, or `eval_cap` for the eval runner,
     whose spend is in eval runs). A task with no recorded run on its current model reads null, never a guess;
     a row with no scheduled-task cost (a workflow: GitHub Actions minutes use no allowance) gets none of these
@@ -945,8 +984,8 @@ def task_costs(rows, tb, rate):
         if not j:
             continue
         r.update({"runs_per_week": r2(j["fires_per_week"]),
-                  "points_per_run": None if j.get("usd_per_fire") is None else r2(j["usd_per_fire"] / rate),
-                  "points_per_week": None if j.get("usd_per_week") is None else r2(j["usd_per_week"] / rate),
+                  "points_per_run": r2(j.get("points_per_fire")),
+                  "points_per_week": r2(j.get("points_per_week")),
                   "in_loop": j.get("in_loop"), "lane": j["lane"]})
     rows.sort(key=lambda r: r.get("points_per_week") if r.get("points_per_week") is not None else -1, reverse=True)
     return rows
@@ -955,37 +994,39 @@ def task_costs(rows, tb, rate):
 def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, tb=None):
     """The `loop_jobs` block of spend/weekly.json: the loop's own automatic jobs'
     weekly meter use from task_breakdown's result (`tb`, else read here). None without one, so the
-    block is omitted rather than guessed. `points_per_week` is meter points
-    (percent of the weekly allowance): dollars at the budget's `points_per_usd`,
-    as scripts/forecast_catch_up.py converts them."""
-    import yaml
+    block is omitted rather than guessed. `points_per_week` is approximate meter
+    points (percent of the weekly allowance), each fire priced from its token
+    counts by type (scripts/automatic_spend.py `fire_points`); `usd_per_week`
+    is the same jobs' dollars, for reference."""
     import automatic_spend
     tb = tb or task_breakdown(inputs, config, workflows_root, now, ledger, window_days)
     if not tb:
         return None
     doc, fires = tb
-    usd = doc["loop_meter_usd_per_week"]
-    # No in-loop job may count as $0. One with a rate but no fire on its current
+    usd, points = doc["loop_meter_usd_per_week"], doc["loop_meter_points_per_week"]
+    legacy = legacy_usd_per_point()
+    # No in-loop job may count as zero. One with a rate but no fire on its current
     # model is priced at its dearest recorded fire on any model; one never costed
     # at all (a new task) at the dearest fire of any in-loop task. A rate that
     # cannot be read (its firing workflow was not scanned) omits the block.
     loop_ids = {j["id"] for j in doc["jobs"] if j.get("in_loop")}
-    def dearest(ids):
-        costs = [c for c in (automatic_spend._cost(r) for r in fires
-                             if r.get("trigger_id") in ids) if c is not None]
+    def dearest(ids, price):
+        costs = [c for c in (price(r) for r in fires if r.get("trigger_id") in ids) if c is not None]
         return max(costs) if costs else None
     for j in doc["jobs"]:
-        if not (j.get("in_loop") and j["lane"] == "meter" and j["usd_per_week"] is None):
+        if not (j.get("in_loop") and j["lane"] == "meter" and j["points_per_week"] is None):
             continue
         if j["fires_per_week"] is None:
             return None
-        per_fire = dearest({j["id"]})
-        per_fire = per_fire if per_fire is not None else dearest(loop_ids)
-        if per_fire is None:
+        priced = []
+        for price in (lambda r: automatic_spend.fire_points(r, legacy), automatic_spend._cost):
+            found = dearest({j["id"]}, price)
+            priced.append(found if found is not None else dearest(loop_ids, price))
+        if priced[0] is None:
             return None
-        usd += j["fires_per_week"] * per_fire
-    ppu = yaml.safe_load(open(REPO / "evals" / "budget.yml"))["points_per_usd"]
-    return {"as_of": iso(now), "points_per_week": usd * ppu * 100, "usd_per_week": usd}
+        points += j["fires_per_week"] * priced[0]
+        usd += j["fires_per_week"] * (priced[1] or 0)
+    return {"as_of": iso(now), "points_per_week": points, "usd_per_week": usd}
 
 
 # --- main ----------------------------------------------------------------------
@@ -1013,8 +1054,7 @@ def build(results, inputs, config, now, raw=None, tb=None):
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
-    sched_rate = scheduled_usd_per_point()
-    task_costs(out["routines"], tb, sched_rate)
+    task_costs(out["routines"], tb)
     sched = scheduled_tasks(tb)
     out["run_stream"] = run_stream(inp("run_stream.json", {}), now)
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
@@ -1028,7 +1068,7 @@ def build(results, inputs, config, now, raw=None, tb=None):
         results, plan_rows, out["usage_rows"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now,
-        raw=raw, sched=sched, sched_rate=sched_rate, fire_sessions=sched["sessions"] if sched else ())
+        raw=raw, sched=sched, fire_sessions=sched["sessions"] if sched else ())
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
     return out
 

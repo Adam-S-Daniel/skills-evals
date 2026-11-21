@@ -831,9 +831,11 @@ class TestLocalEval(unittest.TestCase):
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR",
                    # SET by child_environment, never inherited: auto-memory
                    # off, so no child writes into the real HOME; and the
-                   # 5-minute prompt cache rate.
+                   # lane-aware prompt cache TTL (cache_ttl.ttl_env).
                    "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
-                   "CLAUDE_CODE_PROMPT_CACHE_TTL"}
+                   "CLAUDE_CODE_PROMPT_CACHE_TTL",
+                   "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
+                   "FORCE_PROMPT_CACHING_5M"}
         proc = self._run(str(EVAL_DIR), "--trials", "1",
                          "--registry", f"adam-agentskills={self._registry()}",
                          env_extra={"SOME_UNLISTED_VAR": "1",

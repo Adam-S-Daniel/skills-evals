@@ -21,7 +21,14 @@ data, never executing anything, and writes one CSV row per run. It prints:
     from `usage.measured.guard`) and, from it, each run's largest single
     call in points, the most the meter can miss when that call is the
     run's last (the evidence for `per_run_overrun`);
+  * estimated points per dollar: each run's trial token counts priced by type
+    (`allowance_points.estimate_blocks`) over the dollars of the runs priced
+    wholly from tokens, beside the meter's rate; the largest call is charged
+    at the estimated rate when there is one;
   * judge-call dollars per run.
+
+A whole-percent meter reading is a range: `meter_delta_points_low` and
+`_high` are the true movement the CLI's truncated readings allow.
 
 The meter reports whole points and counts the whole account, so Adam's own
 use during a run is in it: the deltas, and so the rate, lean high. Rounding
@@ -37,6 +44,10 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+import allowance_points  # noqa: E402
+import budget as budget_file  # noqa: E402
 
 STAMP_RE = re.compile(r"\d{8}T\d{6}Z")
 TRIAL_RE = re.compile(r"trial-\d+")
@@ -82,7 +93,7 @@ def _new_run(run_id: str, source: str) -> dict:
             "models": set(), "judge_models": set(), "trials": 0, "trial_errors": 0,
             "judged": 0, "objective_decided": 0, "judge_scores": [], "checks": 0,
             "checks_passed": 0, "agent_usd": 0.0, "trial_usd": [], "judge_usd": 0.0,
-            "guard_usd": 0.0, "call_usd": [], "judge_costed": 0, "turns": 0, "out_tokens": 0, "agent_ms": 0, "usage": None,
+            "guard_usd": 0.0, "call_usd": [], "judge_costed": 0, "turns": 0, "out_tokens": 0, "agent_ms": 0, "usage": None, "measured": [],
             "subject_kind": None, "subject": None, "cli": None, "pairing": None, "mode": None}
 
 
@@ -154,6 +165,8 @@ def collect(tree: Path) -> dict:
             measured = (doc.get("usage") or {}).get("measured") if isinstance(
                 doc.get("usage"), dict) else None
             measured = measured if isinstance(measured, dict) else {}
+            if measured:
+                run["measured"].append(measured)
             for role in ("judge", "guard"):
                 call = measured.get(role) if isinstance(measured.get(role), dict) else {}
                 if _number(call.get("cost_usd")):
@@ -180,9 +193,30 @@ def collect(tree: Path) -> dict:
     return runs
 
 
+def _legacy_rate():
+    """evals/budget.yml's `legacy_usd_per_point`, None when unreadable."""
+    try:
+        return budget_file.load_budget()[budget_file.LEGACY_RATE]
+    except (budget_file.BudgetError, KeyError):
+        return None
+
+
+def _meter_range(week: dict):
+    """(low, high) points the weekly meter truly moved, from the seven_day
+    `from` and `to` fractions read by the CLI; the low end held at zero (a
+    week that did not reset never moves down). None when unreadable."""
+    if not (_number(week.get("from")) and _number(week.get("to"))
+            and _number(week.get("delta")) and week.get("window_reset") is not True):
+        return None
+    low, high = allowance_points.delta_range(
+        week["from"] * 100, week["to"] * 100, allowance_points.CLI)
+    return max(0.0, low), max(0.0, high)
+
+
 def rows(runs: dict, evals: Path | None = None) -> list[dict]:
     """One CSV row per run, full precision, sorted by run id."""
     out = []
+    legacy = _legacy_rate()
     for run in runs.values():
         usage = run["usage"] or {}
         delta = usage.get("meter_delta") if isinstance(usage.get("meter_delta"), dict) else {}
@@ -191,6 +225,11 @@ def rows(runs: dict, evals: Path | None = None) -> list[dict]:
         stamp = STAMP_RE.search(run["run_id"])
         stop = usage.get("budget_stop")
         fixture = ";".join(sorted(f for f in run["fixtures"] if f))
+        span = _meter_range(week)
+        found = allowance_points.estimate_blocks(run["measured"], legacy) \
+            if run["measured"] else None
+        if found and not (found["roles_from_tokens"] or found["legacy_roles"]):
+            found = None
         out.append({
             "run_id": run["run_id"], "source": run["source"],
             "fired_utc": datetime.strptime(stamp.group(0), "%Y%m%dT%H%M%SZ")
@@ -208,11 +247,16 @@ def rows(runs: dict, evals: Path | None = None) -> list[dict]:
             "judge_models": ";".join(sorted(run["judge_models"])),
             "objective_checks": run["checks"], "objective_passed": run["checks_passed"],
             "meter_delta_points": week["delta"] * 100 if _number(week.get("delta")) else "",
+            "meter_delta_points_low": span[0] if span else "",
+            "meter_delta_points_high": span[1] if span else "",
             "meter_from_pct": week["from"] * 100 if _number(week.get("from")) else "",
             "meter_to_pct": week["to"] * 100 if _number(week.get("to")) else "",
             "window_reset": week.get("window_reset", ""),
             "budget_stop": stop.get("reason", "") if isinstance(stop, dict) else (stop or ""),
             "run_minutes": (end - start).total_seconds() / 60 if start and end else "",
+            "estimated_points": found["points"] if found else "",
+            "estimated_points_from_tokens": "" if not found
+            else "yes" if found["complete"] and found["roles_from_tokens"] else "no",
             "agent_api_equiv_usd": run["agent_usd"],
             "max_trial_agent_usd": max(run["trial_usd"]) if run["trial_usd"] else "",
             "judge_usd": run["judge_usd"] if run["judge_costed"] else "",
@@ -257,6 +301,17 @@ def summarize(table: list[dict]) -> dict:
         rate = sum(r["meter_delta_points"] for r in priced) / dollars
         calls = [r["max_call_usd"] for r in priced]
         summary["points_per_usd"] = rate
+        # The estimate is the allowance's own price of the tokens, so the
+        # largest call is charged at it when any run was priced from tokens.
+        tokens = [r for r in table if r["estimated_points_from_tokens"] == "yes"
+                  and r["total_usd"] > 0]
+        token_usd = sum(r["total_usd"] for r in tokens)
+        if token_usd:
+            summary["estimated_points_per_usd"] = sum(
+                r["estimated_points"] for r in tokens) / token_usd
+            summary["estimated_runs"] = len(tokens)
+            rate = summary["estimated_points_per_usd"]
+        summary["largest_call_rate"] = "estimated" if token_usd else "meter"
         summary["largest_call_points"] = {share: percentile(calls, share) * rate
                                           for share in PERCENTILES}
         summary["largest_call_points"][1.0] = max(calls) * rate
@@ -280,16 +335,19 @@ def report(summary: dict) -> list[str]:
     if "points_per_usd" in summary:
         lines.append(f"points per dollar (agent, judge and guard calls): "
                      f"{summary['points_per_usd']:.3f}")
-        lines.append("each run's largest single call, in points (the most the meter can miss "
+        if "estimated_points_per_usd" in summary:
+            lines.append(f"estimated points per dollar (token counts by type, "
+                         f"{summary['estimated_runs']} runs priced from tokens): "
+                         f"{summary['estimated_points_per_usd']:.3f}")
+        lines.append(f"each run's largest single call, in points at the "
+                     f"{summary['largest_call_rate']} rate (the most the meter can miss "
                      "when it is the last call): " + ", ".join(
                          f"{'max' if share == 1.0 else f'p{share * 100:g}'} {value:.3f}"
                          for share, value in summary["largest_call_points"].items()))
         # Adam, 2026-11-01: the overrun is the p95 of this, now and in future.
-        lines.append("per_run_overrun for evals/budget.yml (p95 of the largest call): "
+        lines.append("per_run_overrun for evals/budget.yml (p95 of the largest call, "
+                     f"at the {summary['largest_call_rate']} rate): "
                      f"{summary['largest_call_points'][0.95] / 100:.4f}")
-        # The rate per_run_cap charges a run's own call dollars at (2026-11-03).
-        lines.append("points_per_usd for evals/budget.yml (allowance per dollar): "
-                     f"{summary['points_per_usd'] / 100:.5f}")
     if summary.get("runs_with_judge_cost"):
         judge = summary["judge_usd_per_run"]
         lines.append(f"judge dollars per run ({summary['runs_with_judge_cost']} runs): "
