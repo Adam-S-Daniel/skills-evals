@@ -214,7 +214,10 @@ eval fire, the pace probe, at most every six hours, whose results bring the
 reading that decides the hold. No probe goes while an older reading from the
 same account week is already above the line now: the weekly meter only rises
 inside a week, so that reading settles the hold without spending a fire
-(2026-11-21). The module docstring's "Pace hold" section has the details.
+(2026-11-21). The Loop worker, fired from _agent-guidance's
+`fleet-worker-fire.yml`, reads the same hold with `allowance_guard.py hold`
+(no GitHub API call) and is not fired while it holds. The module docstring's
+"Pace hold" section has the details.
 
 ### The weekly allowance guard
 

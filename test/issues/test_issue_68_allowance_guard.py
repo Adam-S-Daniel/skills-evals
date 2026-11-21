@@ -1449,6 +1449,26 @@ class PaceHoldTests(unittest.TestCase):
         self.assertEqual(code, guard.REFUSED_EXIT, out)
         self.assertIn(guard.PACE_REFUSAL, out)
 
+    def hold(self):
+        budget_path = self.tree / "budget.yml"
+        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["hold", "--results-tree", str(self.tree),
+                               "--budget", str(budget_path)], now=NOW)
+        return code, out.getvalue().strip()
+
+    def test_hold_prints_the_pace_hold_with_no_api_call(self):
+        # The Loop worker's gate (_agent-guidance fleet-worker-fire.yml):
+        # main gets no fire counters here, so any API call would fail.
+        self.metered(0.20)
+        self.assertEqual(self.hold(), (0, "pace_hold=true"))
+        self.metered(0.05)
+        self.assertEqual(self.hold(), (0, "pace_hold=false"))
+        # No usable reading holds: fail safe.
+        self.metered(0.05, at=NOW + timedelta(hours=1))
+        self.assertEqual(self.hold(), (0, "pace_hold=true"))
+
     def test_main_lets_the_pace_probe_go(self):
         code, out = self.main([])
         self.assertEqual(code, 0, out)

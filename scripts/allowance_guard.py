@@ -1623,7 +1623,10 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     when it is not given), and `improve_details`, one returning `improve_details`'
     rows (no fire is matched to a cost record when it is not given)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("check", "fits", "units"))
+    # `hold` (2026-11-21): only whether the pace hold is on, from the results
+    # tree alone, with no GitHub API call, for loop jobs fired outside this
+    # repository (_agent-guidance's fleet-worker-fire.yml, the Loop worker).
+    parser.add_argument("command", choices=("check", "fits", "units", "hold"))
     parser.add_argument("--results-tree", type=Path, required=True,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
@@ -1639,6 +1642,17 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     now = now or datetime.now(timezone.utc)
     if args.command == "units":
         return print_units(args.results_tree)
+    if args.command == "hold":
+        try:
+            limits = budget_file.load_budget(args.budget)
+            _, used, elapsed = pace(ingested_runs(args.results_tree, now), limits, now)
+        except (GuardError, budget_file.BudgetError) as exc:
+            print(f"::error::allowance guard: {exc}; refusing")
+            return 1
+        # No usable reading holds too (fail safe); the eval lane's pace probe
+        # brings one.
+        print(f"pace_hold={'true' if ahead_of_pace(used, elapsed, limits) else 'false'}")
+        return 0
     try:
         limits = budget_file.load_budget(args.budget)
         state = live_state(args.results_tree, limits, now, fire_count, improve_count,
