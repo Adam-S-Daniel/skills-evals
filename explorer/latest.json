@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-21T16:57:34Z",
+  "fetched_at": "2026-11-21T17:40:02Z",
   "issues": [
    {
     "created_at": "2026-11-08T22:43:07Z",
@@ -726,6 +726,66 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-21T17:38:16Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44931135500,
+    "state": "completed",
+    "title": "Count target arrivals",
+    "updated_at": "2026-11-21T17:39:17Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44931135500",
+    "workflow": "Count target arrivals"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-21T17:30:37Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44930427933,
+    "state": "in_progress",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-21T17:30:45Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44930427933",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-21T17:24:44Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44929895276,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-21T17:30:44Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44929895276",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-21T16:34:17Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44925295945,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-21T17:24:48Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44925295945",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-21T17:00:01Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 44927593129,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-21T17:02:17Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44927593129",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-21T16:51:51Z",
     "event": "schedule",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -747,18 +807,6 @@
     "updated_at": "2026-11-21T16:48:22Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/44926516684",
     "workflow": "Repo settings drift audit"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-21T16:34:17Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44925295945,
-    "state": "in_progress",
-    "title": "Routine eval watchdog",
-    "updated_at": "2026-11-21T16:34:37Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44925295945",
-    "workflow": "Routine eval watchdog"
    },
    {
     "conclusion": "cancelled",
@@ -1854,18 +1902,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-21T02:43:34Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44857435091,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-21T02:52:08Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44857435091",
-    "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-21T02:51:42Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -1875,54 +1911,6 @@
     "updated_at": "2026-11-21T02:52:05Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44858141625",
     "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-21T02:51:30Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44858125696,
-    "state": "completed",
-    "title": "Eval results 20261121T024846Z-94b47a",
-    "updated_at": "2026-11-21T02:51:37Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44858125696",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-21T02:48:36Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44857873979,
-    "state": "completed",
-    "title": "Fire eval routine: eval evals/platform-release-and-bump claude-opus-5-5",
-    "updated_at": "2026-11-21T02:49:05Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44857873979",
-    "workflow": "Fire eval routine"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-21T02:46:28Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44857691228,
-    "state": "completed",
-    "title": "Monthly API-credit lane",
-    "updated_at": "2026-11-21T02:46:48Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44857691228",
-    "workflow": "Monthly API-credit lane"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-21T02:33:17Z",
-    "event": "schedule",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 44856529723,
-    "state": "completed",
-    "title": "Site freshness",
-    "updated_at": "2026-11-21T02:35:23Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/44856529723",
-    "workflow": "Site freshness"
    },
    {
     "conclusion": "success",
@@ -3989,7 +3977,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-07T16:57:34Z"
+  "since": "2026-11-07T17:40:02Z"
  },
  "agent_made": {
   "items": [
@@ -3999,7 +3987,7 @@
     "id": "agents-md-size",
     "impact": {
      "blocked": 1,
-     "runs": 160,
+     "runs": 167,
      "verdict": "earning"
     },
     "kind": "check",
@@ -4013,7 +4001,7 @@
     "id": "dated-phrasing",
     "impact": {
      "blocked": 0,
-     "runs": 242,
+     "runs": 249,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4027,7 +4015,7 @@
     "id": "gha-template-injection",
     "impact": {
      "blocked": 0,
-     "runs": 307,
+     "runs": 317,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4041,7 +4029,7 @@
     "id": "lesson-memory-485-1",
     "impact": {
      "blocked": 0,
-     "runs": 1544,
+     "runs": 1754,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4054,8 +4042,8 @@
     "created": "2026-11-12T22:26:18Z",
     "id": "local-identity",
     "impact": {
-     "blocked": 1212,
-     "runs": 1539,
+     "blocked": 1219,
+     "runs": 1611,
      "verdict": "earning"
     },
     "kind": "check",
@@ -4069,7 +4057,7 @@
     "id": "persistent-delete",
     "impact": {
      "blocked": 0,
-     "runs": 8175,
+     "runs": 8336,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4097,7 +4085,7 @@
     "id": "push-to-default",
     "impact": {
      "blocked": 498,
-     "runs": 8175,
+     "runs": 8336,
      "verdict": "earning"
     },
     "kind": "check",
@@ -4111,7 +4099,7 @@
     "id": "rules-dir",
     "impact": {
      "blocked": 0,
-     "runs": 9091,
+     "runs": 9301,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4125,7 +4113,7 @@
     "id": "secret-file",
     "impact": {
      "blocked": 0,
-     "runs": 9207,
+     "runs": 9421,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4139,7 +4127,7 @@
     "id": "skill-shell",
     "impact": {
      "blocked": 0,
-     "runs": 9187,
+     "runs": 9401,
      "verdict": "never-blocked"
     },
     "kind": "check",
@@ -4152,8 +4140,8 @@
     "created": "2026-10-26T15:01:39Z",
     "id": "staged-index",
     "impact": {
-     "blocked": 497,
-     "runs": 8175,
+     "blocked": 498,
+     "runs": 8336,
      "verdict": "earning"
     },
     "kind": "check",
@@ -5071,8 +5059,8 @@
   "rule_since": "2026-10-26T14:40:02Z",
   "summary": {
    "check": {
-    "agent_blocked": 2212,
-    "agent_runs": 55802,
+    "agent_blocked": 2220,
+    "agent_runs": 57229,
     "agent_under_rule": 12,
     "agent_verdicts": {
      "earning": 5,
@@ -39981,9 +39969,9 @@
   ]
  },
  "fires_without_results": {
-  "counted": 442,
+  "counted": 427,
   "rejected": 0,
-  "since": "2026-11-07T16:58:41Z",
+  "since": "2026-11-07T17:40:01Z",
   "sweeps": [],
   "window_days": 14,
   "without_results": 0
@@ -40733,7 +40721,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-21T16:56:57Z",
+  "generated_at": "2026-11-21T17:39:16Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -40818,7 +40806,7 @@
    "requests_open": 1
   }
  },
- "generated_at": "2026-11-21T16:14:40Z",
+ "generated_at": "2026-11-21T17:38:07Z",
  "guidance": {
   "removed": [
    {
@@ -73623,7 +73611,15 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 3,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "surface": "local",
+      "week": "2026-11-16"
+     },
+     {
+      "blocked": 0,
+      "invocations": 36,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -73655,7 +73651,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -73747,8 +73743,8 @@
     "where": "fleet",
     "window_totals": {
      "blocked": 1,
-     "invocations": 160,
-     "invocations_counted": 160,
+     "invocations": 167,
+     "invocations_counted": 167,
      "overridden": null,
      "override_rate": null
     }
@@ -73761,7 +73757,15 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 3,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "surface": "local",
+      "week": "2026-11-16"
+     },
+     {
+      "blocked": 0,
+      "invocations": 36,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -73793,7 +73797,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 18,
+      "invocations": 20,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -73905,12 +73909,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 242 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 249 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 242,
-     "invocations_counted": 242,
+     "invocations": 249,
+     "invocations_counted": 249,
      "overridden": null,
      "override_rate": null
     }
@@ -73931,7 +73935,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 41,
+      "invocations": 43,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -73979,7 +73983,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 13,
+      "invocations": 15,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -74043,12 +74047,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 307 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 317 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 307,
-     "invocations_counted": 307,
+     "invocations": 317,
+     "invocations_counted": 317,
      "overridden": null,
      "override_rate": null
     }
@@ -74061,7 +74065,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 37,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74069,7 +74073,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 77,
+      "invocations": 89,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74077,7 +74081,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 8,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -74085,7 +74089,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 17,
+      "invocations": 24,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -74093,7 +74097,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 52,
+      "invocations": 58,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -74101,7 +74105,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 278,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -74109,7 +74113,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 44,
+      "invocations": 51,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -74133,7 +74137,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 49,
+      "invocations": 55,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -74149,12 +74153,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 1544 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 1754 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 1544,
-     "invocations_counted": 1544,
+     "invocations": 1754,
+     "invocations_counted": 1754,
      "overridden": null,
      "override_rate": null
     }
@@ -74166,8 +74170,8 @@
     "source_url": "https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/templates/agent-checks/agent-checks",
     "use": [
      {
-      "blocked": 1,
-      "invocations": 37,
+      "blocked": 8,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74175,7 +74179,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 77,
+      "invocations": 89,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74183,7 +74187,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 8,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -74191,7 +74195,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 17,
+      "invocations": 24,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -74199,7 +74203,7 @@
      },
      {
       "blocked": 1,
-      "invocations": 52,
+      "invocations": 58,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -74234,9 +74238,9 @@
     "verdict_reason": "blocked in 8 weeks; no source counts its overrides",
     "where": "fleet",
     "window_totals": {
-     "blocked": 1212,
-     "invocations": 1539,
-     "invocations_counted": 1539,
+     "blocked": 1219,
+     "invocations": 1611,
+     "invocations_counted": 1611,
      "overridden": null,
      "override_rate": null
     }
@@ -74249,7 +74253,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74257,7 +74261,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 41,
+      "invocations": 47,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74265,7 +74269,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 4,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -74273,7 +74277,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 11,
+      "invocations": 16,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -74281,7 +74285,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 24,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -74289,7 +74293,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 134,
+      "invocations": 137,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -74297,7 +74301,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 22,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -74321,7 +74325,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 31,
+      "invocations": 34,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -74465,12 +74469,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 8175 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 8336 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 8175,
-     "invocations_counted": 8175,
+     "invocations": 8336,
+     "invocations_counted": 8336,
      "overridden": null,
      "override_rate": null
     }
@@ -74509,7 +74513,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74517,7 +74521,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 41,
+      "invocations": 47,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74525,7 +74529,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 4,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -74533,7 +74537,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 11,
+      "invocations": 16,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -74541,7 +74545,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 24,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -74549,7 +74553,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 134,
+      "invocations": 137,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -74557,7 +74561,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 22,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -74581,7 +74585,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 31,
+      "invocations": 34,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -74729,8 +74733,8 @@
     "where": "fleet",
     "window_totals": {
      "blocked": 498,
-     "invocations": 8175,
-     "invocations_counted": 8175,
+     "invocations": 8336,
+     "invocations_counted": 8336,
      "overridden": null,
      "override_rate": null
     }
@@ -74743,7 +74747,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 37,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74751,7 +74755,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 77,
+      "invocations": 89,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74759,7 +74763,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 8,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -74767,7 +74771,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 17,
+      "invocations": 24,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -74775,7 +74779,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 52,
+      "invocations": 58,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -74783,7 +74787,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 278,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -74791,7 +74795,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 44,
+      "invocations": 51,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -74815,7 +74819,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 63,
+      "invocations": 69,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -74959,12 +74963,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 9091 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 9301 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 9091,
-     "invocations_counted": 9091,
+     "invocations": 9301,
+     "invocations_counted": 9301,
      "overridden": null,
      "override_rate": null
     }
@@ -74977,7 +74981,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 37,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -74985,7 +74989,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 77,
+      "invocations": 89,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -74993,7 +74997,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 8,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -75001,7 +75005,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 17,
+      "invocations": 24,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -75009,7 +75013,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 52,
+      "invocations": 58,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -75017,7 +75021,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 278,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -75025,7 +75029,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 44,
+      "invocations": 51,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -75049,7 +75053,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 63,
+      "invocations": 69,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -75193,12 +75197,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 9207 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 9421 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 9207,
-     "invocations_counted": 9207,
+     "invocations": 9421,
+     "invocations_counted": 9421,
      "overridden": null,
      "override_rate": null
     }
@@ -75211,7 +75215,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 37,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -75219,7 +75223,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 77,
+      "invocations": 89,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -75227,7 +75231,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 8,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -75235,7 +75239,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 17,
+      "invocations": 24,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -75243,7 +75247,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 52,
+      "invocations": 58,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -75251,7 +75255,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 278,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -75259,7 +75263,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 44,
+      "invocations": 51,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -75283,7 +75287,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 63,
+      "invocations": 69,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -75403,12 +75407,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 9187 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 9401 times in 8 weeks, blocked none",
     "where": "fleet",
     "window_totals": {
      "blocked": 0,
-     "invocations": 9187,
-     "invocations_counted": 9187,
+     "invocations": 9401,
+     "invocations_counted": 9401,
      "overridden": null,
      "override_rate": null
     }
@@ -75420,8 +75424,8 @@
     "source_url": "https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/templates/agent-checks/agent-checks",
     "use": [
      {
-      "blocked": 0,
-      "invocations": 16,
+      "blocked": 1,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -75429,7 +75433,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 41,
+      "invocations": 47,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "local",
@@ -75437,7 +75441,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 4,
       "overridden": null,
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "local",
@@ -75445,7 +75449,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 11,
+      "invocations": 16,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "local",
@@ -75453,7 +75457,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 24,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "local",
@@ -75461,7 +75465,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 134,
+      "invocations": 137,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -75469,7 +75473,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 22,
+      "invocations": 26,
       "overridden": null,
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "cloud",
@@ -75493,7 +75497,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 31,
+      "invocations": 34,
       "overridden": null,
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "cloud",
@@ -75640,9 +75644,9 @@
     "verdict_reason": "blocked in 8 weeks; no source counts its overrides",
     "where": "fleet",
     "window_totals": {
-     "blocked": 497,
-     "invocations": 8175,
-     "invocations_counted": 8175,
+     "blocked": 498,
+     "invocations": 8336,
+     "invocations_counted": 8336,
      "overridden": null,
      "override_rate": null
     }
@@ -75655,7 +75659,7 @@
     "use": [
      {
       "blocked": 0,
-      "invocations": 37,
+      "invocations": 65,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "local",
@@ -75663,7 +75667,7 @@
      },
      {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 278,
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "cloud",
@@ -75695,12 +75699,12 @@
      }
     ],
     "verdict": "never-blocked",
-    "verdict_reason": "ran 773 times in 8 weeks, blocked none",
+    "verdict_reason": "ran 807 times in 8 weeks, blocked none",
     "where": "repo",
     "window_totals": {
      "blocked": 0,
-     "invocations": 773,
-     "invocations_counted": 773,
+     "invocations": 807,
+     "invocations_counted": 807,
      "overridden": null,
      "override_rate": null
     }
@@ -75714,8 +75718,8 @@
   "private_repos_shown": false,
   "read_at": {
    "ci": "2026-11-21T14:58:03Z",
-   "cloud": "2026-11-20T17:37:13Z",
-   "local": "2026-11-20T17:37:13Z"
+   "cloud": "2026-11-21T17:37:16Z",
+   "local": "2026-11-21T17:37:16Z"
   },
   "totals": {
    "ci": [
@@ -76939,7 +76943,7 @@
    "cloud": [
     {
      "blocked": 0,
-     "invocations": 496,
+     "invocations": 515,
      "overridden": null,
      "repo": null,
      "surface": "cloud",
@@ -76956,8 +76960,8 @@
    ],
    "local": [
     {
-     "blocked": 3,
-     "invocations": 1171,
+     "blocked": 14,
+     "invocations": 1367,
      "overridden": null,
      "repo": null,
      "surface": "local",
@@ -76989,7 +76993,7 @@
     }
    ]
   },
-  "unlisted": 0,
+  "unlisted": 16,
   "window": {
    "from": "2026-09-28",
    "to": "2026-11-21",
@@ -106750,7 +106754,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "2697b287bef04ba40dc526b0c18a288a99ba8480",
-  "results_commit": "de9b3e4cf99aada07f1b2b54f910524057902a20"
+  "results_commit": "fc2fb900b70f8b0d90c04cec3db89a0d75ff23d2"
  },
  "spend": {
   "generated_at": "2026-11-19T12:41:25Z",
@@ -106839,11 +106843,11 @@
   "cloud": {
    "events_scanned": 7,
    "from": "2026-10-19T00:00:00Z",
-   "to": "2026-11-20T17:37:13Z"
+   "to": "2026-11-21T17:37:16Z"
   },
   "from": "2026-09-28T00:00:00Z",
-  "sessions_scanned": 2997,
+  "sessions_scanned": 3007,
   "surface": "local",
-  "to": "2026-11-20T17:37:13Z"
+  "to": "2026-11-21T17:37:16Z"
  }
 }
