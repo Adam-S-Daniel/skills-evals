@@ -252,6 +252,16 @@ started in the last `PACE_PROBE_INTERVAL`. The probe's own run still stops at
 `stop_when_account_above`, and its results bring the reading that decides the
 hold. With the start times of the week's eval fires unknown, no probe goes.
 
+No probe when an old reading already settles it (2026-11-21: a probe fired
+with the account at 83%, above the 80% stop, and spent a full Opus arm and a
+routine session to learn what the last reading already said). The weekly
+meter only rises inside an account week, so a reading too old for `pace` but
+from this week (`window_start`, a manual reset included) is a floor on use
+now. The CLI truncates, so the reading itself is the bottom of its range.
+When that floor is above the pace line now (`stale_ahead`), the hold is
+certain and no probe goes; it is needed only when the floor could now be
+under the line, or there is no reading from this week at all.
+
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
 
@@ -918,6 +928,33 @@ def ahead_of_pace(used, elapsed, limits: dict) -> bool:
     return top / 100 > limits["stop_when_account_above"] * elapsed + EPSILON
 
 
+def stale_ahead(runs: list[Path], limits: dict, now: datetime) -> bool:
+    """Whether the newest snapshot, even one too old for `pace`, proves the
+    account above the pace line now (module docstring, "Pace hold"): it is
+    from this account week (at or after `window_start`, not ahead of the
+    clock), its weekly window has not reset, and its reading, the bottom of
+    its truncated range, is above `stop_when_account_above` times the share
+    of the week gone now. False whenever that cannot be shown."""
+    found = newest_snapshot(runs)
+    if found is None:
+        return False
+    at, snapshot = found
+    if not window_start(now) <= at <= now + PACE_CLOCK_SKEW:
+        return False
+    info = snapshot.get("info")
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    used = week.get("utilization") if isinstance(week, dict) else None
+    resets = week.get("resetsAt") if isinstance(week, dict) else None
+    if not _number(used) or not 0 <= used <= 1 or not _number(resets):
+        return False
+    left = resets - now.timestamp()
+    if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
+        return False
+    elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
+    return used > limits["stop_when_account_above"] * elapsed + EPSILON
+
+
 def pace_probe(used, recent: int, eval_started, now: datetime) -> bool:
     """Whether one eval fire may go only to bring a reading while there is
     none (module docstring, "Pace hold"): no usable reading, no eval fire
@@ -1169,7 +1206,8 @@ def account(tree: Path, limits: dict, now: datetime,
     hold = ahead_of_pace(used, elapsed, limits)
     return {"session_hold": session_hold(runs, limits, now),
             "pace_hold": hold,
-            "pace_probe": hold and pace_probe(used, recent, eval_started, now),
+            "pace_probe": hold and pace_probe(used, recent, eval_started, now)
+            and not stale_ahead(runs, limits, now),
             "spent": spent, "pending": pending, "committed": committed,
             "bound": bound, "stop_left": stop_left,
             "stop": limits["stop_when_account_above"], "runs": len(runs),
@@ -1585,7 +1623,10 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     when it is not given), and `improve_details`, one returning `improve_details`'
     rows (no fire is matched to a cost record when it is not given)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("check", "fits", "units"))
+    # `hold` (2026-11-21): only whether the pace hold is on, from the results
+    # tree alone, with no GitHub API call, for loop jobs fired outside this
+    # repository (_agent-guidance's fleet-worker-fire.yml, the Loop worker).
+    parser.add_argument("command", choices=("check", "fits", "units", "hold"))
     parser.add_argument("--results-tree", type=Path, required=True,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
@@ -1601,6 +1642,17 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     now = now or datetime.now(timezone.utc)
     if args.command == "units":
         return print_units(args.results_tree)
+    if args.command == "hold":
+        try:
+            limits = budget_file.load_budget(args.budget)
+            _, used, elapsed = pace(ingested_runs(args.results_tree, now), limits, now)
+        except (GuardError, budget_file.BudgetError) as exc:
+            print(f"::error::allowance guard: {exc}; refusing")
+            return 1
+        # No usable reading holds too (fail safe); the eval lane's pace probe
+        # brings one.
+        print(f"pace_hold={'true' if ahead_of_pace(used, elapsed, limits) else 'false'}")
+        return 0
     try:
         limits = budget_file.load_budget(args.budget)
         state = live_state(args.results_tree, limits, now, fire_count, improve_count,
