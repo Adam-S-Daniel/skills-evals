@@ -65,6 +65,20 @@ WORKING_HOURS = "working_hours"
 FIVE_HOUR_WINDOW = {"pro": "yes", "max5x": "yes", "ultra": "unverified",
                     "team_standard": "yes", "team_premium": "yes",
                     "enterprise_seat": "yes", "enterprise_usage": "no"}
+#: How many points of the plan's own week one point of an Ultra week is: the
+#: usage-weights table (evals/usage-weights.lock) was measured on one Ultra
+#: account, so its estimates are Ultra points, while the budget's fractions
+#: and the meter deltas are of the account's own week. Weekly ratios from
+#: Anthropic's published multipliers, read 2026-11-21, not measurements (the
+#: weight table's own data is one Ultra account):
+#:   ultra: "includes 10 times the Pro plan's usage every week"
+#:     (https://support.claude.com/en/articles/17728952), so Pro is 10.
+#:   max5x: "five times the Pro plan's usage every five hours and every week"
+#:     (https://support.claude.com/en/articles/11049741), so 10 / 5 = 2.
+#: The kit's retired points_per_usd sizing used 20 and 4, from the older
+#: Max 20x naming. Only these plans are supported: the project runs on Claude
+#: Pro and Max.
+ALLOWANCE_SCALE = {"pro": 10, "max5x": 2, "ultra": 1}
 #: How long a 5-hour window lasts: a window opened this long before the
 #: working day starts can still be open when it does.
 SESSION_WINDOW = timedelta(hours=5)
@@ -77,6 +91,12 @@ WORKING_HOURS_KEYS = ("timezone", "days", "start", "end", "session_stop")
 #: the meter, as before 2026-11-03); when present, a finite number above 0
 #: with no upper bound, as dollars per point. The committed budget sets it.
 LEGACY_RATE = "legacy_usd_per_point"
+
+
+def allowance_scale(budget) -> float:
+    """The budget's `allowance_scale` (`ALLOWANCE_SCALE` of its plan), 1 for
+    no budget or one built without a plan (an Ultra-table estimate)."""
+    return (budget or {}).get("allowance_scale", 1)
 
 
 class BudgetError(ValueError):
@@ -102,7 +122,8 @@ _UniqueLoader.add_constructor("tag:yaml.org,2002:map", _mapping)
 
 def parse_budget(text: str) -> dict:
     """The validated budget in `text`, or BudgetError: {key: float} for the
-    fractions and `legacy_usd_per_point`, the `claude_plan` string, and the
+    fractions and `legacy_usd_per_point`, the `claude_plan` string, its
+    `allowance_scale` (`ALLOWANCE_SCALE`), and the
     parsed `working_hours` (`_working_hours`) when set."""
     try:
         document = yaml.load(text, Loader=_UniqueLoader)
@@ -146,7 +167,12 @@ def _plan(document: dict, budget: dict) -> None:
                           "the 5-hour stop applies")
     if plan not in FIVE_HOUR_WINDOW:
         raise BudgetError(f"budget {PLAN_KEY} must be one of {', '.join(FIVE_HOUR_WINDOW)}")
+    if plan not in ALLOWANCE_SCALE:
+        raise BudgetError(f"budget {PLAN_KEY} {plan} is not supported: this project "
+                          f"supports only {', '.join(ALLOWANCE_SCALE)} "
+                          "(harness/budget.py, ALLOWANCE_SCALE)")
     budget[PLAN_KEY] = plan
+    budget["allowance_scale"] = ALLOWANCE_SCALE[plan]
     window = FIVE_HOUR_WINDOW[plan]
     stop = budget.get("stop_when_session_above")
     if window == "yes" and stop is None:

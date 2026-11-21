@@ -7,9 +7,13 @@ sha256, loads the table once, and prices the token counts `harness/run_eval.py`
 records per role (`usage.measured.<role>`: `models` per model id, and the
 5-minute/1-hour cache-write split in `cache_creation`).
 
-A point is 1% of the weekly allowance on one meter. Everything here is in
-points; `evals/budget.yml` values are fractions of the week, so a caller
-divides by 100. Nothing is rounded.
+A point is 1% of the account's own weekly allowance on one meter. The
+vendored table was measured on one Ultra account, so it gives Ultra points;
+`scale` (`harness/budget.py` `ALLOWANCE_SCALE`, read from the budget's
+`allowance_scale`) converts them to points of the plan's own week and
+multiplies every points figure returned. Everything here is in points;
+`evals/budget.yml` values are fractions of the week, so a caller divides by
+100. Nothing is rounded.
 
 The 5-minute/1-hour split is recorded per role, not per model (the CLI reports
 it for the main loop only), so it is applied only when one model made the
@@ -160,7 +164,8 @@ def _zero() -> dict:
     return {meter: {"points": 0.0, "low": 0.0, "high": 0.0} for meter in METERS}
 
 
-def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None) -> dict:
+def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None,
+                    scale=1) -> dict:
     """The allowance estimate of a list of `usage.measured` blocks (one per
     trial, each with its `agent`, `judge` and `guard` roles), as
     `usage.allowance_estimate`.
@@ -170,7 +175,14 @@ def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None)
     `legacy_usd_per_point` (a point estimate, no range of its own) and are
     counted in `legacy_roles` and `legacy_usd`, as is a model the table does
     not price; one with neither tokens nor dollars, or without a legacy rate,
-    is counted in `unpriced_roles`, and then the estimate is a floor."""
+    is counted in `unpriced_roles`, and then the estimate is a floor.
+
+    `scale` (finite, above 0) multiplies every points figure, converting the
+    table's Ultra points to the account's own plan week; `legacy_usd` is
+    dollars and is not scaled."""
+    if isinstance(scale, bool) or not _number(scale) or not math.isfinite(scale) \
+            or scale <= 0:
+        raise ValueError("scale must be a finite number above 0")
     weights = table(lock)
     package = _package()
     known = {m for meter in weights["meters"].values() for m in meter["models"]}
@@ -204,8 +216,9 @@ def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None)
     totals = _zero()
     for meter in METERS:
         result = package.estimate(records, weights, meter=meter)
-        totals[meter] = {"points": result.points, "low": result.low, "high": result.high}
-    legacy = legacy_usd / rate if legacy_roles else 0.0
+        totals[meter] = {"points": result.points * scale, "low": result.low * scale,
+                         "high": result.high * scale}
+    legacy = legacy_usd / rate * scale if legacy_roles else 0.0
     main = totals["all_models"]
     return {"table": weights["id"],
             "points": main["points"] + legacy,
@@ -245,11 +258,11 @@ def delta_range(before, after, reader: str) -> tuple[float, float]:
 
 
 def estimate_session(models, usd=None, legacy_usd_per_point=None,
-                     lock: Path | None = None) -> dict:
+                     lock: Path | None = None, scale=1) -> dict:
     """The allowance estimate of one session's calls (a scheduled-task fire
     in the fire ledger): `models` is its per-model token counts, in
     `usage.measured.<role>.models`' shape, and `usd` its dollars, which price
     it at `legacy_usd_per_point` when the token counts are missing. Same
-    result as `estimate_blocks`; with neither, `unpriced_roles` is 1."""
+    result as `estimate_blocks` (`scale` included); with neither, `unpriced_roles` is 1."""
     block = {"calls": 1, "models": models, "cost_usd": usd}
-    return estimate_blocks([{"agent": block}], legacy_usd_per_point, lock)
+    return estimate_blocks([{"agent": block}], legacy_usd_per_point, lock, scale)

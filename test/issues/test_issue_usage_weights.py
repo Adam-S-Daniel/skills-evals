@@ -242,6 +242,50 @@ def telemetry_usage(role_blocks, budget_limits) -> dict:
     return run_eval._TELEMETRY._run_level()
 
 
+def every_points_figure(estimate: dict) -> dict:
+    """The estimate's points figures by name (the Fable meter's included)."""
+    return {"points": estimate["points"], "low": estimate["low"], "high": estimate["high"],
+            **{f"fable.{k}": v for k, v in estimate["fable"].items()}}
+
+
+class ScaleTests(unittest.TestCase):
+
+    MIXED = [{"agent": block(), "judge": {"calls": 1, "models": None, "cost_usd": 3.0}}]
+
+    def test_scale_multiplies_every_points_figure_and_nothing_else(self):
+        plain = ap.estimate_blocks(self.MIXED, RATE)
+        self.assertEqual(plain["legacy_roles"], 1)
+        for scale in (2, 10, 0.5):
+            with self.subTest(scale=scale):
+                scaled = ap.estimate_blocks(self.MIXED, RATE, scale=scale)
+                before, after = every_points_figure(plain), every_points_figure(scaled)
+                self.assertGreater(before["points"], 0)
+                for name, value in before.items():
+                    self.assertAlmostEqual(after[name], value * scale, places=9, msg=name)
+                for key in ("table", "roles_from_tokens", "legacy_roles", "legacy_usd",
+                            "unpriced_roles", "complete"):
+                    self.assertEqual(scaled[key], plain[key], key)
+
+    def test_scale_one_leaves_the_ultra_numbers_exactly_as_they_were(self):
+        self.assertEqual(ap.estimate_blocks(self.MIXED, RATE, scale=1),
+                         ap.estimate_blocks(self.MIXED, RATE))
+
+    def test_the_legacy_priced_part_is_scaled(self):
+        dollars = [{"agent": {"calls": 1, "models": None, "cost_usd": 3.0}}]
+        self.assertAlmostEqual(ap.estimate_blocks(dollars, RATE, scale=2)["points"],
+                               2 * 3.0 / RATE, places=12)
+
+    def test_a_session_estimate_takes_the_scale_too(self):
+        models = block()["models"]
+        self.assertAlmostEqual(ap.estimate_session(models, 1.0, RATE, scale=2)["points"],
+                               2 * ap.estimate_session(models, 1.0, RATE)["points"], places=9)
+
+    def test_a_bad_scale_is_refused(self):
+        for scale in (0, -1, float("inf"), float("nan"), None, True, "2"):
+            with self.subTest(scale=scale), self.assertRaises(ValueError):
+                ap.estimate_blocks(self.MIXED, RATE, scale=scale)
+
+
 class ReadingRangeTests(unittest.TestCase):
 
     def test_a_cli_reading_truncates_and_an_endpoint_reading_rounds(self):
@@ -317,6 +361,17 @@ class GuardChargeTests(TmpCase):
         expected = points(block())["points"] / 100 + LIMITS["per_run_overrun"]
         self.assertLess(expected, 0.30 + LIMITS["per_run_overrun"])
         self.assertAlmostEqual(self.spent(), expected, places=12)
+
+    def test_a_max5x_budget_is_charged_twice_the_ultra_estimate(self):
+        run = self.run_dir()
+        self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.usage(block()))
+        ultra = {**LIMITS, "legacy_usd_per_point": RATE, "allowance_scale": 1}
+        max5x = {**ultra, "allowance_scale": budget.ALLOWANCE_SCALE["max5x"]}
+        overrun = LIMITS["per_run_overrun"]
+        self.assertAlmostEqual(self.spent(max5x) - overrun, 2 * (self.spent(ultra) - overrun),
+                               places=12)
+        self.assertAlmostEqual(self.spent(ultra), points(block())["points"] / 100 + overrun,
+                               places=12)
 
     def test_an_arm_scope_block_is_not_counted_twice(self):
         run = self.run_dir()
