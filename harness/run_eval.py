@@ -4014,7 +4014,11 @@ def materialize_workspace(seed: Path, fixture: dict | None = None,
                 raise SetupFailedError(workspace, setup_result)
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
-        _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
+        # `--allow-empty`: a setup that commits its whole tree and ignores its
+        # own machinery (a bare origin under an ignored `.remote/`) leaves
+        # nothing to add, and the baseline commit must not fail on that.
+        _git("commit", "-q", "--allow-empty", "-m", SEED_COMMIT_MESSAGE,
+             cwd=workspace)
         # After the baseline commit, so the anchor is never part of it. A
         # stand-in in `<workspace>/bin/` reads this to find where its
         # invocation log goes; without it, it refuses to serve or record

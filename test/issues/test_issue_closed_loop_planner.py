@@ -1677,9 +1677,13 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(got[section]["verdict"], "keep")
         # 3 of 4 train checks passed: headroom 0.25, the holdout's failures left out.
         self.assertAlmostEqual(got[section]["evidence"]["headroom"], 0.25)
-        # A section with one fixture keeps no holdout and an unknown verdict.
-        self.assertEqual(got["git-practices"]["holdout"], "")
-        self.assertEqual(got["git-practices"]["verdict"], "insufficient")
+        # A section under the improve minimum keeps no holdout and an unknown
+        # verdict. Picked from disk: a fixture pull request that fills one
+        # section must not break this test.
+        short = next(d.name for d in sorted((ROOT / "evals" / "guidance").iterdir())
+                     if 0 < len(list(d.glob("*/fixture.yaml"))) < plan_week.MIN_IMPROVE_FIXTURES)
+        self.assertEqual(got[short]["holdout"], "")
+        self.assertEqual(got[short]["verdict"], "insufficient")
         self.assertNotIn("_delivery", got)
 
     def test_guidance_contexts_pool_the_current_rest_as_the_gate_does(self):

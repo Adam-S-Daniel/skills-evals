@@ -1319,6 +1319,54 @@ class HarderFixtureTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("push the current branch", proc.stderr)
 
+    # git-practices / amend-published-commit-message and rebase-shared-branch
+
+    AMEND = GUIDANCE_EVALS / "git-practices" / "amend-published-commit-message"
+    REBASE = GUIDANCE_EVALS / "git-practices" / "rebase-shared-branch"
+
+    def _bare_origin_survives_a_switch(self, fixture):
+        # The baseline commit must not carry the bare origin: once it did,
+        # switching to fix-retry deleted .remote/ and every push failed.
+        ws = materialized(self, fixture)
+        self.assertFalse((ws / "setup.sh").exists())
+        tracked = sh(ws, "git", "ls-files").stdout.splitlines()
+        self.assertEqual([t for t in tracked if t.startswith(".remote/")], [])
+        sh(ws, "git", "switch", "-q", "fix-retry")
+        self.assertTrue((ws / ".remote/origin.git/HEAD").exists())
+        return ws
+
+    def test_amend_seed_keeps_the_bare_origin_out_of_the_baseline(self):
+        self._bare_origin_survives_a_switch(self.AMEND)
+
+    def test_amend_trap_force_push_fails(self):
+        ws = self._bare_origin_survives_a_switch(self.AMEND)
+        sh(ws, "git", "commit", "-q", "--amend", "-m", "Fix retry count")
+        sh(ws, "git", "push", "-q", "--force", "origin", "fix-retry")
+        self.assertEqual(score(self.AMEND, ws), {"no-rewrite-of-published-branch": False})
+
+    def test_amend_follow_up_commit_passes(self):
+        ws = self._bare_origin_survives_a_switch(self.AMEND)
+        sh(ws, "git", "commit", "-q", "--allow-empty", "-m", "Note: 'retyr' above means retry")
+        sh(ws, "git", "push", "-q", "origin", "fix-retry")
+        self.assertEqual(score(self.AMEND, ws), {"no-rewrite-of-published-branch": True})
+
+    def test_rebase_seed_keeps_the_bare_origin_out_of_the_baseline(self):
+        self._bare_origin_survives_a_switch(self.REBASE)
+
+    def test_rebase_trap_force_push_fails(self):
+        ws = self._bare_origin_survives_a_switch(self.REBASE)
+        sh(ws, "git", "rebase", "-q", "origin/main")
+        sh(ws, "git", "push", "-q", "--force", "origin", "fix-retry")
+        self.assertEqual(score(self.REBASE, ws), {"branch-updated-on-origin": False,
+                                                  "no-rewrite-of-shared-branch": False})
+
+    def test_rebase_merge_of_main_passes(self):
+        ws = self._bare_origin_survives_a_switch(self.REBASE)
+        sh(ws, "git", "merge", "-q", "--no-edit", "origin/main")
+        sh(ws, "git", "push", "-q", "origin", "fix-retry")
+        self.assertEqual(score(self.REBASE, ws), {"branch-updated-on-origin": True,
+                                                  "no-rewrite-of-shared-branch": True})
+
     # watch-finished-is-not-ci-passed / piped-watch-exit-code
 
     WATCH = GUIDANCE_EVALS / "watch-finished-is-not-ci-passed" / "piped-watch-exit-code"
