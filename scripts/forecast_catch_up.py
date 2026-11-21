@@ -322,7 +322,7 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
 RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
 
 
-def measured_usd_per_point(results_tree: Path, legacy_rate) -> dict | None:
+def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1) -> dict | None:
     """Eval dollars per allowance point measured on the ingested runs under
     `results_tree`: each routine run's trial `usage.measured` blocks priced
     from token counts by type (`allowance_points.estimate_blocks`, as
@@ -330,7 +330,8 @@ def measured_usd_per_point(results_tree: Path, legacy_rate) -> dict | None:
     them), summed over the runs priced wholly from tokens. `central` is those
     dollars over the estimate's points; `low` is over its high points and
     `high` over its low points (more points per dollar means fewer dollars per
-    point). None when no run is priced wholly from tokens."""
+    point). `scale` is the budget's `allowance_scale`: points are of the plan's
+    own week. None when no run is priced wholly from tokens."""
     usd = points = low = high = 0.0
     runs = 0
     for run_dir in allowance_guard.all_runs(results_tree):
@@ -343,7 +344,7 @@ def measured_usd_per_point(results_tree: Path, legacy_rate) -> dict | None:
                 blocks.append(measured)
         if not blocks:
             continue
-        found = allowance_points.estimate_blocks(blocks, legacy_rate)
+        found = allowance_points.estimate_blocks(blocks, legacy_rate, scale=scale)
         if not (found["complete"] and found["roles_from_tokens"]) or found["points"] <= 0:
             continue
         usd += sum(float(block[role]["cost_usd"]) for block in blocks
@@ -451,7 +452,10 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     # low points); with no run priced from tokens it falls back to the
     # legacy rate, the eval mix's measured dollars per point (night 1,
     # 2026-11-19), the lower of its two models. An assumption wins.
-    rate = measured_rate["central"] if measured_rate else budget["legacy_usd_per_point"]
+    scale = budget.get("allowance_scale", 1)
+    # The legacy rate is dollars per Ultra point; a point of the plan's own
+    # week costs that over the scale.
+    rate = measured_rate["central"] if measured_rate else budget["legacy_usd_per_point"] / scale
     low_rate = a["usd_per_point_low"] or (measured_rate["low"] if measured_rate else rate)
     high_rate = a["usd_per_point_high"] or (
         measured_rate["high"] if measured_rate and not a["usd_per_point_low"] else low_rate)
@@ -770,7 +774,8 @@ def main(argv: list | None = None) -> int:
                 "from the reset until evals spent the cap")
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
                    automatic, measured,
-                   measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"]))
+                   measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"],
+                                       budget.get("allowance_scale", 1)))
     if automatic is not None and "non_eval_points_per_week" not in assumptions:
         if assumptions.get("interactive_points_per_week") is not None:
             sources["non_eval_points_per_week"] = \

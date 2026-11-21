@@ -5050,7 +5050,8 @@ class _RunTelemetry:
         `extra` blocks) priced from its token counts by type, in points
         (harness/allowance_points.py)."""
         rate = (self.budget or {}).get(budget.LEGACY_RATE)
-        return allowance_points.estimate_blocks([*self.role_blocks, *extra], rate)
+        return allowance_points.estimate_blocks(
+            [*self.role_blocks, *extra], rate, scale=budget.allowance_scale(self.budget))
 
     def _estimate_or_nothing(self) -> dict:
         """`{"allowance_estimate": ...}`, or nothing when the lock cannot be

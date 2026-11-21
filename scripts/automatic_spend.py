@@ -188,12 +188,12 @@ def _cost(row: dict):
     return None
 
 
-def fire_points(row: dict, legacy_usd_per_point=None):
+def fire_points(row: dict, legacy_usd_per_point=None, scale=1):
     """One fire's approximate allowance points from its token counts by
     model (harness/allowance_points.py), its dollars at
     `legacy_usd_per_point` when it has none; None when neither prices it."""
     estimate = allowance_points.estimate_session(row.get("models"), _cost(row),
-                                                 legacy_usd_per_point)
+                                                 legacy_usd_per_point, scale=scale)
     return None if estimate["unpriced_roles"] else estimate["points"]
 
 
@@ -326,9 +326,10 @@ def _weekly(rate, per_fire):
 
 def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
               boxy: list, now: datetime, window_days: int,
-              legacy_usd_per_point=None) -> dict:
+              legacy_usd_per_point=None, scale=1) -> dict:
     """The breakdown document. `legacy_usd_per_point` prices a fire with no
-    token counts (evals/budget.yml); without it such a fire has no points."""
+    token counts (evals/budget.yml); without it such a fire has no points.
+    `scale` is the budget's `allowance_scale`, so points are of the plan's week."""
     cats = config["categories"]
     fired_by = config.get("fired_by") or {}
     eval_cap = config.get("eval_cap_triggers") or []
@@ -366,7 +367,7 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
             rate_source = f"ledger fires in {window_days} days"
         per_fire = statistics.median(costs) if costs else None
         current = [r for r in rows if model is None or r.get("last_served_model") == model]
-        points = [p for p in (fire_points(r, legacy_usd_per_point) for r in current)
+        points = [p for p in (fire_points(r, legacy_usd_per_point, scale) for r in current)
                   if p is not None]
         points_per_fire = statistics.median(points) if points else None
         lane = "eval_cap" if any(re.search(m, t["name"], re.I) for m in eval_cap) else "meter"
@@ -483,7 +484,8 @@ def main(argv: list | None = None) -> int:
                     scan_workflows(args.workflows_root) if args.workflows_root else [],
                     scan_boxy_tasks(args.wsl_automation) if args.wsl_automation else [],
                     now, args.window_days,
-                    budget_file.load_budget().get(budget_file.LEGACY_RATE))
+                    budget_file.load_budget().get(budget_file.LEGACY_RATE),
+                    budget_file.allowance_scale(budget_file.load_budget()))
     args.out_json.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
     for c in doc["categories"]:
         print(f"{c['label']}: about {c['meter_points_per_week']:.1f} points/wk "

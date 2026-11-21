@@ -672,6 +672,27 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertAlmostEqual(raw["rates"]["eval_usd_per_point"], 6.0 / expected)
         self.assertAlmostEqual(raw["total"]["run_points"], expected + 2.0 + 1.5)
 
+    def test_eval_run_points_scale_to_the_accounts_plan(self):
+        """A Max 5x budget (scale 2) shows every run at twice its Ultra-table points, token-priced or legacy."""
+        sys.path.insert(0, str(REPO / "harness"))
+        import allowance_points
+        er = self.tmp / "res"
+        models = {"claude-sonnet-5-5": {"input_tokens": 1000, "output_tokens": 200000, "cost_usd": 6.0}}
+        tokens = {"calls": 3, "models": models, "cost_usd": 6.0}
+        self.run_folder(er, "20261021T100000Z-aaaaaa", tokens)
+        self.run_folder(er, "20261022T100000Z-bbbbbb", {"calls": 1, "cost_usd": 4.0})
+        write(er / "routine-results" / "20261028T100000Z-cccccc" / "s" / "summary.json", {"arm": "with_skill"})
+        plan = [{"run_id": "20261028T100000Z-cccccc", "fired_at": "2026-10-28T10:00:00Z", "cost_usd": 3.0,
+                 "meter_points": None, "account_week_after": None}]
+        one = build.eval_run_points(er, plan, self.cb_starts(), 2.0)[0]
+        two = build.eval_run_points(er, plan, self.cb_starts(), 2.0, 2)[0]
+        self.assertGreater(allowance_points.estimate_blocks([{"agent": tokens}], 2.0)["points"], 0)
+        self.assertAlmostEqual(two[0], 2 * one[0])
+        self.assertAlmostEqual(two[1], 2 * one[1])
+
+    def test_budget_allowance_scale_reads_the_committed_plan(self):
+        self.assertEqual(build.budget_allowance_scale(), 1)
+
     def test_loop_changes_parse_each_prefix_and_ignore_unmerged_prs(self):
         def pr(n, ref, merged="2026-10-27T10:00:00Z"):
             return {"repo": "example-owner/r", "number": n, "url": "https://example.com/" + str(n), "head_ref": ref,

@@ -201,6 +201,14 @@ def _legacy_rate():
         return None
 
 
+def _allowance_scale():
+    """The budget's `allowance_scale`, 1 when unreadable."""
+    try:
+        return budget_file.allowance_scale(budget_file.load_budget())
+    except budget_file.BudgetError:
+        return 1
+
+
 def _meter_range(week: dict):
     """(low, high) points the weekly meter truly moved, from the seven_day
     `from` and `to` fractions read by the CLI; the low end held at zero (a
@@ -217,6 +225,7 @@ def rows(runs: dict, evals: Path | None = None) -> list[dict]:
     """One CSV row per run, full precision, sorted by run id."""
     out = []
     legacy = _legacy_rate()
+    scale = _allowance_scale()
     for run in runs.values():
         usage = run["usage"] or {}
         delta = usage.get("meter_delta") if isinstance(usage.get("meter_delta"), dict) else {}
@@ -226,7 +235,7 @@ def rows(runs: dict, evals: Path | None = None) -> list[dict]:
         stop = usage.get("budget_stop")
         fixture = ";".join(sorted(f for f in run["fixtures"] if f))
         span = _meter_range(week)
-        found = allowance_points.estimate_blocks(run["measured"], legacy) \
+        found = allowance_points.estimate_blocks(run["measured"], legacy, scale=scale) \
             if run["measured"] else None
         if found and not (found["roles_from_tokens"] or found["legacy_roles"]):
             found = None

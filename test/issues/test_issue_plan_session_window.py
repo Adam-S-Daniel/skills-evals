@@ -48,19 +48,28 @@ class PlanTests(unittest.TestCase):
             budget.parse_budget(BASE + "claude_plan: max20x\n")
 
     def test_a_plan_with_a_window_needs_the_stop(self):
-        for plan in ("pro", "max5x", "team_standard", "team_premium", "enterprise_seat"):
+        for plan in ("pro", "max5x"):
             with self.subTest(plan=plan), self.assertRaisesRegex(
                     budget.BudgetError, "has a 5-hour window: set stop_when_session_above"):
                 budget.parse_budget(BASE + f"claude_plan: {plan}\n")
         self.assertEqual(budget.parse_budget(PRO)["stop_when_session_above"], 0.90)
 
-    def test_a_plan_without_a_window_refuses_the_stop_and_working_hours(self):
-        plain = BASE + "claude_plan: enterprise_usage\n"
-        self.assertEqual(budget.parse_budget(plain)["claude_plan"], "enterprise_usage")
-        for extra in ("stop_when_session_above: 0.9\n", HOURS):
-            with self.subTest(extra=extra), self.assertRaisesRegex(
-                    budget.BudgetError, "has no 5-hour window"):
-                budget.parse_budget(plain + extra)
+    def test_each_supported_plan_maps_to_its_allowance_scale(self):
+        self.assertEqual(budget.ALLOWANCE_SCALE, {"pro": 10, "max5x": 2, "ultra": 1})
+        for plan, scale in budget.ALLOWANCE_SCALE.items():
+            with self.subTest(plan=plan):
+                text = BASE + f"claude_plan: {plan}\n" \
+                    + ("stop_when_session_above: 0.9\n" if plan != "ultra" else "")
+                parsed = budget.parse_budget(text)
+                self.assertEqual(parsed["allowance_scale"], scale)
+                self.assertEqual(budget.allowance_scale(parsed), scale)
+        self.assertEqual(budget.allowance_scale(None), 1)
+
+    def test_a_plan_with_no_scale_is_refused_naming_the_supported_ones(self):
+        for plan in ("team_standard", "team_premium", "enterprise_seat", "enterprise_usage"):
+            with self.subTest(plan=plan), self.assertRaisesRegex(
+                    budget.BudgetError, "not supported.*pro, max5x, ultra"):
+                budget.parse_budget(BASE + f"claude_plan: {plan}\n")
 
     def test_ultra_may_set_the_stop_or_not(self):
         self.assertNotIn("stop_when_session_above", budget.parse_budget(BASE + "claude_plan: ultra\n"))

@@ -581,7 +581,19 @@ def legacy_usd_per_point(path=None):
     return rate
 
 
-def eval_run_points(er, plan_rows, starts, legacy_rate):
+def budget_allowance_scale(path=None):
+    """evals/budget.yml's allowance scale (harness/budget.py ALLOWANCE_SCALE for its `claude_plan`): points of
+    the account's own week per point of the Ultra-measured weight table. 1 when the budget cannot be read, as
+    the pages' other readers of an optional budget value do."""
+    sys.path.insert(0, str(REPO / "harness"))
+    import budget as budget_file
+    try:
+        return budget_file.allowance_scale(budget_file.load_budget(Path(path or BUDGET_CONFIG)))
+    except (OSError, budget_file.BudgetError):
+        return 1
+
+
+def eval_run_points(er, plan_rows, starts, legacy_rate, scale=1):
     """({week index: points}, {week index: dollars}, token dollars, token points) of the routine eval runs under
     `routine-results/`, each run's approximate allowance points from its trial summaries' token counts by type
     (scripts/allowance_guard.py run_points; a role with none at `legacy_rate`). A run whose summaries cannot be
@@ -599,10 +611,10 @@ def eval_run_points(er, plan_rows, starts, legacy_rate):
             continue
         if i is None:
             continue
-        found = allowance_guard.run_points(run_dir, legacy_rate)
+        found = allowance_guard.run_points(run_dir, legacy_rate, scale)
         if found is None:
             spent = row_usd.get(run_dir.name, 0)
-            found = {"points": spent / legacy_rate, "usd": spent, "from_tokens": False}
+            found = {"points": spent / legacy_rate * scale, "usd": spent, "from_tokens": False}
         points[i] = points.get(i, 0) + found["points"]
         usd[i] = usd.get(i, 0) + found["usd"]
         if found["from_tokens"]:
@@ -742,8 +754,10 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
     starts = week_starts(start, now)
     fire_sessions = set(fire_sessions)
     dev_usd, dev_est = session_spend([r for r in samples if r.get("session_id") not in fire_sessions], starts)
-    run_pts, run_usd_week, token_usd, token_points = eval_run_points(er, plan, starts, legacy_rate)
-    eval_rate = token_usd / token_points if token_usd > 0 and token_points > 0 else legacy_rate
+    scale = budget_allowance_scale()
+    run_pts, run_usd_week, token_usd, token_points = eval_run_points(er, plan, starts, legacy_rate, scale)
+    # Dollars per point of the account's own week: the legacy rate is per Ultra point.
+    eval_rate = token_usd / token_points if token_usd > 0 and token_points > 0 else legacy_rate / scale
     eval_rate_basis = ("measured: dollars over estimated points of the eval runs priced from token counts"
                        if token_points > 0 else "no eval run has token counts yet: evals/budget.yml legacy_usd_per_point")
     sched_usd = scheduled_week_usd(sched, starts, now)
@@ -951,7 +965,7 @@ def task_breakdown(inputs, config, workflows_root, now, ledger=None, window_days
     fires = automatic_spend.load_fires([ledger])
     workflows = automatic_spend.scan_workflows(Path(workflows_root))
     return automatic_spend.breakdown(cfg, triggers, fires, workflows, [], now, window_days,
-                                     legacy_usd_per_point()), fires
+                                     legacy_usd_per_point(), budget_allowance_scale()), fires
 
 
 def scheduled_tasks(tb):
@@ -1005,6 +1019,7 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, 
     doc, fires = tb
     usd, points = doc["loop_meter_usd_per_week"], doc["loop_meter_points_per_week"]
     legacy = legacy_usd_per_point()
+    scale = budget_allowance_scale()
     # No in-loop job may count as zero. One with a rate but no fire on its current
     # model is priced at its dearest recorded fire on any model; one never costed
     # at all (a new task) at the dearest fire of any in-loop task. A rate that
@@ -1019,7 +1034,7 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, 
         if j["fires_per_week"] is None:
             return None
         priced = []
-        for price in (lambda r: automatic_spend.fire_points(r, legacy), automatic_spend._cost):
+        for price in (lambda r: automatic_spend.fire_points(r, legacy, scale), automatic_spend._cost):
             found = dearest({j["id"]}, price)
             priced.append(found if found is not None else dearest(loop_ids, price))
         if priced[0] is None:

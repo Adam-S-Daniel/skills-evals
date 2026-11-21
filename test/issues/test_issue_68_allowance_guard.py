@@ -118,7 +118,8 @@ class BudgetFileTests(unittest.TestCase):
                          {**LIMITS, "weekly_cap": 0.25,
                           "stop_when_account_above": 0.80,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
-                          "legacy_usd_per_point": 12.35, "claude_plan": "ultra"})
+                          "legacy_usd_per_point": 12.35, "claude_plan": "ultra",
+                          "allowance_scale": 1})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 

@@ -439,7 +439,8 @@ def _own_points_cost(measured: list, limits: dict) -> float | None:
     None when no trial block records a call, or some role has neither tokens
     nor dollars: nothing of the run's own was priced."""
     estimate = allowance_points.estimate_blocks(
-        measured, limits.get(budget_file.LEGACY_RATE))
+        measured, limits.get(budget_file.LEGACY_RATE),
+        scale=budget_file.allowance_scale(limits))
     if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
                                           or estimate["legacy_roles"]):
         return None
@@ -525,7 +526,7 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
                for usage, measured in blocks.values())
 
 
-def run_points(run_dir: Path, legacy_usd_per_point) -> dict | None:
+def run_points(run_dir: Path, legacy_usd_per_point, scale=1) -> dict | None:
     """What the pages show one ingested routine run used of the weekly
     allowance: `points` (all-models meter, percent of the week), the sum of
     its trial summaries' `usage.measured` blocks priced from token counts by
@@ -545,7 +546,7 @@ def run_points(run_dir: Path, legacy_usd_per_point) -> dict | None:
             blocks.append(measured)
     if not blocks:
         return None
-    estimate = allowance_points.estimate_blocks(blocks, legacy_usd_per_point)
+    estimate = allowance_points.estimate_blocks(blocks, legacy_usd_per_point, scale=scale)
     if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
                                           or estimate["legacy_roles"]):
         return None
@@ -706,6 +707,7 @@ def record_charge(record: dict, limits: dict, unit_charge: float) -> float | Non
     so a ceiling on the run's own use; a sub-point delta alone never sets the
     charge below it), and with no clean bracket the unit charge."""
     rate = limits.get(budget_file.LEGACY_RATE)
+    scale = budget_file.allowance_scale(limits)
     if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
             or not math.isfinite(rate) or rate <= 0:
         rate = None
@@ -715,12 +717,14 @@ def record_charge(record: dict, limits: dict, unit_charge: float) -> float | Non
         rest = max(0.0, dollars - tokens["usd"])
         if rest > EPSILON and rate is None:
             return None
-        charge = (tokens["points"] + (rest / rate if rest > EPSILON else 0.0)) / 100
+        # The record's points and the legacy rate are Ultra-table points.
+        charge = (tokens["points"] + (rest / rate if rest > EPSILON else 0.0)) \
+            * scale / 100
         complete = tokens["complete"] and not record["trigger_calls"]
     elif rate is None:
         return None
     else:
-        charge = dollars / rate / 100
+        charge = dollars / rate * scale / 100
     if complete:
         return charge
     if bracket_clean(record) and record["delta"] is not None:

@@ -1625,7 +1625,17 @@ def _legacy_rate():
         return None
 
 
-def _estimated_points(blocks: list, legacy_rate):
+def _allowance_scale():
+    """The budget's `allowance_scale` (points of the plan's own week per
+    Ultra-table point), 1 when the file cannot be read."""
+    _, budget_file = _harness()
+    try:
+        return budget_file.allowance_scale(budget_file.load_budget())
+    except budget_file.BudgetError:
+        return 1
+
+
+def _estimated_points(blocks: list, legacy_rate, scale=1):
     """`usage.allowance_estimate`'s points, low, high and whether every role
     was priced from tokens or the legacy rate, over trial `measured` blocks;
     None when nothing was priced (no blocks, or no role with tokens or
@@ -1633,7 +1643,7 @@ def _estimated_points(blocks: list, legacy_rate):
     if not blocks:
         return None
     allowance_points, _ = _harness()
-    found = allowance_points.estimate_blocks(blocks, legacy_rate)
+    found = allowance_points.estimate_blocks(blocks, legacy_rate, scale=scale)
     if not (found["roles_from_tokens"] or found["legacy_roles"]):
         return None
     return {key: found[key] for key in ("points", "low", "high", "complete")}
@@ -1672,6 +1682,7 @@ def estimate(tree: Path, run_id: str) -> dict:
     calibration = calibrate(tree, run_id)
     rate = calibration["points_per_usd"]
     legacy_rate = _legacy_rate()
+    scale = _allowance_scale()
     why = ("no run ingested before this one measured both a weekly meter delta "
            "and the dollars it spans")
     invocations = []
@@ -1682,7 +1693,7 @@ def estimate(tree: Path, run_id: str) -> dict:
             reasons.update(points_per_usd=why, points=why)
         invocations.append({**block, "points_per_usd": rate,
                             "points": None if rate is None else block["usd"] * rate,
-                            "estimated_points": _estimated_points(measured, legacy_rate),
+                            "estimated_points": _estimated_points(measured, legacy_rate, scale),
                             "reasons": reasons})
     doc = {"schema_version": ESTIMATE_SCHEMA_VERSION, "run_id": run_id,
            "calibration": {**calibration, "basis": CALIBRATION_BASIS},

@@ -162,6 +162,13 @@ weight with the wider range of both. A role recorded without token counts,
 or a model the table does not price, is charged its dollars at
 `legacy_usd_per_point`.
 
+The table was measured on one Ultra account, so it gives points of an Ultra
+week. Estimates are scaled to the account's own plan by `claude_plan` (`pro`
+10, `max5x` 2, `ultra` 1; `harness/budget.py`'s `ALLOWANCE_SCALE`, from
+Anthropic's published plan multipliers), because the budget's fractions and the
+meter are of that week. `legacy_usd_per_point` is dollars per Ultra point and is
+scaled the same way.
+
 Every summary carries the run's `usage.allowance_estimate`: `points`, `low`,
 `high` on the all-models weekly meter, the same on the Fable weekly meter
 (`fable`; judge calls run on Fable 5.2 and move both meters, reported only),
@@ -237,7 +244,7 @@ weekly allowance):
 | `legacy_usd_per_point` | 12.35 | dollars per point, used only for calls recorded without token counts (summaries from before tokens were kept, a result with no `modelUsage`, a model the weight table does not price) and for improve cost records, which keep dollars only. Night 1 (2026-11-19) measured the eval mix at $17.15 a point on Opus 5.5 and $12.35 on Sonnet 5.5; this is the lower. It replaced `points_per_usd` (0.0015, $6.67 a point), which charged eval runs about 1.9 to 2.6 times their real use |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 | `stop_when_session_above` | not set | required on a plan with a 5-hour window, refused on one without (`claude_plan`): a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
-| `claude_plan` | `ultra` | the subscription the meter belongs to: `pro`, `max5x`, `ultra` (formerly Max 20x), `team_standard`, `team_premium`, `enterprise_seat` or `enterprise_usage`. `harness/budget.py`'s `FIVE_HOUR_WINDOW` records, citing Anthropic's help center, which have a 5-hour window. A verified Ultra account has none, and this account's meter has shown none since 2026-10-30, so the 5-hour keys are not set |
+| `claude_plan` | `ultra` | the subscription the meter belongs to: `pro`, `max5x` or `ultra` (formerly Max 20x); team and enterprise plans are refused. `harness/budget.py`'s `FIVE_HOUR_WINDOW` records, citing Anthropic's help center, which have a 5-hour window. A verified Ultra account has none, and this account's meter has shown none since 2026-10-30, so the 5-hour keys are not set. Supported plans are `pro`, `max5x` and `ultra`: any other plan is refused at load, and the plan sets `allowance_scale` (10, 2, 1) that estimates are multiplied by. |
 | `working_hours` | not set | optional, only with `stop_when_session_above`: `timezone` (IANA), `days`, `start` and `end` (HH:MM), and `session_stop`, a lower 5-hour stop in force from 5 hours before `start` until `end` on each listed day, so the loop never hands the owner a nearly spent window as their day begins. Outside those hours `stop_when_session_above` applies |
 
 Three layers enforce it:

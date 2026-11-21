@@ -74,6 +74,14 @@ class ProducerTests(unittest.TestCase):
         self.assertAlmostEqual(got["usd_per_week"], 14.0)
         self.assertAlmostEqual(got["points_per_week"], 14.0 / 12.35)
 
+    def test_loop_jobs_points_scale_to_the_accounts_plan(self):
+        # On Max 5x (scale 2) the same fires are twice the points of the account's own week, so the guard's
+        # loop reserve, a fraction of that week, is not understated.
+        from unittest import mock
+        with mock.patch.object(build, "budget_allowance_scale", return_value=2):
+            got = build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, str(self.ledger))
+        self.assertAlmostEqual(got["points_per_week"], 2 * 14.0 / 12.35)
+
     def test_without_a_ledger_there_is_no_block(self):
         self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW, None))
         self.assertIsNone(build.loop_jobs(self.inputs, self.config, str(self.workflows), NOW,
