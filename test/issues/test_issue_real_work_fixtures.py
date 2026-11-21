@@ -37,6 +37,8 @@ REAL_WORK = REPO / "evals" / "real-work"
 SCHEDULE = REPO / "evals" / "scheduled.yml"
 sys.path.insert(0, str(REPO / "scripts"))
 import scaffold_real_work as scaffold  # noqa: E402
+sys.path.insert(0, str(REPO / "test"))
+from prereqs import require_prerequisite  # noqa: E402
 
 # Each checker file's git blob id in its pull request's merge commit, read by
 # hand with `git ls-tree <merge> <path>`: the overlay is that file, byte for
@@ -296,7 +298,8 @@ class RealWorkFixtureTests(unittest.TestCase):
         for entry in fixture.get("deps", ()):
             tree, manager = installed[entry["manager"]]
             modules = seed / entry["dir"] / tree
-            self.assertTrue(modules.is_dir(), self.install_hint(modules, manager))
+            # Skipped where the install is missing; CI, which installs it, fails.
+            require_prerequisite(modules.is_dir(), self.install_hint(modules, manager))
         owned = tempfile.TemporaryDirectory(prefix="real-work-")
         self.addCleanup(owned.cleanup)
         workspace = Path(owned.name) / "ws"

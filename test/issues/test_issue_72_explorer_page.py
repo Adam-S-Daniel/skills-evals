@@ -18,9 +18,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "test"))
+from prereqs import require_executable, require_prerequisite  # noqa: E402
+
 RUNNER = ROOT / "tool" / "test" / "run.js"
 EXPLORER = ROOT / "explorer"
 SOURCE_RUNNER = EXPLORER / "test" / "run.js"
@@ -61,12 +65,10 @@ class ExplorerPageTests(unittest.TestCase):
                          "the runner must report a nonzero pass count")
 
     def test_explorer_source_suite_passes(self):
+        require_executable("node")
+        require_prerequisite((EXPLORER / "node_modules" / "esbuild").is_dir(),
+                             "explorer/node_modules (or `npm ci` in explorer/)")
         node = shutil.which("node")
-        if node is None:
-            self.skipTest("`node` is not on PATH, so explorer/test/run.js cannot run here")
-        self.assertTrue((EXPLORER / "node_modules" / "esbuild").is_dir(),
-                        "explorer/node_modules is missing: run `bash scripts/dev_setup.sh` "
-                        "(or `npm ci` in explorer/) first, as ci.yml does")
         proc = subprocess.run([node, str(SOURCE_RUNNER)], cwd=EXPLORER, capture_output=True,
                               text=True, timeout=120, check=False)
         self.assertEqual(proc.returncode, 0,

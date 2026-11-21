@@ -29,6 +29,9 @@ import run_eval  # noqa: E402
 import seed_prep  # noqa: E402
 from scorers import commands, objective, repo_tests  # noqa: E402
 
+sys.path.insert(0, str(REPO / "test"))
+from prereqs import require_executable  # noqa: E402
+
 BUGGY = "def add(a, b):\n    return a - b\n\n\ndef sub(a, b):\n    return a - b\n"
 FIXED = "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n"
 HIDDEN_TEST = (
@@ -639,6 +642,8 @@ class BundlerDepsTests(_Base):
         self.assertEqual(seed_prep.bundler_environment(ws, {"deps": [{"manager": "npm"}]}), {})
 
     def test_the_scorer_rejects_a_gem_home_outside_the_workspace(self):
+        # The scorer refuses an argv[0] it cannot resolve before it reads GEM_HOME.
+        require_executable("ruby")
         ws = self.workspace(FIXED)
         self.gemfiles(ws)
         passed, detail = repo_tests.repo_tests(
