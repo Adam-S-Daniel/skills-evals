@@ -209,7 +209,10 @@ class FixtureLayoutTests(unittest.TestCase):
         self.assertNotIn("in-situ", run_eval.SKILL_ARMS)
         skill = ROOT / "evals" / "writing-adrs" / "bootstrap"
         out = io.StringIO()
+        # The fixture opts into the fleet hooks, so a host Git older than
+        # FLEET_HOOKS_MIN_GIT would be refused first: pin a new-enough one.
         with mock.patch.object(sys, "argv", ["run_eval.py", str(skill), "--arm", "in-situ"]), \
+                mock.patch.object(run_eval, "git_version", return_value="git version 2.56.0"), \
                 contextlib.redirect_stdout(out):
             self.assertEqual(run_eval.main(), 2)
         self.assertIn("--arm 'in-situ' is not valid for a skill fixture", out.getvalue())

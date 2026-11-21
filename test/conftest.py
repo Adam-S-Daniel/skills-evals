@@ -2,14 +2,19 @@
 
 Loaded by every pytest-xdist worker, which is where collection happens, so
 the shard filter has to live here: a plugin object passed to `pytest.main`
-in the controller never reaches the workers. Without the option this file
-does nothing, so `python3 -m pytest test/issues/<file>.py` is unchanged.
+in the controller never reaches the workers. Without the option the shard
+filter does nothing, so `python3 -m pytest test/issues/<file>.py` is unchanged.
+It also makes every test's Git hermetic (`_hermetic_git` below).
 """
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -22,6 +27,29 @@ from shard import assign, nodeid_key, parse_shard
 # tests start inherit when they inherit the environment.
 # test_issue_1024_sandbox_probe.py turns it back on where it tests the canary.
 os.environ["SKILLS_EVALS_TEST_SKIP_SANDBOX_PROBE"] = "1"
+
+
+def _hermetic_git() -> None:
+    """Every `git` a test runs, or a child process of it, reads only the
+    config the test writes, never this host's: no system or global file and
+    no inherited `GIT_*` variable. A developer's or cloud container's global
+    config (commit signing, `init.templateDir`, `includeIf` hook wiring, a
+    `GIT_DIR` from a hook the suite runs under) otherwise changed what the
+    tests' own commits did, so the same commit failed only on some hosts.
+    The global file carries an identity alone, which CI's runner derives from
+    its hostname and a bare container cannot."""
+    for key in [k for k in os.environ if k.startswith("GIT_")]:
+        del os.environ[key]
+    home = tempfile.mkdtemp(prefix="skills-evals-gitconfig-")
+    atexit.register(shutil.rmtree, home, ignore_errors=True)
+    config = os.path.join(home, "gitconfig")
+    with open(config, "w", encoding="utf-8") as handle:
+        handle.write("[user]\n\tname = skills-evals test\n\temail = test@example.com\n")
+    os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
+    os.environ["GIT_CONFIG_GLOBAL"] = config
+
+
+_hermetic_git()
 
 
 def pytest_addoption(parser):
@@ -60,3 +88,24 @@ def _no_loop_reserve_by_default(request, monkeypatch):
     guard = sys.modules.get("allowance_guard")
     if guard is not None:
         monkeypatch.setattr(guard, "loop_reserve_fraction", lambda tree, now: 0.0)
+
+
+# The suite needs Git 2.54 or later (scripts/dev_setup.sh's GIT_MIN): tests
+# that run real fixtures opting into the fleet hooks get the harness's
+# `git_too_old_for_fleet_hooks` refusal on an older Git. Said once at the end
+# of a run, beside the failures it explains, so they are not mistaken for
+# regressions; CI's suite job checks the same thing up front.
+def pytest_terminal_summary(terminalreporter):
+    setup = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "scripts", "dev_setup.sh")
+    try:
+        result = subprocess.run(["bash", setup, "--check-git"], capture_output=True,
+                                text=True, timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        terminalreporter.write_line(f"skills-evals: could not check the Git version ({type(exc).__name__})")
+        return
+    if result.returncode != 0:
+        terminalreporter.write_sep("=", "host prerequisite missing", yellow=True)
+        terminalreporter.write_line(result.stderr.strip())
+        terminalreporter.write_line("Tests that fail with `git_too_old_for_fleet_hooks` "
+                                    "are this, not a regression.")

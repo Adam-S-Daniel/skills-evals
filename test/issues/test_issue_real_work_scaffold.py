@@ -58,12 +58,22 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
+from prereqs import require_executable, require_prerequisite  # noqa: E402
 
 import answer_leak  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import mine_real_work  # noqa: E402
 import scaffold_real_work as scaffold  # noqa: E402
 from scorers import commands  # noqa: E402
+
+def require_checker_parser() -> None:
+    """scripts/checker_call_names.js parses JavaScript checkers with the
+    browser-testing seed's installed Acorn."""
+    require_executable("node")
+    require_prerequisite(
+        (REPO_ROOT / "evals" / "browser-testing" / "seed" / "node_modules" / "acorn").is_dir(),
+        "evals/browser-testing/seed/node_modules/acorn")
+
 
 MARKER = "do-not-echo-this-marker"
 
@@ -930,6 +940,7 @@ class InterfaceProvenanceTests(unittest.TestCase):
                                        "NOTE = 'make_widget(1, 2, 3)'\n"}))
 
     def test_the_javascript_checker_calls_or_supplies_it(self):
+        require_checker_parser()
         self.assertEqual(self.problems({"t.test.js": "test('x', () => make_widget(1, 2, 3));\n"}), [])
         supplied = ("const deps = { make_widget: overrides.make_widget || (() => null) };\n"
                     "run(deps);\n")
@@ -991,6 +1002,7 @@ class CommittedFixturesTests(unittest.TestCase):
     def test_the_committed_fixtures_pass_the_static_check(self):
         # The #311 fixtures were written by hand; the scaffold's static check
         # must accept them, so its rules are the fixtures' own.
+        require_checker_parser()  # some committed checkers are JavaScript
         names = sorted(p.name for p in REAL_WORK.iterdir() if (p / "fixture.yaml").is_file())
         self.assertGreaterEqual(len(names), 3)
         for name in names:

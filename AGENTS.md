@@ -64,10 +64,17 @@ read; only in replies to the user.
   scorers fail closed there. Wrap any run in
   `unshare --user --map-current-user --pid --fork --mount-proc --`.
 
-- **The full suite in a cloud container fails tens of tests on clean `main`
-  too** (tests that need `bwrap` where it is missing, or a local machine). Judge a change by
-  comparing the failing test IDs with a run on `main`, never by the failure
-  count: a real failure can hide inside an unchanged count.
+- **Host differences are handled in `test/`, not by diffing against `main`.**
+  `test/conftest.py` gives every test's Git a hermetic config (no system or
+  global file, no inherited `GIT_*`), so a host's commit signing or hook wiring
+  cannot change a test's commits. A test that needs something the repository
+  does not carry (a fixture's npm or gem install, a tool on PATH) declares it
+  with `test/prereqs.py`'s `require_prerequisite`/`require_executable`: skipped
+  with the setup command outside CI, failed in CI. On a Git older than
+  `dev_setup.sh`'s `GIT_MIN` the run ends with a "host prerequisite missing"
+  section, and tests failing `git_too_old_for_fleet_hooks` are that. Anything
+  else red on a provisioned host (still `bwrap`, where it is missing) compare by
+  failing test IDs with a run on `main`, never by the count.
 
 - **A routine eval run that ends in about two minutes with no results branch**
   usually never ran a trial. Read the eval runner routine session's final

@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "test"))
 import site_freshness as sf  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
+from prereqs import require_executable, require_prerequisite  # noqa: E402
 
 WORKFLOW = ROOT / ".github" / "workflows" / "site-freshness.yml"
 NOW = datetime(2026, 11, 4, 12, 0, 0, tzinfo=timezone.utc)
@@ -140,9 +141,10 @@ class DrawnSelectorTests(unittest.TestCase):
         page = (ROOT / "tool" / "index.html").read_text(encoding="utf-8")
         classes = [part.strip().split(".")[-1] for part in sf.DRAWN.split(",")]
         self.assertIn("src", classes)
+        require_executable("node")
+        require_prerequisite((ROOT / "explorer" / "node_modules" / "acorn").is_dir(),
+                             "explorer/node_modules/acorn (or `npm ci` in explorer/)")
         node = shutil.which("node")
-        if node is None:
-            self.skipTest("node is not installed")
         # Parse the inline script and list every object property `class` with a
         # string value, so the check holds however the build quotes or spaces it.
         walker = (
