@@ -43,7 +43,6 @@ from pathlib import Path
 import re
 import time
 import subprocess
-import tempfile
 import sys
 import urllib.request
 
@@ -458,20 +457,19 @@ def error_type(body: bytes) -> str:
 def post_fire(routine_id: str, bearer: str, text: str) -> tuple:
     """POST the fire; returns (HTTP status code as text, '000' on a transport
     failure; the API's error type from `error_type`). The bearer goes to curl
-    on stdin, never argv, and only the error type is read from the body."""
+    on stdin, never argv. The body comes back on stdout and the status on
+    stderr (no temp file); only the error type is read from the body."""
     body = json.dumps({"text": text})
-    with tempfile.NamedTemporaryFile() as response:
-        proc = subprocess.run(
-            ["curl", "--silent", "--proto", "=https", "--max-time", "60", "--request", "POST",
-             FIRE_URL.format(id=routine_id), "--header", "@-",
-             "--header", "anthropic-version: 2023-06-01",
-             "--header", "Content-Type: application/json", "--data-binary", body,
-             "--output", response.name, "--write-out", "%{http_code}"],
-            input=f"Authorization: Bearer {bearer}\n", capture_output=True, text=True, check=False)
-        status = proc.stdout.strip()
-        kind = error_type(Path(response.name).read_bytes())
+    proc = subprocess.run(
+        ["curl", "--silent", "--proto", "=https", "--max-time", "60", "--request", "POST",
+         FIRE_URL.format(id=routine_id), "--header", "@-",
+         "--header", "anthropic-version: 2023-06-01",
+         "--header", "Content-Type: application/json", "--data-binary", body,
+         "--write-out", "%{stderr}%{http_code}"],
+        input=f"Authorization: Bearer {bearer}\n".encode(), capture_output=True, check=False)
+    status = proc.stderr.decode("utf-8", "replace").strip()
     status = status if proc.returncode == 0 and re.fullmatch(r"[0-9]{3}", status) else "000"
-    return status, kind
+    return status, error_type(proc.stdout)
 
 
 # --------------------------------------------------------------------------
