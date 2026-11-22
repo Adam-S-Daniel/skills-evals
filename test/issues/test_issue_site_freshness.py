@@ -132,6 +132,24 @@ class DataTests(unittest.TestCase):
 
 
 
+class FireErrorTypeTests(unittest.TestCase):
+    """A refused fire logs the API's error type so the next 403 says why
+    (skills-evals#1038 got eight bare 403s), and nothing else from the body."""
+
+    def test_api_error_type_is_returned(self):
+        body = b'{"type":"error","error":{"type":"permission_error","message":"secret detail"}}'
+        self.assertEqual(sf.error_type(body), "permission_error")
+
+    def test_no_error_object_or_empty_body_is_none(self):
+        self.assertEqual(sf.error_type(b'{"type":"routine_fire","id":"x"}'), "none")
+        self.assertEqual(sf.error_type(b""), "none")
+
+    def test_anything_else_is_other_never_body_text(self):
+        for body in (b"<html>Forbidden</html>", b'{"error":{"type":"Bearer sk-ant-oat01-abc"}}',
+                     b'{"error":"denied"}', b'{"error":{"type":"' + b"a" * 41 + b'"}}', b"\xff\xfe"):
+            self.assertIn(sf.error_type(body), ("other",), body)
+
+
 class DrawnSelectorTests(unittest.TestCase):
     """The check must look for something the CURRENT public page draws: the
     six-group app drew no `p.asof`, so a selector naming only that would call
