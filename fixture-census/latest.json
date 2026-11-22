@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
     "context_declared": 73,
-    "context_missing": 102,
+    "context_missing": 105,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 175
+    "total": 178
   },
-  "generated_at": "2026-11-21T13:41:49Z",
+  "generated_at": "2026-11-22T13:35:10Z",
   "include_private_names": false,
   "paused_removed": [
     {
