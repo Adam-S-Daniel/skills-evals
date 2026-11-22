@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-21T17:37:16Z",
+  "generated_at": "2026-11-22T17:37:16Z",
   "rows": [
     {
       "blocked": null,
@@ -5643,7 +5643,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 103,
+      "sessions": 110,
       "surface": "cloud",
       "week": "2026-11-16"
     },
@@ -5656,7 +5656,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 39,
+      "sessions": 43,
       "surface": "local",
       "week": "2026-11-16"
     },
@@ -5682,7 +5682,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 177,
+      "sessions": 184,
       "surface": "cloud",
       "week": "2026-11-16"
     },
@@ -5883,7 +5883,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5909,7 +5909,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 32,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5922,7 +5922,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 460,
+      "invocations": 464,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5948,7 +5948,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 61,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -5973,8 +5973,8 @@
       "week": "2026-11-16"
     },
     {
-      "blocked": 0,
-      "invocations": 134,
+      "blocked": 4,
+      "invocations": 246,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -6208,7 +6208,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 7,
       "kind": "hook",
       "name": "dated-phrasing",
       "outcome": null,
@@ -6403,7 +6403,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 57,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -6416,7 +6416,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -6477,6 +6477,19 @@
       "runner": "f13da26bfe0f",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "lesson-memory-485-1",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -6572,6 +6585,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "lesson-memory-485-1",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 44,
       "kind": "hook",
       "name": "lesson-memory-485-1",
@@ -6624,7 +6650,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 16,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -6650,7 +6676,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 11,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -6689,6 +6715,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 10,
+      "kind": "hook",
+      "name": "lesson-memory-485-1",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 42,
       "kind": "hook",
       "name": "lesson-memory-485-1",
@@ -6702,7 +6741,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 110,
+      "invocations": 210,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -6754,6 +6793,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 6,
+      "kind": "hook",
+      "name": "lint-required-javascript",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 4,
       "kind": "hook",
       "name": "lint-required-javascript",
@@ -6776,6 +6828,19 @@
       "runner": "2f5178e02f71",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "lint-required-javascript",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -6936,7 +7001,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -7091,8 +7156,8 @@
       "week": "2026-11-16"
     },
     {
-      "blocked": 0,
-      "invocations": 5,
+      "blocked": 3,
+      "invocations": 11,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -7144,7 +7209,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 13,
+      "invocations": 14,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -7183,7 +7248,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 10,
       "kind": "hook",
       "name": "other",
       "outcome": null,
@@ -7222,7 +7287,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -7235,7 +7300,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -7270,6 +7335,19 @@
       "runner": "dc315419d6b9",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -7365,6 +7443,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 22,
       "kind": "hook",
       "name": "persistent-delete",
@@ -7417,7 +7508,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 8,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -7443,7 +7534,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -7482,6 +7573,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 20,
       "kind": "hook",
       "name": "persistent-delete",
@@ -7508,7 +7612,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 104,
+      "invocations": 204,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -7573,7 +7677,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -7586,7 +7690,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -7621,6 +7725,19 @@
       "runner": "dc315419d6b9",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -7716,6 +7833,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 22,
       "kind": "hook",
       "name": "push-to-default",
@@ -7768,7 +7898,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 8,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -7794,7 +7924,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -7833,6 +7963,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 20,
       "kind": "hook",
       "name": "push-to-default",
@@ -7859,7 +8002,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 104,
+      "invocations": 204,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -7898,7 +8041,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 16,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -7924,7 +8067,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 11,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -7989,7 +8132,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 57,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -8002,7 +8145,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -8063,6 +8206,19 @@
       "runner": "f13da26bfe0f",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -8158,6 +8314,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 44,
       "kind": "hook",
       "name": "rules-dir",
@@ -8210,7 +8379,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 16,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -8236,7 +8405,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 11,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -8275,6 +8444,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 10,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 42,
       "kind": "hook",
       "name": "rules-dir",
@@ -8301,7 +8483,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 110,
+      "invocations": 210,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -8366,7 +8548,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 57,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8379,7 +8561,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8440,6 +8622,19 @@
       "runner": "f13da26bfe0f",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -8535,6 +8730,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 44,
       "kind": "hook",
       "name": "secret-file",
@@ -8587,7 +8795,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 16,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8613,7 +8821,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 11,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8652,13 +8860,26 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
       "overridden": null,
       "repo": "other",
       "runner": null,
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 10,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
       "sessions": null,
       "surface": "cloud",
       "week": "2026-11-16"
@@ -8678,7 +8899,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 61,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8704,7 +8925,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 110,
+      "invocations": 210,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -8769,7 +8990,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 57,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -8782,7 +9003,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 8,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -8843,6 +9064,19 @@
       "runner": "f13da26bfe0f",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "skill-shell",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -8938,6 +9172,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "skill-shell",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 44,
       "kind": "hook",
       "name": "skill-shell",
@@ -8990,7 +9237,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 6,
+      "invocations": 16,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -9016,7 +9263,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 11,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -9055,13 +9302,26 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
       "overridden": null,
       "repo": "other",
       "runner": null,
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 10,
+      "kind": "hook",
+      "name": "skill-shell",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
       "sessions": null,
       "surface": "cloud",
       "week": "2026-11-16"
@@ -9081,7 +9341,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 53,
+      "invocations": 61,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -9107,7 +9367,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 110,
+      "invocations": 210,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -9172,7 +9432,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 26,
+      "invocations": 28,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -9185,7 +9445,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -9220,6 +9480,19 @@
       "runner": "dc315419d6b9",
       "sessions": null,
       "surface": "local",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adam-agentskills",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
       "week": "2026-11-16"
     },
     {
@@ -9315,6 +9588,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 22,
       "kind": "hook",
       "name": "staged-index",
@@ -9367,7 +9653,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 8,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -9392,8 +9678,8 @@
       "week": "2026-11-16"
     },
     {
-      "blocked": 0,
-      "invocations": 1,
+      "blocked": 1,
+      "invocations": 4,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -9432,6 +9718,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "2f5178e02f71",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-16"
+    },
+    {
+      "blocked": 0,
       "invocations": 20,
       "kind": "hook",
       "name": "staged-index",
@@ -9458,7 +9757,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 104,
+      "invocations": 204,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -9504,7 +9803,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 187,
+      "sessions": 193,
       "surface": "cloud",
       "week": "2026-11-16"
     },
@@ -9517,7 +9816,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 39,
+      "sessions": 43,
       "surface": "local",
       "week": "2026-11-16"
     },
@@ -9621,7 +9920,7 @@
     {
       "from": "2026-09-28T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 3007,
+      "sessions_scanned": 3018,
       "skill_keys": [
         "add-from-address",
         "add-received-from-addresses",
@@ -9662,43 +9961,43 @@
         "writing-adrs"
       ],
       "surface": "local",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     },
     {
       "from": "2026-09-28T00:00:00Z",
-      "runs_scanned": 8302,
+      "runs_scanned": 8422,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
       "listing_recorded": true,
-      "records_scanned": 1077,
+      "records_scanned": 1084,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     },
     {
       "from": "2026-11-09T00:00:00Z",
-      "records_scanned": 1142,
+      "records_scanned": 1172,
       "scope": "hook-records",
       "surface": "cloud",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     },
     {
       "events_scanned": 3,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     },
     {
       "events_scanned": 7,
       "from": "2026-10-19T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-21T17:37:16Z"
+      "to": "2026-11-22T17:37:16Z"
     }
   ]
 }
