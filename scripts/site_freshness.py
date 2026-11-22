@@ -435,20 +435,41 @@ def browser_results(urls: list) -> dict:
     return results
 
 
-def post_fire(routine_id: str, bearer: str, text: str) -> str:
-    """POST the fire; returns the HTTP status code as text ('000' on a
-    transport failure). The bearer goes to curl on stdin, never argv, and the
-    response body is discarded."""
+_ERROR_TYPE = re.compile(r"[a-z_]{1,40}")
+
+
+def error_type(body: bytes) -> str:
+    """The API's `error.type` from a response body, when it is a short
+    lowercase word (`permission_error`, `invalid_request_error`, ...);
+    "none" for no error object, "other" for anything else. Nothing else from
+    the body is ever returned, so the result is safe to log."""
+    try:
+        doc = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return "other" if body.strip() else "none"
+    err = doc.get("error") if isinstance(doc, dict) else None
+    if err is None:
+        return "none"
+    kind = err.get("type") if isinstance(err, dict) else None
+    return kind if isinstance(kind, str) and _ERROR_TYPE.fullmatch(kind) else "other"
+
+
+def post_fire(routine_id: str, bearer: str, text: str) -> tuple:
+    """POST the fire; returns (HTTP status code as text, '000' on a transport
+    failure; the API's error type from `error_type`). The bearer goes to curl
+    on stdin, never argv. The body comes back on stdout and the status on
+    stderr (no temp file); only the error type is read from the body."""
     body = json.dumps({"text": text})
     proc = subprocess.run(
         ["curl", "--silent", "--proto", "=https", "--max-time", "60", "--request", "POST",
          FIRE_URL.format(id=routine_id), "--header", "@-",
          "--header", "anthropic-version: 2023-06-01",
          "--header", "Content-Type: application/json", "--data-binary", body,
-         "--output", os.devnull, "--write-out", "%{http_code}"],
-        input=f"Authorization: Bearer {bearer}\n", capture_output=True, text=True, check=False)
-    status = proc.stdout.strip()
-    return status if proc.returncode == 0 and re.fullmatch(r"[0-9]{3}", status) else "000"
+         "--write-out", "%{stderr}%{http_code}"],
+        input=f"Authorization: Bearer {bearer}\n".encode(), capture_output=True, check=False)
+    status = proc.stderr.decode("utf-8", "replace").strip()
+    status = status if proc.returncode == 0 and re.fullmatch(r"[0-9]{3}", status) else "000"
+    return status, error_type(proc.stdout)
 
 
 # --------------------------------------------------------------------------
@@ -612,11 +633,11 @@ def cmd_fire(args) -> int:
         print("::error::the routine id (repository variable SITE_FRESHNESS_ROUTINE_ID), the "
               "bearer (secret SITE_FRESHNESS_FIRE_BEARER) or the issue number is missing or malformed")
         return 1
-    status = post_fire(routine_id, bearer, Path(args.fire_text).read_text(encoding="utf-8"))
-    print(f"fire API status: {status}")
+    status, kind = post_fire(routine_id, bearer, Path(args.fire_text).read_text(encoding="utf-8"))
+    print(f"fire API status: {status}; error type: {kind}")
     gh(["issue", "comment", number, "-R", EVALS_REPO, "--body",
         fire_marker(utcnow(), status) + "\nFired the site freshness routine; HTTP status "
-        f"{status}.\n\n<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"])
+        f"{status}, error type {kind}.\n\n<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"])
     return 0
 
 
