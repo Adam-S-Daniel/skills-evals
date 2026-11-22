@@ -2062,6 +2062,27 @@ await test('no reader-facing string uses a banned phrase', () => {
   eq(found.join('\n'), '');
 });
 
+await test('the public home page draws what the site freshness check waits for', () => {
+  // scripts/site_freshness.py waits for its DRAWN selector on the live page and
+  // files "did not draw" when none matches. Its selector once named `p.src` /
+  // `p.asof` only, while the Summary page draws `div.asof` and `ul.src`, so a
+  // healthy page was reported broken for a week (skills-evals#1038).
+  const py = fs.readFileSync(path.join(REPO, 'scripts', 'site_freshness.py'), 'utf8');
+  const m = /^DRAWN = "([^"]+)"$/m.exec(py);
+  ok(m, 'DRAWN not found in scripts/site_freshness.py');
+  const parts = m[1].split(',').map((p) => {
+    const sel = /^#app (?:([a-z]+))?\.([a-z-]+)$/.exec(p.trim());
+    ok(sel, 'unsupported selector part: ' + p);
+    return { tag: sel[1] || null, cls: sel[2] };
+  });
+  const route = parseRoute('', '', null, undefined);
+  eq(route.name, 'summary', 'the public page opens on Summary');
+  const page = renderRoute(doc({}), route, {});
+  const hits = findAll(page, (n) => n.attrs && parts.some((p) => (!p.tag || n.tag === p.tag)
+    && String(n.attrs.class || '').split(/\s+/).includes(p.cls)));
+  ok(hits.length > 0, 'the Summary page draws nothing DRAWN (' + m[1] + ') matches');
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);

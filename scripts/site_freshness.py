@@ -10,8 +10,8 @@ on dispatch). Three checks decide:
           and that commit is more than DESIGN_MAX_AGE old (its committer time).
   data    explorer/latest.json's `generated_at` is older than DATA_MAX_AGE.
   page    the live page, loaded in headless Chromium, did not draw the data
-          (a `p.src` source line, or the older page's `p.asof`, built only
-          after the data loaded; a `.panel.failure` means the page drew its error panel).
+          (any `.src` or `.asof` element under `#app`, built only after the
+          data loaded; a `.panel.failure` means the page drew its error panel).
 
 Mechanical fixes (`fix`): an open sync PR that is BEHIND its base gets
 update-branch with the eval-improve App token; a stale design with neither a
@@ -73,8 +73,10 @@ _REPO = re.compile(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}")
 
 #: The reasons the page check can give; fixed text, never page content.
 # What the page draws only once its data loaded: the source line under each
-# panel heading (`p.src`), or `p.asof` on the page before the six-group app.
-DRAWN = "#app p.src, #app p.asof"
+# panel heading (`p.src`), the Summary page's "Data times" fold (`div.asof`
+# around a `ul.src`), or `p.asof` on the page before the six-group app. Match
+# the class on any tag: naming `p` alone called the healthy Summary page broken.
+DRAWN = "#app .src, #app .asof"
 PAGE_OK = "drew"
 
 
