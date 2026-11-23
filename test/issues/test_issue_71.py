@@ -81,11 +81,29 @@ def make_registry(root: Path, text: str = ORIGINAL_SKILL_MD) -> Path:
     (root / "plugins" / "demo" / ".claude-plugin" / "plugin.json").write_text(
         json.dumps({"name": "demo"}))
     env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
-    for cmd in (["init", "-q", "-b", "main"], ["add", "-A"],
+    # `git commit` spawns a detached `git maintenance run --auto`; it can
+    # still be touching .git/objects when a test's rmtree walks the repo
+    # (FileNotFoundError in teardown). Switch it off in the repo's own config.
+    for cmd in (["init", "-q", "-b", "main"],
+                ["config", "maintenance.auto", "false"],
+                ["config", "gc.auto", "0"], ["add", "-A"],
                 ["-c", "user.name=t", "-c", "user.email=t@example.com",
                  "commit", "-q", "-m", "seed"]):
         subprocess.run(["git", "-C", str(root), *cmd], check=True, env=env)
     return root
+
+
+class MakeRegistryTests(unittest.TestCase):
+
+    def test_the_registry_runs_no_background_maintenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_registry(Path(tmp) / "registry")
+            env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+            for key, want in (("maintenance.auto", "false"), ("gc.auto", "0")):
+                got = subprocess.run(["git", "-C", str(root), "config", "--get", key],
+                                     check=True, env=env, capture_output=True,
+                                     text=True).stdout.strip()
+                self.assertEqual(got, want, key)
 
 
 def make_skill_creator(root: Path) -> Path:
