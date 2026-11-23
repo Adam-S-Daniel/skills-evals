@@ -63,6 +63,9 @@ need and `<!-- skills-evals:needs-trigger-set:<skill> -->` for a trigger set. On
                                       did not see (an input it lacked) keeps
                                       its issue, so a partial plan never
                                       closes and refiles the queue
+  fixture need the throttle           none: `withheld` keeps the issue open,
+  withheld (`withheld`)               however the plan order shifts the allowance
+  any issue labeled agent-working     never closed
   trigger set no longer listed,       close-issue when the trigger lane judged
   open issue                          that skill (`subjects.triggers`), by the
                                       same rule
@@ -421,6 +424,22 @@ def judged_subjects(items: dict) -> tuple:
             set(subjects.get("triggers", [])))
 
 
+def withheld_keys(items: dict) -> set:
+    """{(kind, marker key)} of the fixture requests the plan's fixture throttle
+    withheld (`withheld`, from the plan's `fixture_throttle`). The subject is
+    judged but its request is deliberately not listed, so its open issue
+    must stand."""
+    withheld = items.get("withheld", [])
+    if not isinstance(withheld, list) or any(
+            not isinstance(w, dict) or w.get("kind") not in FIXTURE_NEEDS for w in withheld):
+        raise ValueError("--items `withheld` is not a list of fixture-need items")
+    keys = set()
+    for w in withheld:
+        # key_of checks the id fields; a withheld item carries no count.
+        keys.add((w["kind"], key_of({**w, "fixtures": 0})))
+    return keys
+
+
 def _stable(body: str) -> str:
     """The body without its workflow-run line and trailing blank lines, so a
     new run link or trailing whitespace alone is no change."""
@@ -434,6 +453,7 @@ def plan(items: dict, issues: list, run_url: str | None) -> list:
             or not isinstance(items.get("routine_down"), bool):
         raise ValueError("--items is not {routine_down, work}")
     judged, judged_triggers = judged_subjects(items)
+    withheld = withheld_keys(items)
     listed = {}
     for item in items["work"]:
         if isinstance(item, dict) and item.get("kind") in KINDS:
@@ -465,6 +485,15 @@ def plan(items: dict, issues: list, run_url: str | None) -> list:
         if kind == "routine-outage" and items["routine_down"]:
             actions.append({"kind": kind, "key": key, "issue": found["number"],
                             "action": "none", "reason": "the routine is still down"})
+            continue
+        if (kind, key) in withheld:
+            actions.append({"kind": kind, "key": key, "issue": found["number"],
+                            "action": "none",
+                            "reason": "the fixture throttle withheld this request"})
+            continue
+        if "agent-working" in (found.get("labels") or []):
+            actions.append({"kind": kind, "key": key, "issue": found["number"],
+                            "action": "none", "reason": "a worker is on it"})
             continue
         if (kind in FIXTURE_NEEDS and key not in judged) \
                 or (kind == TRIGGER_NEED and key not in judged_triggers):

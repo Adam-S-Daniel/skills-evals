@@ -290,6 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           jq '{routine_down: (.routine_down == true),
+               withheld: [(.fixture_throttle // [])[] | {kind, skill, section}],
                subjects: {skills: [(.skills // {}) | to_entries[] | select(.value.headroom != null) | .key],
                           guidance: [(.guidance // {}) | to_entries[] | select(.value.headroom != null) | .key],
                           triggers: [(.triggers // {}) | keys[]]},
