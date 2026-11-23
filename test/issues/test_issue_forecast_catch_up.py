@@ -470,6 +470,10 @@ class PaceHoldReplay(unittest.TestCase):
                               frozenset({"skipped-one"}), week_curves=[late])
         replay = doc["inputs"]["pace_replay"]
         self.assertEqual(replay["flat_points"], 0.0)
+        self.assertEqual(doc["inputs"]["cap_steps"],
+                         {"weekly_cap_points": 25.0, "after_loop_jobs_points": 25.0,
+                          "after_account_stop_points": 25.0, "account_stop_basis": "pace_replay",
+                          "account_stop_points": 80.0})
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
         self.assertAlmostEqual(replay["points"], 25.0)
 
@@ -493,6 +497,43 @@ class EvalRunPoints(unittest.TestCase):
             with mock.patch.object(fc.allowance_guard, "run_points",
                                    return_value={"points": 1.1, "usd": 1.0, "from_tokens": False}):
                 self.assertAlmostEqual(fc.eval_run_points(tree, 12.35)[0][1], 3.0)
+
+
+class OpenSubjectsSkipWhatTheRulesDoNotTest(unittest.TestCase):
+    """Open subjects are only those a fire can still move (Adam, 2026-11-23)."""
+
+    def test_a_subject_whose_only_cell_is_at_its_cap_is_not_open(self):
+        cells = [{"skill": "capped", "model": "m", "pairs": 20, "class": "insufficient"},
+                 {"skill": "open", "model": "m", "pairs": 3, "class": "insufficient"},
+                 {"skill": "half", "model": "m", "pairs": 20, "class": "insufficient"},
+                 {"skill": "half", "model": "n", "pairs": 2, "class": "insufficient"}]
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None):
+            got = fc.open_subjects(CTX, cells, prior_pairs=15)
+        self.assertEqual(sorted(got), [("skill", "half"), ("skill", "open")])
+        self.assertEqual(got[("skill", "half")]["cells"][0]["model"], "n")
+
+    def test_a_cap_extension_keeps_the_cell_open(self):
+        cell = {"skill": "ext", "model": "m", "pairs": 20, "class": "insufficient"}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict",
+                               return_value=projection(remaining=10)):
+            self.assertIn(("skill", "ext"), fc.open_subjects(CTX, [cell], prior_pairs=15))
+
+    def test_an_unreadable_guidance_checkout_fails_and_says_why(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch("sys.stderr") as err:
+            with self.assertRaises(SystemExit) as raised:
+                fc.main(["--gates", str(Path(d) / "g.json"), "--results-tree", d,
+                         "--as-of", "2026-11-23T00:00:00Z", "--guidance", d,
+                         "--out-json", str(Path(d) / "o.json")])
+        self.assertEqual(raised.exception.code, 2)
+        said = "".join(str(c.args[0]) for c in err.write.call_args_list)
+        self.assertIn("agents-md/eval-coverage.yml", said)
+        self.assertIn("would count as open subjects", said)
+
+    def test_guidance_is_required(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            fc.main(["--gates", "g", "--results-tree", ".", "--as-of", "2026-11-23T00:00:00Z",
+                     "--out-json", "o"])
 
 
 if __name__ == "__main__":
