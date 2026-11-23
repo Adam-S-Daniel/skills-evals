@@ -129,6 +129,18 @@ class SessionLimitTests(unittest.TestCase):
         self.assertEqual(budget.session_limit(limits, SUN_10PM_NY), 0.50)
         self.assertEqual(budget.session_limit(limits, utc(2026, 11, 23, 2, 59)), 0.90)
 
+    def test_the_lead_in_is_five_real_hours_across_a_clock_change(self):
+        # Sunday 6 AM New York on the spring-forward day is 10:00 UTC; five
+        # real hours before is 05:00 UTC (midnight EST), not 06:00 UTC
+        # (1 AM EST, five hours of wall clock). On the fall-back day 6 AM is
+        # 11:00 UTC, so the lead-in starts at 06:00 UTC, not 05:00 UTC.
+        limits = budget.parse_budget(PRO + HOURS.replace(
+            "[mon, tue, wed, thu, fri]", "[sun]").replace('"09:00"', '"06:00"'))
+        self.assertEqual(budget.session_limit(limits, utc(2026, 3, 8, 5, 30)), 0.50)
+        self.assertEqual(budget.session_limit(limits, utc(2026, 3, 8, 4, 59)), 0.90)
+        self.assertEqual(budget.session_limit(limits, utc(2026, 11, 1, 6, 0)), 0.50)
+        self.assertEqual(budget.session_limit(limits, utc(2026, 11, 1, 5, 30)), 0.90)
+
     def test_without_hours_or_now_the_plain_stop_applies(self):
         self.assertEqual(budget.session_limit(budget.parse_budget(PRO), FRI_10AM_NY), 0.90)
         self.assertEqual(budget.session_limit(self.limits, None), 0.90)
