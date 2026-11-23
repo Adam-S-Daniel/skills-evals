@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-22T17:53:54Z",
-  "generated_at": "2026-11-22T17:54:07Z",
+  "as_of": "2026-11-23T22:06:05Z",
+  "generated_at": "2026-11-23T22:06:24Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -40,7 +40,7 @@
     },
     {
       "at": "2026-07-10T12:29:38Z",
-      "eligible": true,
+      "eligible": false,
       "event": "added",
       "kind": "skill",
       "name": "embeddable-tool-pages",
@@ -694,6 +694,15 @@
       "name": "lesson-memory-485-1",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "week": "2026-11-16"
+    },
+    {
+      "at": "2026-11-23T17:05:31Z",
+      "eligible": false,
+      "event": "added",
+      "kind": "guidance-section",
+      "name": "pasted-config-is-a-stub",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-23"
     }
   ],
   "kinds": [
@@ -704,36 +713,36 @@
   "rate_weeks": 4,
   "rates": {
     "git-hook": {
-      "added": 13,
-      "added_per_week": 3.25,
+      "added": 8,
+      "added_per_week": 2.0,
       "complete": true,
       "eligible_share": null,
-      "from": "2026-10-25T17:53:54Z",
+      "from": "2026-10-26T22:06:05Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-22T17:53:54Z",
+      "to": "2026-11-23T22:06:05Z",
       "weeks": 4.0
     },
     "guidance-section": {
-      "added": 3,
-      "added_per_week": 0.75,
+      "added": 4,
+      "added_per_week": 1.0,
       "complete": true,
-      "eligible_share": 0.3333333333333333,
-      "from": "2026-10-25T17:53:54Z",
+      "eligible_share": 0.25,
+      "from": "2026-10-26T22:06:05Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-22T17:53:54Z",
+      "to": "2026-11-23T22:06:05Z",
       "weeks": 4.0
     },
     "skill": {
-      "added": 6,
-      "added_per_week": 1.5,
+      "added": 5,
+      "added_per_week": 1.25,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-25T17:53:54Z",
+      "from": "2026-10-26T22:06:05Z",
       "removed": 3,
       "removed_per_week": 0.75,
-      "to": "2026-11-22T17:53:54Z",
+      "to": "2026-11-23T22:06:05Z",
       "weeks": 4.0
     }
   },
@@ -812,7 +821,7 @@
       "status": "ok"
     },
     {
-      "current": 32,
+      "current": 33,
       "kind": "guidance-section",
       "parser": "eval-coverage",
       "private": false,
@@ -869,7 +878,7 @@
     {
       "added": 1,
       "added_eligibility_unknown": 0,
-      "added_eligible": 1,
+      "added_eligible": 0,
       "kind": "skill",
       "removed": 0,
       "week": "2026-07-06"
@@ -1017,6 +1026,14 @@
       "kind": "git-hook",
       "removed": 0,
       "week": "2026-11-16"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 0,
+      "added_eligible": 0,
+      "kind": "guidance-section",
+      "removed": 0,
+      "week": "2026-11-23"
     }
   ]
 }
