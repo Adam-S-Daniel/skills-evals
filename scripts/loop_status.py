@@ -25,7 +25,10 @@ number, computed by their code, never recomputed here:
     configured cap. Project threads are development, not loop spend: no
     figure here counts them.
   * forecast: `forecast_catch_up.py`'s catch-up weeks and dates and keep-up
-    per week, read from its output document. `collect` runs it at most every
+    per week, read from its output document, with the pace-hold replay
+    behind the eval capacity (`pace_replay`: weeks replayed, their range,
+    the flat stop-less-other figure it replaced, and when evals had spent
+    half their week). `collect` runs it at most every
     `--forecast-every-minutes` from the newest `gates` artifact of
     loop-pr-refresh.yml, the results branch and the account's meter history.
     Its per-task rows need the scheduled tasks' fire ledger, which only the
@@ -150,6 +153,15 @@ def pace_block(reading: dict | None, limits: dict, source: str) -> dict | None:
             "under_line_points": points(line - reading["used"])}
 
 
+def _median(values: list) -> float | None:
+    numbers = sorted(v for v in values
+                     if isinstance(v, (int, float)) and not isinstance(v, bool))
+    if not numbers:
+        return None
+    mid = len(numbers) // 2
+    return numbers[mid] if len(numbers) % 2 else (numbers[mid - 1] + numbers[mid]) / 2
+
+
 def forecast_block(doc) -> dict | None:
     """The forecast figures the page shows, from forecast_catch_up.py's
     output; None for a document without them."""
@@ -167,6 +179,15 @@ def forecast_block(doc) -> dict | None:
     def weeks(key):
         value = scenario.get(key)
         return None if not isinstance(value, (int, float)) or value == float("inf") else value
+    replay = inputs.get("pace_replay")
+    replay = {"weeks": len(replay.get("weeks") or []), "low_points": replay.get("low"),
+              "high_points": replay.get("high"), "flat_points": replay.get("flat_points"),
+              # When the median week had spent half its eval points, in
+              # hours after the reset: evals get their room early.
+              "half_spent_by_hours": _median([w.get("half_spent_by_hours")
+                                              for w in replay.get("weeks") or []
+                                              if isinstance(w, dict)])} \
+        if isinstance(replay, dict) else None
     tasks = [{"task": t.get("task"), "in_loop": t.get("in_loop"), "model": t.get("model"),
               "fires_per_week": t.get("fires_per_week"), "points_per_week": t.get("points_per_week")}
              for t in inputs.get("scheduled_tasks") or [] if isinstance(t, dict)]
@@ -182,6 +203,7 @@ def forecast_block(doc) -> dict | None:
         "loop_jobs_points_per_week": inputs.get("loop_jobs_points_per_week"),
         "non_eval_points_per_week": (inputs.get("assumptions") or {}).get("non_eval_points_per_week"),
         "pace_hold_modeled": bool((inputs.get("assumptions") or {}).get("pace_hold")),
+        "pace_replay": replay,
         "tasks": tasks,
     }
 

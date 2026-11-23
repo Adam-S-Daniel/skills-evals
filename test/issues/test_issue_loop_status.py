@@ -131,6 +131,16 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(got["tasks"][0]["task"], "Dashboard refresh")
         self.assertEqual(got["tasks"][0]["points_per_week"], 3.5)
 
+    def test_the_pace_replay_behind_the_capacity(self):
+        doc = json.loads(json.dumps(FORECAST))
+        doc["inputs"]["pace_replay"] = {
+            "points": 6.0, "low": 4.5, "high": 8.0, "flat_points": 0.0,
+            "weeks": [{"half_spent_by_hours": 17.0}, {"half_spent_by_hours": 57.0}]}
+        got = loop_status.forecast_block(doc)["pace_replay"]
+        self.assertEqual(got, {"weeks": 2, "low_points": 4.5, "high_points": 8.0,
+                               "flat_points": 0.0, "half_spent_by_hours": 37.0})
+        self.assertIsNone(loop_status.forecast_block(FORECAST)["pace_replay"])
+
     def test_a_document_without_the_figures_is_none(self):
         self.assertIsNone(loop_status.forecast_block({"inputs": {}}))
         self.assertIsNone(loop_status.forecast_block(None))
