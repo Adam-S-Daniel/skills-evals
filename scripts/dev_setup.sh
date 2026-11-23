@@ -36,7 +36,7 @@ PIP_PINS=(
   markdown-it-py==4.2.0
   tree-sitter==0.26.0
   tree-sitter-bash==0.25.1
-  pytest==9.1.1
+  pytest==9.2.0
   pytest-xdist==3.8.0
   jsonschema==4.26.0
 )

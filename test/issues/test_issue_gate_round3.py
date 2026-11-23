@@ -30,6 +30,8 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 
+import yaml
+
 ISSUES = Path(__file__).resolve().parent
 ROOT = ISSUES.parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -46,6 +48,21 @@ from test_issue_70_retirement import CLIS, POLICY, arm_run, cell, trial  # noqa:
 
 CAP = POLICY["max_runs_per_cell"]
 MODELS = ["model-a", "model-b"]
+
+
+def pin_roster(evals_dir, arms):
+    """Rewrite the copied `evals_dir/roster.yml` so its arms are exactly
+    `arms`. Tests that copy the live `evals/` tree would otherwise grade
+    canned runs against whatever roster `main` carries, so seating a model
+    with no runs (an automatic roster proposal) turns their verdicts
+    `insufficient`. The judge is moved off the arm set if it collides."""
+    path = Path(evals_dir) / "roster.yml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["arms"] = [{"id": m, "reason": "pinned by the test"} for m in arms]
+    if doc.get("judge", {}).get("id") in arms:
+        doc["judge"] = {"id": "claude-fable-5-2", "reason": "pinned by the test",
+                        "is_arm": False}
+    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
 
 def pairs(fixture, n, without, with_, *, start=0, model="model-a", cli=None,
