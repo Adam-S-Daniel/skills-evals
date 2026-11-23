@@ -476,9 +476,11 @@ class _RosterFixture(unittest.TestCase):
     #: (buffer 0) and measures 2-week windows. These tests exercise the
     #: buffer and the 4/8-week windows, which the machinery keeps, so they
     #: pin the values the machinery was written against; the shipped values
-    #: are asserted in `TestShippedPolicyFollowsCurrentUse`.
+    #: are asserted in `TestShippedPolicyFollowsCurrentUse`. The shipped
+    #: `arm_exclude_tiers` (Fable off the arms) is cleared here so the seating
+    #: rules are tested on every family; test_issue_arm_exclude_tiers.py covers it.
     MACHINERY_POLICY = {"superseded_exit_weeks": 1, "arm_enter_window_weeks": 4,
-                        "arm_exit_window_weeks": 8}
+                        "arm_exit_window_weeks": 8, "arm_exclude_tiers": []}
 
     @classmethod
     def _policy(cls, **overrides):

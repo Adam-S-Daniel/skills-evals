@@ -383,6 +383,17 @@ def validate_policy(policy: dict) -> None:
                 and all(isinstance(w, str) and w.lower() in words for w in excluded)):
             raise ValueError("roster policy `judge_exclude_tiers` is invalid: "
                              f"{excluded!r} (a list of family words from `tiers`)")
+    # Optional: family words whose models never take an arm seat, whatever
+    # their usage. The owner keeps Fable off the arms on cost (2026-11-23):
+    # a Fable run costs about 3x an Opus run inside the same weekly cap.
+    # Absent or empty: no change.
+    if "arm_exclude_tiers" in policy:
+        excluded = policy["arm_exclude_tiers"]
+        words = set(tier_words(policy))
+        if not (isinstance(excluded, list)
+                and all(isinstance(w, str) and w.lower() in words for w in excluded)):
+            raise ValueError("roster policy `arm_exclude_tiers` is invalid: "
+                             f"{excluded!r} (a list of family words from `tiers`)")
 
 
 def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
@@ -2999,6 +3010,23 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         order = {model_id: index for index, model_id in enumerate(live_order)}
         arms.sort(key=lambda entry: order[entry["id"]])
         excluded.sort(key=lambda entry: order[entry["id"]])
+
+    # `arm_exclude_tiers` takes models of those families off the arm set
+    # after every seating rule has run, so a qualifying model is listed under
+    # `excluded` with the rule it would otherwise have met.
+    arm_excluded = {str(w).lower() for w in policy.get("arm_exclude_tiers") or ()}
+    if arm_excluded:
+        kept = []
+        for arm in arms:
+            family = family_of(arm["id"], rungs)
+            if family in arm_excluded:
+                excluded.append({"id": arm["id"], "reason": (
+                    f"excluded from the arm set: models of the {family} tier "
+                    f"take no arm seat (`arm_exclude_tiers`); it would "
+                    f"otherwise be seated: {arm['reason']}")})
+            else:
+                kept.append(arm)
+        arms = kept
 
     for snapshot_id in sorted(snapshots):
         excluded.append({"id": snapshot_id, "reason": (

@@ -42,7 +42,7 @@ import compute_gates  # noqa: E402
 import plan_week  # noqa: E402
 import run_eval  # noqa: E402
 import work_item_issues  # noqa: E402
-from test_issue_gate_round3 import pairs  # noqa: E402
+from test_issue_gate_round3 import pairs, pin_roster  # noqa: E402
 
 REAL_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"]
 NOW = datetime(2026, 11, 4, tzinfo=timezone.utc)
@@ -54,6 +54,7 @@ def build(paused, rule, without, with_):
     in `paused` scope-paused by `rule`) and 25 canned pairs per cell."""
     root = Path(tempfile.mkdtemp(prefix="round7-"))
     shutil.copytree(ROOT / "evals", root / "evals")
+    pin_roster(root / "evals", REAL_MODELS)
     for f in FIXTURES:
         d = root / "evals" / "zz-demo" / f
         d.mkdir(parents=True)

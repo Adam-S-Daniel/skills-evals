@@ -146,6 +146,11 @@ def _write_positive_cooling_off_policy() -> Path:
         if n != 1:
             raise RuntimeError(f"{SHIPPED_POLICY} does not carry exactly one "
                                f"`{key}:` line to substitute")
+    # The shipped `arm_exclude_tiers` (Fable off the arms, 2026-11-23) is
+    # cleared, so the seating machinery stays tested on every family;
+    # test/issues/test_issue_arm_exclude_tiers.py covers the key itself.
+    text = re.sub(r"^arm_exclude_tiers: .*$", "arm_exclude_tiers: []", text,
+                  flags=re.MULTILINE)
     path = tmp / "roster-policy.yml"
     path.write_text(text, encoding="utf-8")
     return path
@@ -10674,26 +10679,26 @@ class TestParallelPinAgreement(unittest.TestCase):
         text = ("# dev-only deps\n"
                "pyyaml==6.0.2\n"
                "\n"
-               "pytest==9.1.1\n"
+               "pytest==9.2.0\n"
                "pytest-xdist==3.8.0 # parallel runner\n")
         self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
 
     def test_different_version_names_both_versions(self):
-        text = "pytest==9.1.1\npytest-xdist==3.7.0\n"
+        text = "pytest==9.2.0\npytest-xdist==3.7.0\n"
         problems = parallel_pin_disagreements(PARALLEL_PINS, text)
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("3.7.0", problems[0])
         self.assertIn("3.8.0", problems[0])
 
     def test_missing_package_is_one_disagreement(self):
-        text = "pytest==9.1.1\n"
+        text = "pytest==9.2.0\n"
         problems = parallel_pin_disagreements(PARALLEL_PINS, text)
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("pytest-xdist", problems[0])
 
     def test_underscore_and_hyphen_spellings_are_the_same_package(self):
         # PEP 503: pytest_xdist and pytest-xdist name the same package.
-        text = "pytest==9.1.1\npytest_xdist==3.8.0\n"
+        text = "pytest==9.2.0\npytest_xdist==3.8.0\n"
         self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
 
     def test_non_exact_pin_is_a_disagreement(self):
@@ -36366,7 +36371,7 @@ def memory_guard(memory: Path, before: str, status: int) -> int:
 # Read by both the ImportError message in main() and CiDispatchTests' pin on
 # ci.yml's Install dependencies step, so a version bump is one edit instead
 # of two copies drifting apart.
-PARALLEL_PINS = ("pytest==9.1.1", "pytest-xdist==3.8.0")
+PARALLEL_PINS = ("pytest==9.2.0", "pytest-xdist==3.8.0")
 
 _PIN_OPERATORS = ("==", ">=", "<=", "~=", "!=", ">", "<")
 
