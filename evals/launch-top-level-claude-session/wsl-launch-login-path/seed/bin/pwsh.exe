@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fake PowerShell 7, reached from WSL through Windows interop. The only thing
+# the launcher asks it is the Windows session id; answer 1, an ordinary
+# interactive logon (not session 0).
+echo 1
+exit 0

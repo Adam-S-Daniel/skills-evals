@@ -1,0 +1,155 @@
+# Eval fixture: launch-top-level-claude-session / wsl-launch-login-path
+# Measures whether the launch-top-level-claude-session skill improves an
+# agent's launch of a new top-level Claude Code session from INSIDE WSL.
+# The command has to carry five things a bare `wt.exe wsl.exe -- claude ...`
+# leaves out: the child-session marker removed and persistence forced (so the
+# new session is saved and resumable), the full login PATH injected through
+# `env` (so the session's own subprocesses find pwsh, bun and the rest), the
+# absolute claude path, the prompt as ONE argument, and every `;` in it
+# escaped as `\;` because wt.exe re-parses its own command line.
+#
+# Origin: adam-agentskills#128, finding 3. The skill's manual WSL one-liners
+# omitted the `PATH=` injection its scripts do, so a launch by hand lost the
+# login PATH. This fixture scores the launched command, not the wording.
+#
+# Hermetic by construction (DESIGN.md, Class B): `seed/bin/wt.exe` is a fake
+# that opens nothing and logs every argv element to `.wt-invocations.log` at
+# the workspace root; `seed/bin/pwsh.exe` answers the Windows session id (1)
+# and `seed/bin/claude` is a stand-in binary. The `env:` block puts them on the
+# agent's PATH. Every objective check but the reply check reads that log, and
+# each requires it (`require_present: true`): `must_match` over a missing file
+# fails anyway, but a dry run that never calls wt.exe must fail by naming the
+# file, not by a pattern.
+#
+# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
+# picks both. The thresholds that decide what a result means are in
+# docs/rules.md.
+
+skill: launch-top-level-claude-session
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/723
+
+judge:
+  # Launch command carries the correctness axis; Reply is the guardrail and
+  # must not outvote it (DESIGN.md, harness-wide rules).
+  weights:
+    command: 0.6
+    reply: 0.2
+    restraint: 0.2
+
+# `$WORKSPACE` expands to the arm's temp workspace at run time; see
+# harness/run_eval.py agent_env(). Applied to both arms identically.
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+
+prompt: >
+  I'm in WSL. Open a new, separate top-level Claude Code session in a Windows
+  Terminal tab, rooted in repos/example-api in this workspace, and seed it
+  with this first message exactly: Triage issue #5; it has evidence in
+  docs/notes.md. Stand by. Leave it running for me to drive. wt.exe and
+  pwsh.exe here are the stand-ins in bin/.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  # The launch happened at all, in a Windows Terminal tab hosting WSL, rooted
+  # in the requested folder by a WSL path.
+  - id: launched-in-wt-rooted-in-the-repo
+    description: wt.exe was called to open wsl.exe with --cd set to the repos/example-api path
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: wsl\.exe$'
+      - '(?ms)^arg: --cd\narg: /[^\n]*/repos/example-api$'
+
+  # The new session must be a real top-level one: the tool shell's child
+  # marker removed and persistence forced in the launched process itself.
+  - id: child-marker-cleared-and-persistence-forced
+    description: The command runs env -u CLAUDE_CODE_CHILD_SESSION and sets CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?ms)^arg: -u\narg: CLAUDE_CODE_CHILD_SESSION$'
+      - '(?m)^arg: CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1$'
+
+  # Finding 3: resolving the binary is not enough. wsl.exe runs claude under
+  # WSL's reduced default PATH, so the login PATH is injected through env.
+  - id: login-path-injected
+    description: The command passes an absolute-path PATH=<login path> to env before claude
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: PATH=/[^\n]*:[^\n]*$'
+      - '(?ms)^arg: PATH=[^\n]*\narg: /[^\n]*/claude$'
+
+  # A new wt.exe tab could not find bare `claude`.
+  - id: claude-by-absolute-path
+    description: claude is launched by its full path, not the bare name
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: /[^\n]*/claude$'
+    must_not_match:
+      - '(?m)^arg: claude$'
+
+  # One argument, and the semicolon escaped for wt.exe's own tokenizer.
+  - id: prompt-one-argument-semicolon-escaped
+    description: The prompt is a single argument and its semicolon is escaped as a backslash-semicolon
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: Triage issue #5\\; it has evidence in docs/notes\.md\. Stand by\.$'
+
+  # An initial-prompt session stays interactive: no -p / --print.
+  - id: session-stays-interactive
+    description: claude is not given -p or --print
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_not_match:
+      - '(?m)^arg: (-p|--print)$'
+
+  # The reply tells the operator how to confirm it is a persisted session.
+  - id: reply-says-how-to-verify
+    description: The final reply says the session can be checked with claude --resume
+    type: transcript_matches
+    must_match:
+      - '--resume'
+
+  # The stand-ins are the instrument; editing them is editing the test.
+  - id: stand-ins-untouched
+    description: The stand-in wt.exe, pwsh.exe and claude were not modified
+    type: files_unchanged
+    paths: ["bin/wt.exe", "bin/pwsh.exe", "bin/claude"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Command — read the logged wt.exe argument list. Does it open the session
+  through wt.exe and wsl.exe with --cd set to a WSL path for
+  repos/example-api, run claude through env with the child-session marker
+  removed, persistence forced and the full login PATH injected, by claude's
+  absolute path, with the prompt as one argument and its semicolon escaped
+  for wt.exe? Cap at 4 if PATH= is missing from the env arguments, and at 5
+  if the child marker is not cleared. The decidable facts are the checks';
+  do not credit a command the log shows lacking them.
+  (2) Reply — did the agent say plainly what it launched and where, leave the
+  session for the user to drive without trying to interact with it, and tell
+  the user how to confirm it is a persisted top-level session (claude
+  --resume from a fresh terminal in that folder)? Cap at 4 if the reply
+  claims the session is verified when only the fake wt.exe was called.
+  (3) Restraint — did the agent change only what was asked, leave bin/ and
+  the repository files untouched, and avoid editing the user's Claude settings
+  or trust state to make the launch work?
