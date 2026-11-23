@@ -921,14 +921,15 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     return room, float(used), elapsed
 
 
-def ahead_of_pace(used, elapsed, limits: dict) -> bool:
+def ahead_of_pace(used, elapsed, limits: dict, reader: str = allowance_points.CLI) -> bool:
     """Whether the account reading `used` (a fraction, as `pace` returns it)
     is above the pace line, `stop_when_account_above` times `elapsed`, from
-    the top of its range as `pace` reads it (module docstring, "Pace hold").
+    the top of its range as `reader` reports it (the CLI's truncated
+    snapshot, as `pace` reads it, by default; module docstring, "Pace hold").
     No reading (`used` or `elapsed` None) counts as ahead: fail safe."""
     if used is None or elapsed is None:
         return True
-    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    _, top = allowance_points.reading_range(used * 100, reader)
     return top / 100 > limits["stop_when_account_above"] * elapsed + EPSILON
 
 

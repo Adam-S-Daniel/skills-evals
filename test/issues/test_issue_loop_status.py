@@ -96,6 +96,17 @@ class LiveReadingTests(unittest.TestCase):
         self.assertGreater(under["under_line_points"], 0)
 
 
+    def test_the_live_reading_is_read_as_rounded_not_truncated(self):
+        # The collector passes the usage endpoint's utilization, which rounds
+        # to a whole percent: 45 is [44.5, 45.5), so with the line at 45.75
+        # the account is under it. Read as a truncated CLI value (top 46) it
+        # would show as ahead.
+        reading = loop_status.live_reading(45.0, NOW, RESETS, NOW)
+        limits = {**LIMITS, "stop_when_account_above": 0.4575 / reading["elapsed"]}
+        self.assertFalse(loop_status.pace_block(reading, limits, "live")["ahead"])
+        self.assertTrue(loop_status.pace_block(reading, limits, "guard")["ahead"])
+
+
 FORECAST = {
     "inputs": {"usd_per_point": [6.0, 8.0], "weekly_cap_points": 16.0,
                "loop_jobs_points_per_week": 9.0,
