@@ -88,6 +88,19 @@ def make_registry(root: Path, text: str = ORIGINAL_SKILL_MD) -> Path:
     return root
 
 
+class GitMaintenanceTests(unittest.TestCase):
+
+    def test_a_fresh_repo_runs_no_background_maintenance(self):
+        # test/conftest.py sets this through GIT_CONFIG_COUNT for every git.
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "-C", tmp, "init", "-q"], check=True)
+            for key, want in (("maintenance.auto", "false"), ("gc.auto", "0")):
+                got = subprocess.run(["git", "-C", tmp, "config", "--get", key],
+                                     check=True, capture_output=True,
+                                     text=True).stdout.strip()
+                self.assertEqual(got, want, key)
+
+
 def make_skill_creator(root: Path) -> Path:
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "run_loop.py").write_text("# stand-in\n", encoding="utf-8")
