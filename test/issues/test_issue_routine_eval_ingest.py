@@ -1495,6 +1495,24 @@ class EstimateTests(unittest.TestCase):
         self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "false"})
         self.assertEqual(self.written(), before)
 
+    def test_a_partial_file_is_rewritten(self):
+        # A write cut short leaves a file that does not parse; "written once"
+        # must not keep it forever.
+        run = self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        (run / ingest.ESTIMATE_NAME).write_text('{"schema_version": 2, "run', encoding="utf-8")
+        self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "true"})
+        self.assertEqual(self.written()["run_id"], RUN_ID)
+
+    def test_a_failed_write_leaves_no_file(self):
+        # The write goes to a temporary file and is renamed into place, so a
+        # write that fails part way leaves neither a partial estimate nor the
+        # temporary file.
+        run = self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        with mock.patch.object(ingest.json, "dumps", return_value='{"x": "\udc80"}'), \
+                self.assertRaises(UnicodeEncodeError):
+            ingest.estimate(self.tree, RUN_ID)
+        self.assertEqual(sorted(p.name for p in run.iterdir()), ["s"])
+
     def test_a_run_from_before_the_estimate_gets_no_file(self):
         self.run_dir(RUN_ID, (0.03, None))
         self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "false"})
