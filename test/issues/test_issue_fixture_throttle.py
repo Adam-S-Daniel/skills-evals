@@ -85,6 +85,20 @@ class UndecidedSubjectTests(unittest.TestCase):
                     ctx({"a": "insufficient"}, cells, allowance=9.0), work)
                 self.assertEqual(kept == work, filed)
 
+    def test_a_cell_scope_paused_at_the_ceiling_counts_as_parked(self):
+        paused = {"class": "paused", "scope_paused": "ceiling"}
+        work = [item("needs-harder-fixtures", section="s", fixtures=3)]
+        for cells, filed in (
+                ([dict(paused, section="s")], True),
+                ([dict(paused, section="s"), cell("ceiling", section="s")], True),
+                ([dict(paused, section="s", scope_paused="floor")], False),
+                ([cell("paused", section="s")], False)):
+            with self.subTest(cells=cells):
+                context = ctx(cells=cells, allowance=9.0,
+                              guidance={"s": {"verdict": "insufficient"}})
+                kept, _ = plan_week.throttle_fixture_work(context, work)
+                self.assertEqual(kept == work, filed)
+
     def test_a_guidance_section_is_judged_on_its_own_cells(self):
         work = [item("needs-harder-fixtures", section="s", fixtures=3)]
         context = ctx(cells=[cell("ceiling", section="s")], allowance=9.0,

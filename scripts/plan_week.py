@@ -2701,12 +2701,16 @@ FIXTURE_REQUESTS = ("needs-fixtures", "needs-harder-fixtures")
 
 def _all_parked_at_ceiling(cells: list) -> bool:
     """Whether a subject's counted cells are all parked at the ceiling: at
-    least one, and none that is not `ceiling` or `ceiling-unconfirmed`. A
+    least one, and none that is not `ceiling`, `ceiling-unconfirmed` or a
+    `paused` cell the scope pass paused at the ceiling (`scope_paused ==
+    "ceiling"`: a harder fixture is what ends that pause). A
     `cannot-discriminate` cell is left out of the verdict, so it is not
     counted."""
     counted = [c for c in cells if c.get("class") != "cannot-discriminate"]
-    return bool(counted) and all(c.get("class") in ("ceiling", "ceiling-unconfirmed")
-                                 for c in counted)
+    return bool(counted) and all(
+        c.get("class") in ("ceiling", "ceiling-unconfirmed")
+        or (c.get("class") == "paused" and c.get("scope_paused") == "ceiling")
+        for c in counted)
 
 
 def fixture_request_price(ctx: dict) -> float | None:
