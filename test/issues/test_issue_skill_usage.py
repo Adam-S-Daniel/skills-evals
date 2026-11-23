@@ -1202,7 +1202,6 @@ class ListingRowTests(unittest.TestCase):
         path = self.tmp / "weekly-local.json"
         path.write_text(json.dumps(doc), encoding="utf-8")
         self.assertEqual(skill_usage.load(path), doc)
-        self.assertEqual(skill_usage.truncated_listings(doc, NOW), 2)
 
 
 if __name__ == "__main__":

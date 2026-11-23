@@ -711,7 +711,7 @@ class ReadDenySettingsTests(_TempLayout):
         for pattern in run_eval._complement_patterns("-tmp-wX"):
             self.assertNotIn("[!", pattern)
             self.assertNotIn("[^", pattern)
-        cls = run_eval._class_without("w")
+        cls = run_eval._class_without_all("w")
         self.assertNotIn("w", cls)
         self.assertNotIn("W", cls)
         self.assertTrue(cls.endswith("-]"))

@@ -504,13 +504,6 @@ def staged_mode(staged: Path) -> str | None:
     return mode if isinstance(mode, str) else None
 
 
-def is_trigger_record(staged: Path) -> bool:
-    """Whether the staged summary.json is a trigger-only record. No staged
-    record (an `apply` run by hand on a bare patch) is not one; an
-    unreadable one is refused rather than read as either."""
-    return staged_mode(staged) == TRIGGER_MODE
-
-
 def check_patch(text: str, where: str, skill_md: str) -> None:
     """A unified diff of `skill_md` only, as difflib writes it."""
     if not text.endswith("\n"):
