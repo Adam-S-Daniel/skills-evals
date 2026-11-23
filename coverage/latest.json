@@ -14,21 +14,21 @@
   ],
   "problems": [],
   "publication": {
-    "as_of": "2026-11-22T16:25:43Z",
-    "guidance_revision": "6bef6d22f0e351491840b151df0acd2c801826b6",
+    "as_of": "2026-11-23T20:20:39Z",
+    "guidance_revision": "3b95a4348369616fa0506e81d7f452e317f77230",
     "public_registry_revisions": {
-      "adam-agentskills": "c1b56037ce432ca4fbb8220d1832bb58fe992203",
-      "adamdaniel.ai": "889e235cf7bea902ece2c7e9610bb4a0e2601b83",
-      "cms-platform": "4cc380f81b9fbd0a5649e66f832a13df6653f594"
+      "adam-agentskills": "eeeb02f27120c0bd40e80ffe9e1d96000bdc3cea",
+      "adamdaniel.ai": "1af9f14b97340e0724ebcfeb850eea5f9c720609",
+      "cms-platform": "6bafdc84119d884cdc45db8d6adf6491e610aec8"
     },
-    "repository_revision": "d4120ca9cb493297c6d3f7020219927f213afbae",
-    "run_id": "45043719499"
+    "repository_revision": "e2ec62e281dfa53637ad667240f7daedae3e9267",
+    "run_id": "45258304380"
   },
   "registries": [
     {
       "counts": {
-        "covered": 15,
-        "gap": 1,
+        "covered": 16,
+        "gap": 0,
         "skipped": 7,
         "total": 23
       },
@@ -127,11 +127,11 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 0,
+          "fixtures": 1,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "launch-top-level-claude-session",
-          "status": "gap"
+          "status": "covered"
         },
         {
           "bundle": "adam-coding-local",
@@ -366,8 +366,8 @@
   ],
   "schema": 1,
   "totals": {
-    "covered": 25,
-    "gap": 3,
+    "covered": 26,
+    "gap": 2,
     "skipped": 10,
     "total": 38
   }
