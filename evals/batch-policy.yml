@@ -88,4 +88,6 @@ cost_window_days: 14
 # throttle_fixture_work). A request is priced like a batch cell:
 # pairs_per_cell times each roster model's measured cost per pair. Requests
 # for a kept subject are not charged to it. 0 files none; at most 1.
-undecided_fixture_share: 0.5
+# Derived from #1046's "2 per week": 2 x (15 pairs x ~0.70 pts/pair) = 21 pts of
+# a 25-pt week, 0.84.
+undecided_fixture_share: 0.84
