@@ -470,6 +470,9 @@ class PaceHoldReplay(unittest.TestCase):
                               frozenset({"skipped-one"}), week_curves=[late])
         replay = doc["inputs"]["pace_replay"]
         self.assertEqual(replay["flat_points"], 0.0)
+        self.assertEqual(doc["inputs"]["cap_steps"],
+                         {"weekly_cap_points": 25.0, "after_loop_jobs_points": 25.0,
+                          "after_account_stop_points": 25.0, "account_stop_basis": "pace_replay"})
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
         self.assertAlmostEqual(replay["points"], 25.0)
 

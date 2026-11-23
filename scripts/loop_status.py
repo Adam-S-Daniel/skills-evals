@@ -28,7 +28,10 @@ number, computed by their code, never recomputed here:
     per week, read from its output document, with the pace-hold replay
     behind the eval capacity (`pace_replay`: weeks replayed, their range,
     the flat stop-less-other figure it replaced, and when evals had spent
-    half their week). `collect` runs it at most every
+    half their week), and the catch-up arithmetic step by step
+    (`calculation`: each open subject's pairs and points, the backlog, the
+    capacity from the weekly cap down, the keep-up items, the room and the
+    weeks). `collect` runs it at most every
     `--forecast-every-minutes` from the newest `gates` artifact of
     loop-pr-refresh.yml, the results branch and the account's meter history.
     Its per-task rows need the scheduled tasks' fire ledger, which only the
@@ -169,6 +172,54 @@ def _median(values: list) -> float | None:
     return numbers[mid] if len(numbers) % 2 else (numbers[mid - 1] + numbers[mid]) / 2
 
 
+#: The most subject rows the status document carries.
+CALC_MAX_SUBJECTS = 60
+
+
+def _points(usd, mid):
+    return usd / mid if isinstance(usd, (int, float)) and mid else None
+
+
+def _calculation(doc: dict, inputs: dict, scenario: dict, mid: float) -> dict:
+    """The catch-up arithmetic step by step, in points (Adam, 2026-11-23:
+    "have the forecast show the catch-up calculation in detail"): the open
+    subjects with the pairs and points each still needs, the backlog they
+    add to, the eval capacity from the weekly cap down, the keep-up items,
+    the room left and the weeks the backlog takes at that room."""
+    backlog = doc.get("backlog_usd") or {}
+    capacity = (doc.get("capacity_usd_per_week") or {}).get("plan_central")
+    keep_up = doc.get("keep_up_usd_per_week")
+    subjects = sorted((r for r in doc.get("subjects") or [] if isinstance(r, dict)),
+                      key=lambda r: -(r.get("usd_central") or 0.0))
+    steps = inputs.get("cap_steps") if isinstance(inputs.get("cap_steps"), dict) else {}
+    room = None
+    if isinstance(capacity, (int, float)) and isinstance(keep_up, (int, float)) and mid:
+        room = (capacity - keep_up) / mid
+    return {
+        "subjects": [{"kind": r.get("kind"), "subject": r.get("subject"), "route": r.get("route"),
+                      "open_cells": r.get("open_cells"), "pairs": r.get("pairs_central"),
+                      "points": _points(r.get("usd_central"), mid)}
+                     for r in subjects[:CALC_MAX_SUBJECTS]],
+        "subjects_total": len(subjects),
+        "backlog_points": {k: _points(backlog.get(k), mid) for k in ("central", "low", "high")},
+        "backlog_pairs": (doc.get("backlog_pairs") or {}).get("central"),
+        "usd_per_point": mid,
+        "weekly_cap_points": steps.get("weekly_cap_points"),
+        "loop_jobs_points": inputs.get("loop_jobs_points_per_week"),
+        "after_loop_jobs_points": steps.get("after_loop_jobs_points"),
+        "capacity_points": _points(capacity, mid),
+        "capacity_basis": steps.get("account_stop_basis"),
+        "keep_up_items": [{"item": k, "points": _points(v, mid)}
+                          for k, v in (doc.get("keep_up_items") or {}).items()
+                          if isinstance(v, (int, float)) and v > 0],
+        "keep_up_points": _points(keep_up, mid),
+        "room_points": room,
+        "weeks_central": scenario.get("weeks_central")
+        if scenario.get("weeks_central") != float("inf") else None,
+        "start": (inputs.get("assumptions") or {}).get("start"),
+    }
+
+
 def forecast_block(doc) -> dict | None:
     """The forecast figures the page shows, from forecast_catch_up.py's
     output; None for a document without them."""
@@ -195,6 +246,7 @@ def forecast_block(doc) -> dict | None:
                                               for w in replay.get("weeks") or []
                                               if isinstance(w, dict)])} \
         if isinstance(replay, dict) else None
+    calculation = _calculation(doc, inputs, scenario, mid)
     tasks = [{"task": t.get("task"), "in_loop": t.get("in_loop"), "model": t.get("model"),
               "fires_per_week": t.get("fires_per_week"), "points_per_week": t.get("points_per_week")}
              for t in inputs.get("scheduled_tasks") or [] if isinstance(t, dict)]
@@ -211,6 +263,7 @@ def forecast_block(doc) -> dict | None:
         "non_eval_points_per_week": (inputs.get("assumptions") or {}).get("non_eval_points_per_week"),
         "pace_hold_modeled": bool((inputs.get("assumptions") or {}).get("pace_hold")),
         "pace_replay": replay,
+        "calculation": calculation,
         "tasks": tasks,
     }
 

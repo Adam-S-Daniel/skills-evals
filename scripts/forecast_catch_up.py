@@ -561,6 +561,9 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         "(routine-results trial usage.measured through allowance_points.estimate_blocks)"
         if measured_rate else "evals/budget.yml legacy_usd_per_point")
     cap_points = budget["weekly_cap"] * 100
+    # Each step from the weekly cap to the eval points the forecast spends,
+    # so a reader can follow the arithmetic (Adam, 2026-11-23).
+    cap_steps = {"weekly_cap_points": cap_points}
     # Non-eval meter use by category (scripts/automatic_spend.py): each
     # automatic category's meter points, estimated from its fires' token
     # counts (a breakdown from before points: its dollars at the mid
@@ -614,6 +617,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         loop_points = meter_points(automatic, "loop_meter_usd_per_week")
         if a["loop_jobs_in_cap"]:
             cap_points = max(0.0, cap_points - loop_points)
+    cap_steps["after_loop_jobs_points"] = cap_points
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
@@ -647,6 +651,11 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             cap_points = replay["points"]
         else:
             cap_points = max(0.0, min(cap_points, stop * 100 - other))
+    cap_steps["after_account_stop_points"] = cap_points
+    cap_steps["account_stop_basis"] = (
+        "pace_replay" if replay is not None else "evals_first" if squeeze is not None
+        else "stop_less_other" if a["non_eval_points_per_week"] is not None and stop is not None
+        else "none")
     costs = pair_usd(gates)
     if a["measured_usd_per_pair"] and costs:
         scale = a["measured_usd_per_pair"] / (sum(costs.values()) / len(costs))
@@ -738,6 +747,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "measured_non_eval": measured_non_eval,
             "owner_squeeze": squeeze,
             "pace_replay": replay,
+            "cap_steps": cap_steps,
             "automatic_spend_as_of": (automatic or {}).get("as_of"),
             # A count, not names: job names can be private, and this
             # document is committed to a public repository.
