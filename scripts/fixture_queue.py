@@ -39,7 +39,8 @@ invented and which request it answers; the weekly schedule then runs it.
   `with_pass_rate` and `without_pass_rate` the checks passed over checks run
   in its scored trials per arm (explorer_data.arm_numbers; a guidance
   fixture's in-situ pair: `full` and `full_minus_section`), null with no
-  scored check. `cost_usd` and `cost_points` add up the
+  scored check. `waiting` is `"pace-hold"` for a scheduled fixture with no
+  run while the guard's pace hold refuses every fire, else null. `cost_usd` and `cost_points` add up the
   `routine-results/<run id>/cost_estimate.json` files of its runs
   (scripts/ingest_routine_results.py `estimate`); a run outside
   routine-results, a routine run that also holds another fixture's results,
@@ -68,6 +69,18 @@ health audit's vocabulary (_agent-guidance docs/routines/fleet-health-audit.md):
       row is `skipped` (`--guidance`, plan_week.guidance_skipped): the weekly
       plan holds those out of scope (plan_week.scope_holds), so no run is
       the design, not a fault. An unreadable manifest holds nothing.
+
+      Not while the allowance guard is refusing every fire (`pace_hold`,
+      allowance_guard.py "Pace hold": the account is ahead of its weekly pace,
+      or no recent reading) and the fixture is in evals/scheduled.yml: the
+      scheduler is working and the guard is holding it back, so no run is
+      starvation, not a fault. Such a row carries `waiting: "pace-hold"` in
+      the report and files nothing; the finding returns when the hold lifts
+      and the fixture still has no run, and a fixture missing from
+      scheduled.yml stays a finding during the hold. `--budget` (default
+      evals/budget.yml under `--repo`) names the limits; an unreadable
+      budget holds nothing, but a missing or empty results tree reads as no
+      recent reading, so the guard holds (fail safe).
 
 High is the audit's "blocks the self-improvement loop": a stuck pull request
 or an unrun fixture is a request answered and wasted. A stale request only
@@ -102,6 +115,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import allowance_guard  # noqa: E402
+import budget as budget_file  # noqa: E402
 import compute_gates  # noqa: E402
 import explorer_data  # noqa: E402
 import fixture_pr_gate  # noqa: E402
@@ -309,11 +324,38 @@ def _sum(values: list):
     return None if any(v is None for v in values) else sum(values)
 
 
+def scheduled_paths(repo: Path) -> frozenset:
+    """The fixture paths in evals/scheduled.yml; empty when it is missing or
+    unreadable (no fixture then counts as reachable by the scheduler)."""
+    try:
+        doc = yaml.safe_load((repo / "evals" / "scheduled.yml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return frozenset()
+    rows = doc.get("fixtures") if isinstance(doc, dict) else None
+    return frozenset(r["path"] for r in rows if isinstance(r, dict)
+                     and isinstance(r.get("path"), str)) if isinstance(rows, list) \
+        else frozenset()
+
+
+def pace_held(tree: Path, budget: Path, now: datetime) -> bool:
+    """Whether the allowance guard's pace hold refuses every fire at `now`,
+    read as `allowance_guard.py hold` reads it; False when it cannot be read."""
+    try:
+        limits = budget_file.load_budget(budget)
+        _, used, elapsed = allowance_guard.pace(
+            allowance_guard.ingested_runs(tree, now), limits, now)
+        return allowance_guard.ahead_of_pace(used, elapsed, limits)
+    except (allowance_guard.GuardError, budget_file.BudgetError, OSError, ValueError):
+        return False
+
+
 def build_report(issues: list, pulls: list, fixtures: list, runs: dict, by_run: dict,
-                 tree: Path, now: datetime, held: frozenset = frozenset()) -> dict:
+                 tree: Path, now: datetime, held: frozenset = frozenset(),
+                 paced: frozenset | None = None) -> dict:
     """The report (module docstring). `fixtures` is `origin_fixtures`',
     `runs` and `by_run` `fixture_runs`' result; `now` is a UTC datetime;
-    `held` the guidance section ids the weekly plan holds out of scope."""
+    `held` the guidance section ids the weekly plan holds out of scope;
+    `paced` the fixture paths waiting on the guard's pace hold (None: none)."""
     stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     requests = requests_of(issues)
     linked = pulls_of(pulls, {r["issue"] for r in requests})
@@ -343,7 +385,9 @@ def build_report(issues: list, pulls: list, fixtures: list, runs: dict, by_run: 
                  else _estimate(tree, rid)
                  for rid in sorted({_run_id(d) for d in entry["runs"]}, key=str)]
         usd, points = [c[0] for c in costs], [c[1] for c in costs]
+        waiting = fixture["path"] in (paced or ())
         row = {**fixture, "runs": len(entry["runs"]),
+               "waiting": "pace-hold" if waiting and not entry["runs"] else None,
                "with_pass_rate": entry["with"][0] / entry["with"][1] if entry["with"][1] else None,
                "without_pass_rate": (entry["without"][0] / entry["without"][1]
                                      if entry["without"][1] else None),
@@ -352,7 +396,7 @@ def build_report(issues: list, pulls: list, fixtures: list, runs: dict, by_run: 
         section = fixture["subject"].split("/", 1)[1] \
             if fixture["subject"].startswith("guidance/") else None
         if row["runs"] == 0 and _older(fixture["added_at"], now, UNUSED_FIXTURE_DAYS) \
-                and section not in held:
+                and section not in held and not waiting:
             findings.append(finding("unused-fixture", slug(fixture["path"]), fixture["subject"],
                                     f"{REPO_URL}/tree/main/{fixture['path']}"))
     merged = {n for n, (row, _s) in seen_prs.items() if row["state"] == "merged"}
@@ -550,8 +594,11 @@ def report_main(args) -> int:
                                     now.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
         held = (plan_week.guidance_skipped(args.guidance) or frozenset()) \
             if args.guidance else frozenset()
+        budget = args.budget or args.repo / "evals" / "budget.yml"
+        paced = scheduled_paths(args.repo) \
+            if pace_held(args.results_tree, budget, now.astimezone(timezone.utc)) else None
         report = build_report(issues, pulls, origin_fixtures(args.repo), runs, by_run,
-                              args.results_tree, now, held)
+                              args.results_tree, now, held, paced)
         text = json.dumps(report, indent=1, sort_keys=True, allow_nan=False) + "\n"
     except (QueueError, ValueError, OSError, KeyError, TypeError) as exc:
         print(f"fixture_queue: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -615,6 +662,8 @@ def main(argv: list | None = None, *, gh=retire_skill.default_gh, out=sys.stdout
     r.add_argument("--guidance", type=Path, default=None,
                    help="an _agent-guidance checkout: its eval-coverage.yml's skipped "
                         "sections are held out of scope (no unused-fixture finding)")
+    r.add_argument("--budget", type=Path, default=None,
+                   help="evals/budget.yml (default: under --repo); read for the pace hold")
     a = sub.add_parser("alerts")
     a.add_argument("--report", type=Path, required=True)
     a.add_argument("--dry-run", action="store_true")

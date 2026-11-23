@@ -31,8 +31,15 @@ class HermeticGitTests(unittest.TestCase):
                                           "user.name=skills-evals test"])
 
     def test_no_repository_steering_variable_is_inherited(self):
-        self.assertEqual([k for k in os.environ if k.startswith("GIT_")
-                          and k not in ("GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL")], [])
+        # conftest's own env config (maintenance.auto, gc.auto) is the one
+        # GIT_CONFIG_KEY/VALUE pair set allowed; nothing else may steer git.
+        own = {"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT"}
+        count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+        pairs = {os.environ[f"GIT_CONFIG_KEY_{i}"]: os.environ[f"GIT_CONFIG_VALUE_{i}"]
+                 for i in range(count)}
+        self.assertEqual(pairs, {"maintenance.auto": "false", "gc.auto": "0"})
+        own |= {f"GIT_CONFIG_{kind}_{i}" for kind in ("KEY", "VALUE") for i in range(count)}
+        self.assertEqual([k for k in os.environ if k.startswith("GIT_") and k not in own], [])
 
     def test_a_commit_needs_no_host_identity_or_signing(self):
         with tempfile.TemporaryDirectory() as tmp:

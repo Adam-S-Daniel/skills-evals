@@ -248,7 +248,14 @@ class RealWorkFixtureTests(unittest.TestCase):
             if entry["package-ecosystem"] == "github-actions":
                 continue
             ecosystem = entry["package-ecosystem"]
-            self.assertNotIn("directory", entry, "a seeds entry uses `directories:`")
+            if "directory" in entry:
+                # A live manifest this repo owns (explorer/), updated normally.
+                # It must stay outside the seeds, which only `directories:`
+                # entries with ignore-all may cover.
+                self.assertFalse(
+                    (entry["directory"].strip("/") + "/").startswith("evals/real-work/"),
+                    "a seeds entry uses `directories:`")
+                continue
             self.assertEqual(entry["ignore"], [{"dependency-name": "*"}])
             self.assertEqual(entry["cooldown"], {"default-days": 7, "semver-major-days": 30})
             covered.setdefault(ecosystem, []).extend(

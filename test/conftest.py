@@ -47,6 +47,16 @@ def _hermetic_git() -> None:
         handle.write("[user]\n\tname = skills-evals test\n\temail = test@example.com\n")
     os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
     os.environ["GIT_CONFIG_GLOBAL"] = config
+    # `git commit` spawns a detached `git maintenance run --auto`, which can
+    # still be touching .git/objects when a test's rmtree walks its throwaway
+    # repo (FileNotFoundError in teardown). Env config reaches every git, even
+    # one a test starts with GIT_CONFIG_GLOBAL=/dev/null.
+    count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+    for key, value in (("maintenance.auto", "false"), ("gc.auto", "0")):
+        os.environ[f"GIT_CONFIG_KEY_{count}"] = key
+        os.environ[f"GIT_CONFIG_VALUE_{count}"] = value
+        count += 1
+    os.environ["GIT_CONFIG_COUNT"] = str(count)
 
 
 _hermetic_git()

@@ -1619,12 +1619,6 @@ _CLASS_CHARS = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
                 "0123456789._+~@#%,=-")
 
 
-def _class_without(char: str) -> str:
-    """A bracket class of `_CLASS_CHARS` minus `char` in either case, `-`
-    last (literal)."""
-    return _class_without_all(char)
-
-
 def _class_without_all(chars: str, alphabet: str = _CLASS_CHARS,
                        compact_classes: bool = False) -> str:
     """A bracket class of `_CLASS_CHARS` minus every one of `chars` in

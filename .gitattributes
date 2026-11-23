@@ -8,3 +8,12 @@
 .githooks/** linguist-vendored
 # managed by _agent-guidance: synced tooling is vendored, not this repo's code (see ADR 0048)
 .claude/hooks/** linguist-vendored
+
+# The eval fixtures are test data, not this repo's code: each eval's `seed/`
+# is a frozen copy of the project the agent works on, and its `checker/` holds
+# the files the grader overlays. Scoped to those two directory names so the
+# few real scripts directly under evals/ (make_pdfs.py) still count.
+evals/**/seed/** linguist-vendored
+evals/**/checker/** linguist-vendored
+# Fixtures for the harness's own tests.
+test/fixtures/** linguist-vendored

@@ -207,15 +207,6 @@ def listing_row(iso_week_label: str, state: str, sessions: int,
     return {**row(iso_week_label, "listing", state, None, sessions), "surface": surface}
 
 
-def truncated_listings(doc, now: datetime, weeks: int = 4) -> int:
-    """Local sessions over the `weeks` ISO weeks ending with `now`'s whose
-    skill listing had descriptions cut (#668); 0 when no row says so."""
-    window = {week_monday(label) for label in window_weeks(now, weeks)}
-    return sum(r.get("sessions") or 0 for r in (doc or {}).get("rows", [])
-               if r.get("kind") == "listing" and r.get("name") == "truncated"
-               and r.get("surface") == SURFACE_LOCAL and r.get("week") in window)
-
-
 def guidance_check_row(iso_week_label: str, result: str, sessions: int) -> dict:
     """One cloud guidance-check row: `sessions` sessions that week whose
     check value report was `result` (match, mismatch, none, absent or unknown)."""
