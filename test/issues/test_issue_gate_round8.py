@@ -36,7 +36,7 @@ sys.path.insert(0, str(ISSUES))
 import compute_gates  # noqa: E402
 import plan_week  # noqa: E402
 import run_eval  # noqa: E402
-from test_issue_gate_round3 import pairs  # noqa: E402
+from test_issue_gate_round3 import pairs, pin_roster  # noqa: E402
 
 REAL_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"]
 NOW = datetime(2026, 11, 4, tzinfo=timezone.utc)
@@ -48,6 +48,7 @@ def build(fixtures, paused):
     per cell (a `retire`/`auto` skill)."""
     root = Path(tempfile.mkdtemp(prefix="round8-"))
     shutil.copytree(ROOT / "evals", root / "evals")
+    pin_roster(root / "evals", REAL_MODELS)
     for f in fixtures:
         d = root / "evals" / "zz-demo" / f
         d.mkdir(parents=True)
