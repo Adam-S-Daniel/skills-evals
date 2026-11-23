@@ -5,6 +5,7 @@ function buildGlosses(you) {
   const whose = you ? 'your' : 'the owner\'s', Whose = you ? 'Your' : 'The owner\'s';
   return {
   'working-in-these-repos': 'For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
+  'pasted-config-is-a-stub': 'A routine prompt or setup script pasted into a settings page stays a one-line pointer to a file in a project, so the real text is reviewed and versioned there.',
   'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
   'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
   'turn-lessons-into-checks': 'When a mistake or a hard-won procedure could happen again, Claude records it as an automatic check, a skill or a guidance note before finishing.',
