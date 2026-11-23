@@ -154,7 +154,8 @@ def pace_block(reading: dict | None, limits: dict, source: str) -> dict | None:
 
 
 def _median(values: list) -> float | None:
-    numbers = sorted(v for v in values if isinstance(v, (int, float)))
+    numbers = sorted(v for v in values
+                     if isinstance(v, (int, float)) and not isinstance(v, bool))
     if not numbers:
         return None
     mid = len(numbers) // 2
@@ -184,7 +185,8 @@ def forecast_block(doc) -> dict | None:
               # When the median week had spent half its eval points, in
               # hours after the reset: evals get their room early.
               "half_spent_by_hours": _median([w.get("half_spent_by_hours")
-                                              for w in replay.get("weeks") or []])} \
+                                              for w in replay.get("weeks") or []
+                                              if isinstance(w, dict)])} \
         if isinstance(replay, dict) else None
     tasks = [{"task": t.get("task"), "in_loop": t.get("in_loop"), "model": t.get("model"),
               "fires_per_week": t.get("fires_per_week"), "points_per_week": t.get("points_per_week")}

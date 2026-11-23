@@ -378,17 +378,23 @@ def pace_hold_room(curves: list, other: float, stop_points: float, cap: float) -
     """Eval points a week the pace hold (allowance_guard.py, "Pace hold")
     lets through, replayed over each week's other use (`non_eval_week_curves`)
     scaled to `other` points a week: at each step evals may spend up to the
-    pace line, `stop_points` times the share of the week gone, less the
-    reading's top (the meter truncates, so other use's whole points plus one)
-    and less what evals already spent, never more than `cap` in the week.
+    pace line, `stop_points` times the share of the week gone, less one
+    point (the meter truncates, so its top can be a point above use) and less
+    other use and what evals already spent, never more than `cap` in the
+    week. A week with under one point of other use is left out.
     The central figure is the median week; low and high the least and most.
     None without a week to replay."""
     weeks = []
     for week in curves:
-        scale = other / week["total"] if week["total"] > 0 else 1.0
+        if week["total"] < 1:
+            # Too little measured use to scale: it would replay as none.
+            continue
+        scale = other / week["total"]
         spent, path = 0.0, []
         for hours, level in week["curve"]:
-            room = stop_points * hours / 168 - (math.floor(level * scale) + 1) - spent
+            # The meter truncates: its top can be a point above other use
+            # plus what evals spent, so keep that point clear of the line.
+            room = stop_points * hours / 168 - 1 - level * scale - spent
             if room > 0:
                 spent = min(cap, spent + room)
             path.append((hours, spent))
