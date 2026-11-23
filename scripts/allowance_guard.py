@@ -1334,13 +1334,6 @@ def count_successful_fires(repo: str, since: datetime, token: str,
     return total
 
 
-def fires_that_fit(tree: Path, limits: dict, now: datetime,
-                   fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> int:
-    """`fits` of the accounting for `now`. `fires` and `improve` are
-    `account`'s pairs."""
-    return fits(account(tree, limits, now, fires, improve))
-
-
 def describe(state: dict) -> str:
     """One non-identifying line, in points (percent of the weekly allowance)."""
     def points(value):
@@ -1504,12 +1497,6 @@ def _live_improve_runs(now: datetime) -> list:
     except improve_outcomes.EvidenceError as exc:
         raise GuardError(str(exc)) from None
     return runs
-
-
-def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
-    """`improve_counts` of the fire runs since `since` (default the last
-    seven days)."""
-    return improve_counts(_live_improve_runs(now), now, since)
 
 
 def improve_details(runs: list, now: datetime,

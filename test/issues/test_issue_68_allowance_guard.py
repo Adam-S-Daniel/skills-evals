@@ -1114,7 +1114,6 @@ class PaceRoomTests(unittest.TestCase):
         self.assertAlmostEqual(state["week_elapsed"], 6 / 7, places=12)
         self.assertEqual(guard.fits(state), 9)
         self.assertIsNone(guard.check(state))
-        self.assertEqual(guard.fires_that_fit(self.tree, LIMITS, NOW, (1, 1)), 9)
 
     def test_fires_without_results_come_off_the_pace_room(self):
         # The snapshot may predate them, so each pending fire (3.5 points)
