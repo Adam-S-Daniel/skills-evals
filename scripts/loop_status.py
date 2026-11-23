@@ -130,23 +130,29 @@ def live_reading(used_pct, at: datetime | None, resets: datetime | None,
 
 
 def verdict(state: dict) -> tuple[str, str]:
-    """What the guard does with an eval fire now, as (code, why)."""
+    """What the guard does with an eval run now, as (code, why)."""
     if state.get("session_hold"):
-        return "session_hold", "The 5-hour window is at or above its stop: no fire goes."
+        return "session_hold", ("The 5-hour usage limit is nearly reached, so no evals start. "
+                                "They start again once that usage drops back down.")
     if state.get("pace_hold"):
         if state.get("pace_probe"):
-            return "pace_probe", ("No recent account reading: one eval fire may go as the pace "
-                                  "probe, to bring one.")
+            return "pace_probe", ("The latest weekly usage reading is too old to trust, so evals are "
+                                  "paused. One eval run may start anyway, because every run brings "
+                                  "back a fresh reading. After it, the guard checks your pace again.")
         if state.get("account_used") is None:
-            return "pace_hold", ("No recent account reading, and a probe is not due yet: "
-                                 "no fire goes.")
-        return "pace_hold", "The account is ahead of its weekly pace line: no fire goes."
+            return "pace_hold", ("The latest weekly usage reading is too old to trust, so evals are "
+                                 "paused. One eval run is allowed about every six hours to get a "
+                                 "fresh reading, and none is due yet.")
+        return "pace_hold", ("Your weekly usage is ahead of the pace line, so no evals start. "
+                             "They start again once the pace line catches up.")
     fits = guard.fits(state)
     if fits >= 1:
-        return "open", f"{fits} more eval fire(s) fit under the cap now."
+        return "open", f"There is room for {fits} more eval run(s) in the loop's weekly share."
     if guard.refresh(state):
-        return "refresh", "The cap is full, but one eval fire may go to bring a newer reading."
-    return "cap_full", "The loop's share of the week is used: no fire goes."
+        return "refresh", ("The loop's weekly share is used up, but one eval run may start so the "
+                           "guard gets a newer usage reading.")
+    return "cap_full", ("The loop's weekly share is used up, so no evals start until the weekly "
+                        "reset.")
 
 
 def pace_block(reading: dict | None, limits: dict, source: str) -> dict | None:
