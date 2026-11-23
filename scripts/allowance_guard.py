@@ -1506,12 +1506,6 @@ def _live_improve_runs(now: datetime) -> list:
     return runs
 
 
-def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
-    """`improve_counts` of the fire runs since `since` (default the last
-    seven days)."""
-    return improve_counts(_live_improve_runs(now), now, since)
-
-
 def improve_details(runs: list, now: datetime,
                     since: datetime | None = None) -> list[dict]:
     """{mode, target, started} of each successful improve and guidance-improve
