@@ -362,7 +362,7 @@ def breakdown(config: dict, triggers: dict, fires: list, workflows: list,
         elif not t.get("last_run") and not rows:
             rate, rate_source = 0.0, "never fired"
         else:
-            recent = [r for r in rows if (_when(r.get("fired_at")) or now) >= since]
+            recent = [r for r in rows if (_utc(r.get("fired_at")) or now) >= since]
             rate = len(recent) * 7 / window_days
             rate_source = f"ledger fires in {window_days} days"
         per_fire = statistics.median(costs) if costs else None

@@ -921,14 +921,15 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     return room, float(used), elapsed
 
 
-def ahead_of_pace(used, elapsed, limits: dict) -> bool:
+def ahead_of_pace(used, elapsed, limits: dict, reader: str = allowance_points.CLI) -> bool:
     """Whether the account reading `used` (a fraction, as `pace` returns it)
     is above the pace line, `stop_when_account_above` times `elapsed`, from
-    the top of its range as `pace` reads it (module docstring, "Pace hold").
+    the top of its range as `reader` reports it (the CLI's truncated
+    snapshot, as `pace` reads it, by default; module docstring, "Pace hold").
     No reading (`used` or `elapsed` None) counts as ahead: fail safe."""
     if used is None or elapsed is None:
         return True
-    _, top = allowance_points.reading_range(used * 100, allowance_points.CLI)
+    _, top = allowance_points.reading_range(used * 100, reader)
     return top / 100 > limits["stop_when_account_above"] * elapsed + EPSILON
 
 
@@ -1334,13 +1335,6 @@ def count_successful_fires(repo: str, since: datetime, token: str,
     return total
 
 
-def fires_that_fit(tree: Path, limits: dict, now: datetime,
-                   fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> int:
-    """`fits` of the accounting for `now`. `fires` and `improve` are
-    `account`'s pairs."""
-    return fits(account(tree, limits, now, fires, improve))
-
-
 def describe(state: dict) -> str:
     """One non-identifying line, in points (percent of the weekly allowance)."""
     def points(value):
@@ -1504,12 +1498,6 @@ def _live_improve_runs(now: datetime) -> list:
     except improve_outcomes.EvidenceError as exc:
         raise GuardError(str(exc)) from None
     return runs
-
-
-def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
-    """`improve_counts` of the fire runs since `since` (default the last
-    seven days)."""
-    return improve_counts(_live_improve_runs(now), now, since)
 
 
 def improve_details(runs: list, now: datetime,

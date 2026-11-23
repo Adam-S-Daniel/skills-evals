@@ -126,3 +126,5 @@ fixtures:
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
   - path: evals/tool-powershell/installer-exit-3010
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/rename-pdfs
+    reason: "Auto scope (zero-use), 2026-11-23: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."

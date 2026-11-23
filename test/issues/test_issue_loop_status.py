@@ -96,6 +96,17 @@ class LiveReadingTests(unittest.TestCase):
         self.assertGreater(under["under_line_points"], 0)
 
 
+    def test_the_live_reading_is_read_as_rounded_not_truncated(self):
+        # The collector passes the usage endpoint's utilization, which rounds
+        # to a whole percent: 45 is [44.5, 45.5), so with the line at 45.75
+        # the account is under it. Read as a truncated CLI value (top 46) it
+        # would show as ahead.
+        reading = loop_status.live_reading(45.0, NOW, RESETS, NOW)
+        limits = {**LIMITS, "stop_when_account_above": 0.4575 / reading["elapsed"]}
+        self.assertFalse(loop_status.pace_block(reading, limits, "live")["ahead"])
+        self.assertTrue(loop_status.pace_block(reading, limits, "guard")["ahead"])
+
+
 FORECAST = {
     "inputs": {"usd_per_point": [6.0, 8.0], "weekly_cap_points": 16.0,
                "loop_jobs_points_per_week": 9.0,
@@ -140,6 +151,36 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(got, {"weeks": 2, "low_points": 4.5, "high_points": 8.0,
                                "flat_points": 0.0, "half_spent_by_hours": 37.0})
         self.assertIsNone(loop_status.forecast_block(FORECAST)["pace_replay"])
+
+    def test_the_catch_up_calculation_step_by_step_in_points(self):
+        doc = json.loads(json.dumps(FORECAST))
+        doc["subjects"] = [{"kind": "skill", "subject": "a", "route": "keep", "open_cells": 1,
+                            "pairs_central": 4, "usd_central": 14.0},
+                           {"kind": "guidance", "subject": "b", "route": "remove-or-cap",
+                            "open_cells": 2, "pairs_central": 20, "usd_central": 70.0}]
+        doc["backlog_usd"] = {"central": 84.0, "low": 70.0, "high": 140.0}
+        doc["backlog_pairs"] = {"central": 24}
+        doc["keep_up_items"] = {"new skills": 35.0, "new git hooks": 0.0, "re-checks": 35.0}
+        doc["inputs"]["cap_steps"] = {"weekly_cap_points": 25.0, "after_loop_jobs_points": 16.0,
+                                      "after_account_stop_points": 16.0,
+                                      "account_stop_basis": "pace_replay"}
+        doc["inputs"]["assumptions"]["start"] = "2026-11-23T17:00:00Z"
+        c = loop_status.forecast_block(doc)["calculation"]
+        self.assertEqual([r["subject"] for r in c["subjects"]], ["b", "a"])  # largest first
+        self.assertAlmostEqual(c["subjects"][0]["points"], 10.0)
+        self.assertEqual(c["subjects_total"], 2)
+        self.assertAlmostEqual(c["backlog_points"]["central"], 12.0)
+        self.assertEqual((c["weekly_cap_points"], c["loop_jobs_points"],
+                          c["after_loop_jobs_points"], c["capacity_basis"]),
+                         (25.0, 9.0, 16.0, "pace_replay"))
+        self.assertAlmostEqual(c["capacity_points"], 20.0)
+        self.assertEqual([i["item"] for i in c["keep_up_items"]], ["new skills", "re-checks"])
+        self.assertAlmostEqual(c["keep_up_points"], 10.0)
+        self.assertAlmostEqual(c["room_points"], 10.0)
+        self.assertEqual(c["weeks_central"], 2.5)
+        self.assertEqual(c["start"], "2026-11-23T17:00:00Z")
+        doc["keep_up_items"] = ["not", "a", "dict"]
+        self.assertIsNone(loop_status.forecast_block(doc)["calculation"])
 
     def test_a_document_without_the_figures_is_none(self):
         self.assertIsNone(loop_status.forecast_block({"inputs": {}}))

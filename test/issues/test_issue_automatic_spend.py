@@ -126,6 +126,24 @@ class Breakdown(unittest.TestCase):
         self.assertEqual(by_id["evals"]["meter_usd_per_week"], 0.0)
         self.assertIn("other", by_id)
 
+    def test_a_naive_or_odd_fire_time_does_not_crash_the_ledger_rate(self):
+        # A ledger rate (no cron, no firing workflow) reads each fire's time:
+        # a naive one is UTC, as current_model_costs reads it, and one that
+        # is not a time counts as recent, as an undated fire always has.
+        self.fires += [
+            {"trigger_id": "trig_fw", "session_id": "cse_6", "total_cost_usd": 2.0,
+             "fired_at": "2026-11-14T06:50:00"},
+            {"trigger_id": "trig_fw", "session_id": "cse_7", "total_cost_usd": 2.0,
+             "fired_at": 1763000000},
+            {"trigger_id": "trig_fw", "session_id": "cse_8", "total_cost_usd": 2.0,
+             "fired_at": "2026-10-01T06:50:00"},
+        ]
+        config = {**CONFIG, "fired_by": {}}
+        doc = aus.breakdown(config, self.triggers, self.fires, self.workflows, [], NOW, 14)
+        fw = self.job(doc, "Fleet worker")
+        self.assertEqual(fw["rate_source"], "ledger fires in 14 days")
+        self.assertAlmostEqual(fw["fires_per_week"], 3 * 7 / 14)
+
     def test_boxy_task_that_runs_claude_is_meter_and_unmeasured(self):
         doc = self.run_breakdown([{"name": "Memory Curation", "fires_per_week": 1.0,
                                    "runs_claude": True, "scripts": []},
