@@ -114,3 +114,13 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
+  # The explorer's build tooling (acorn, esbuild), pinned exact in
+  # explorer/package.json. Version updates only; the cooldown matches the
+  # standing convention.
+  - package-ecosystem: npm
+    directory: "/explorer"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
