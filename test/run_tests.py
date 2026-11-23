@@ -36366,7 +36366,7 @@ def memory_guard(memory: Path, before: str, status: int) -> int:
 # Read by both the ImportError message in main() and CiDispatchTests' pin on
 # ci.yml's Install dependencies step, so a version bump is one edit instead
 # of two copies drifting apart.
-PARALLEL_PINS = ("pytest==9.1.1", "pytest-xdist==3.8.0")
+PARALLEL_PINS = ("pytest==9.2.0", "pytest-xdist==3.8.0")
 
 _PIN_OPERATORS = ("==", ">=", "<=", "~=", "!=", ">", "<")
 
