@@ -226,6 +226,16 @@ inside a week, so that reading settles the hold without spending a fire
 (no GitHub API call) and is not fired while it holds. The module docstring's
 "Pace hold" section has the details.
 
+The hold does not leave evals nothing when the owner's own use passes the
+stop over a week. It compares the reading with a line that rises through the
+week, so evals still run whenever other use is under it: in the hours after
+the Monday reset, after a quiet night, or before a busy end of the week. The
+catch-up forecast ([`scripts/forecast_catch_up.py`](../scripts/forecast_catch_up.py),
+`pace_hold_room`) replays the hold over the newest whole weeks of meter
+history, other use scaled to the assumed weekly total, instead of taking the
+stop less a flat weekly average (2026-11-23: about 6 points a week at 82 to
+90 points of other use, where the flat figure said 0).
+
 ### The weekly allowance guard
 
 Since 2026-10-06 the scheduled evals run as Claude Code routines on the

@@ -394,6 +394,107 @@ class MeterNonEval(unittest.TestCase):
         self.assertAlmostEqual(doc["inputs"]["assumptions"]["non_eval_points_per_week"], 75.0)
 
 
+class PaceHoldReplay(unittest.TestCase):
+    """The pace hold lets evals fill the gap whenever other use runs under
+    the pace line, so their week depends on when other use comes, not only
+    its total (Adam, 2026-11-23)."""
+
+    START = fc.RESET_ANCHOR + fc.timedelta(days=14)  # after the Nov 4 manual reset
+
+    def h(self, hours):
+        return self.START + fc.timedelta(hours=hours)
+
+    def curve(self, shape):
+        """A week's curve every 5 minutes from `shape(hours) -> points`."""
+        steps = int(168 * 12)
+        return {"week_start": self.START.isoformat(), "total": shape(168.0),
+                "curve": [(k / 12, shape(k / 12)) for k in range(steps)]}
+
+    def test_late_heavy_use_still_leaves_early_room_past_the_stop(self):
+        # Nothing for three days, then 90 points: above the 80 stop over the
+        # week, yet the line reaches 80 * 72 / 168 = 34.3 before use starts.
+        late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
+        room = fc.pace_hold_room([late], 90.0, 80.0, 25.0)
+        self.assertAlmostEqual(room["points"], 25.0)  # the cap binds first
+        self.assertLess(room["weeks"][0]["first_eval_hours"], 3)
+        uncapped = fc.pace_hold_room([late], 90.0, 80.0, 100.0)
+        self.assertAlmostEqual(uncapped["points"], 80.0 * 72 / 168 - 1, delta=0.5)
+
+    def test_steady_use_over_the_line_leaves_nothing(self):
+        steady = self.curve(lambda t: 90.0 * t / 168 + 1.0)
+        self.assertEqual(fc.pace_hold_room([steady], 90.0, 80.0, 25.0)["points"], 0.0)
+
+    def test_the_week_is_scaled_to_the_other_use_assumed(self):
+        late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
+        heavy = fc.pace_hold_room([late], 180.0, 80.0, 100.0)["points"]
+        light = fc.pace_hold_room([late], 45.0, 80.0, 100.0)["points"]
+        self.assertLess(heavy, light)
+        self.assertEqual(fc.pace_hold_room([], 80.0, 80.0, 25.0), None)
+
+    def test_median_week_with_its_range(self):
+        late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
+        steady = self.curve(lambda t: 90.0 * t / 168 + 1.0)
+        room = fc.pace_hold_room([late, steady, late], 90.0, 80.0, 25.0)
+        self.assertEqual((room["points"], room["low"], room["high"]), (25.0, 0.0, 25.0))
+
+    def test_curves_take_off_evals_never_fall_and_skip_partial_weeks(self):
+        readings = [(self.h(0), 0.0), (self.h(24), 10.0), (self.h(48), 9.0),
+                    (self.h(167), 60.0)]
+        runs = [(self.h(0), 4.0), (self.h(-1), 50.0)]
+        now = self.START + fc.timedelta(days=7, hours=1)
+        curves = fc.non_eval_week_curves(readings, runs, now)
+        self.assertEqual(len(curves), 1)
+        levels = [p for _, p in curves[0]["curve"]]
+        self.assertEqual(levels, sorted(levels))
+        at = dict(curves[0]["curve"])
+        self.assertAlmostEqual(at[12.0], 5.0 - 4.0)  # meter 5 less 4 eval points
+        self.assertAlmostEqual(at[24.0], 6.0)
+        self.assertEqual(curves[0]["total"], levels[-1])
+        # A week whose readings stop a day short is not whole.
+        short = [r for r in readings if r[0] < self.h(140)]
+        self.assertEqual(fc.non_eval_week_curves(short, runs, now), [])
+
+    def test_a_manual_reset_week_is_left_out(self):
+        readings = [(self.h(0), 0.0), (self.h(167), 60.0)]
+        with mock.patch.object(fc.allowance_guard, "MANUAL_RESETS", (self.h(30),)):
+            self.assertEqual(fc.non_eval_week_curves(readings, [], self.h(169)), [])
+        self.assertEqual(len(fc.non_eval_week_curves(readings, [], self.h(169))), 1)
+
+    def test_forecast_replays_the_hold_and_keeps_the_flat_figure(self):
+        late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
+        budget = {**Forecast.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(Forecast.GATES, Forecast.CELLS, budget, Forecast.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "non_eval_points_per_week": 90.0},
+                              frozenset({"skipped-one"}), week_curves=[late])
+        replay = doc["inputs"]["pace_replay"]
+        self.assertEqual(replay["flat_points"], 0.0)
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
+        self.assertAlmostEqual(replay["points"], 25.0)
+
+
+class EvalRunPoints(unittest.TestCase):
+    """Eval runs are counted at what the guard charges them, from tokens."""
+
+    def tree(self, root: Path) -> Path:
+        run = root / "routine-results" / "20261117T222133Z-5d1b13"
+        run.mkdir(parents=True)
+        (run / "cost_estimate.json").write_text(json.dumps({"points": 0.03}), encoding="utf-8")
+        return root
+
+    def test_token_points_win_over_the_calibrated_estimate(self):
+        with tempfile.TemporaryDirectory() as d:
+            tree = self.tree(Path(d))
+            self.assertAlmostEqual(fc.eval_run_points(tree)[0][1], 3.0)
+            with mock.patch.object(fc.allowance_guard, "run_points",
+                                   return_value={"points": 1.1, "usd": 1.0, "from_tokens": True}):
+                self.assertAlmostEqual(fc.eval_run_points(tree, 12.35)[0][1], 1.1)
+            with mock.patch.object(fc.allowance_guard, "run_points",
+                                   return_value={"points": 1.1, "usd": 1.0, "from_tokens": False}):
+                self.assertAlmostEqual(fc.eval_run_points(tree, 12.35)[0][1], 3.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

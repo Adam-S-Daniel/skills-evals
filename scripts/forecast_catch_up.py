@@ -52,6 +52,7 @@ import argparse
 import csv
 import json
 import math
+import statistics
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -107,8 +108,11 @@ ASSUMPTION_KEYS = {
                                    "stop binds only on other use that accrues meanwhile"),
     "pace_hold": (True, "allowance_guard.py's pace hold (2026-11-20): no loop fire while the "
                         "account is ahead of its pace line, so evals no longer run first in the "
-                        "week and get at most the account stop less other use; 0 models the "
-                        "guard before it"),
+                        "week. With --meter-history, the eval points are the pace hold replayed "
+                        "over recent whole weeks of other use (`pace_replay`): evals fill the "
+                        "gap whenever other use runs under the line, early in the week or after "
+                        "a quiet night, even in a week whose total passes the stop. Without it, "
+                        "the account stop less other use; 0 models the guard before it"),
     "interactive_points_per_week": (None, "meter points a week used by people's own threads and "
                                           "local sessions, outside every automatic job"),
     "start": (None, "ISO time evals resume (after the reset and the Monday pause)"),
@@ -320,6 +324,85 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
 
 #: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
 RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
+#: The pace-hold replay (`pace_hold_room`) uses at most this many of the
+#: newest whole allowance weeks of meter history.
+PACE_REPLAY_WEEKS = 4
+#: A week is whole when its readings start and end within this of its bounds.
+PACE_REPLAY_EDGE = timedelta(hours=6)
+#: The replay's time step: the owner's collector reads the meter every 5 minutes.
+PACE_REPLAY_STEP = timedelta(minutes=5)
+WEEK = timedelta(days=7)
+
+
+def non_eval_week_curves(readings: list, eval_runs: list, end: datetime,
+                         weeks: int = PACE_REPLAY_WEEKS) -> list:
+    """Other use through each of the newest whole allowance weeks before
+    `end`: the meter (`seven_day` readings, linear between them) less the
+    eval points spent so far that week, never falling, every
+    `PACE_REPLAY_STEP`. A week with a manual reset
+    (allowance_guard.MANUAL_RESETS) or readings that miss either edge by more
+    than `PACE_REPLAY_EDGE` is left out. Each item is {"week_start", "total",
+    "curve": [(hours since the reset, points), ...]}, oldest first."""
+    out = []
+    start = RESET_ANCHOR + WEEK * math.floor((end - RESET_ANCHOR) / WEEK)
+    while start >= RESET_ANCHOR and len(out) < weeks:
+        stop = start + WEEK
+        span = sorted((t, p) for t, p in readings if start <= t < stop)
+        manual = any(start < r < stop for r in allowance_guard.MANUAL_RESETS)
+        if (len(span) >= 2 and not manual and span[0][0] - start <= PACE_REPLAY_EDGE
+                and stop - span[-1][0] <= PACE_REPLAY_EDGE):
+            runs = sorted((t, p) for t, p in eval_runs if start <= t < stop)
+            curve, spent, j, i, level = [], 0.0, 0, 0, 0.0
+            t = start
+            while t < stop:
+                while j < len(runs) and runs[j][0] <= t:
+                    spent += runs[j][1]
+                    j += 1
+                while i + 1 < len(span) and span[i + 1][0] <= t:
+                    i += 1
+                (t0, p0) = span[i]
+                if t <= t0 or i + 1 == len(span):
+                    meter = p0
+                else:
+                    (t1, p1) = span[i + 1]
+                    meter = p0 + (p1 - p0) * ((t - t0) / (t1 - t0))
+                level = max(level, meter - spent)
+                curve.append(((t - start).total_seconds() / 3600, level))
+                t += PACE_REPLAY_STEP
+            out.append({"week_start": start.isoformat(), "total": level, "curve": curve})
+        start -= WEEK
+    return out[::-1]
+
+
+def pace_hold_room(curves: list, other: float, stop_points: float, cap: float) -> dict | None:
+    """Eval points a week the pace hold (allowance_guard.py, "Pace hold")
+    lets through, replayed over each week's other use (`non_eval_week_curves`)
+    scaled to `other` points a week: at each step evals may spend up to the
+    pace line, `stop_points` times the share of the week gone, less the
+    reading's top (the meter truncates, so other use's whole points plus one)
+    and less what evals already spent, never more than `cap` in the week.
+    The central figure is the median week; low and high the least and most.
+    None without a week to replay."""
+    weeks = []
+    for week in curves:
+        scale = other / week["total"] if week["total"] > 0 else 1.0
+        spent, path = 0.0, []
+        for hours, level in week["curve"]:
+            room = stop_points * hours / 168 - (math.floor(level * scale) + 1) - spent
+            if room > 0:
+                spent = min(cap, spent + room)
+            path.append((hours, spent))
+        weeks.append({"week_start": week["week_start"], "other_points_measured": week["total"],
+                      "eval_points": spent,
+                      "first_eval_hours": next((h for h, e in path if e > 0), None),
+                      "half_spent_by_hours": next((h for h, e in path if e >= spent / 2), None)
+                      if spent > 0 else None})
+    if not weeks:
+        return None
+    points = sorted(w["eval_points"] for w in weeks)
+    return {"points": statistics.median(points), "low": points[0], "high": points[-1],
+            "other_points_per_week": other, "weeks": weeks}
+
 
 
 def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1) -> dict | None:
@@ -439,7 +522,8 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              stakes_table: dict | None = None,
              automatic: dict | None = None,
              measured_non_eval: dict | None = None,
-             measured_rate: dict | None = None) -> dict:
+             measured_rate: dict | None = None,
+             week_curves: list | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
     central figure with a low-high range, and every input with its source."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
@@ -521,12 +605,14 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
     squeeze = None
+    replay = None
     if a["non_eval_points_per_week"] is not None and stop is not None:
         other = a["non_eval_points_per_week"]
         pace = a["eval_points_per_hour"]
         # The pace hold (allowance_guard.py, 2026-11-20) refuses every fire
         # while the account is above stop * week gone, so evals no longer
-        # spend the cap first: over a week they get the stop less other use.
+        # spend the cap first. With measured weeks the hold is replayed over
+        # them; without, a week gives them the stop less other use.
         if pace and not a["pace_hold"]:
             # Evals run first: the guard's fixed cap is a floor
             # (allowance_guard.py `room`), so from the Monday reset they fire
@@ -538,6 +624,14 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             over = cap_points + other - 100
             squeeze = {"week_total_points": cap_points + other,
                        "days_at_limit_before_reset": max(0.0, over) / (other / 7) if other else 0.0}
+        elif a["pace_hold"] and week_curves:
+            # The hold releases room whenever other use runs under the pace
+            # line, so the week's eval points depend on WHEN other use comes,
+            # not only its total: replay the guard over measured weeks
+            # (Adam, 2026-11-23: evals still run early in the week).
+            replay = pace_hold_room(week_curves, other, stop * 100, cap_points)
+            replay["flat_points"] = max(0.0, min(cap_points, stop * 100 - other))
+            cap_points = replay["points"]
         else:
             cap_points = max(0.0, min(cap_points, stop * 100 - other))
     costs = pair_usd(gates)
@@ -630,6 +724,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "loop_jobs_points_per_week": loop_points,
             "measured_non_eval": measured_non_eval,
             "owner_squeeze": squeeze,
+            "pace_replay": replay,
             "automatic_spend_as_of": (automatic or {}).get("as_of"),
             # A count, not names: job names can be private, and this
             # document is committed to a public repository.
@@ -654,15 +749,29 @@ def _iso(text: str) -> datetime:
     return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
 
 
-def eval_run_points(results_tree: Path) -> list:
+def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1) -> list:
     """(start time, meter points) of each routine eval run, from its run id
-    (YYYYMMDDTHHMMSSZ-...) and cost_estimate.json `points`."""
+    (YYYYMMDDTHHMMSSZ-...): what the guard charges it
+    (allowance_guard.run_points, priced from token counts by type) when
+    every role was priced from tokens, else its cost_estimate.json `points`,
+    calibrated on meter deltas before 2026-11-20 and about three times the
+    token estimate (2026-11-23: 14.2 against 5.1 points for the week of
+    Nov 16)."""
     out = []
-    for path in sorted((results_tree / "routine-results").glob("*/cost_estimate.json")):
+    for run_dir in allowance_guard.all_runs(results_tree):
         try:
-            when = datetime.strptime(path.parent.name[:16], "%Y%m%dT%H%M%SZ") \
+            when = datetime.strptime(run_dir.name[:16], "%Y%m%dT%H%M%SZ") \
                 .replace(tzinfo=timezone.utc)
-            points = json.loads(path.read_text(encoding="utf-8")).get("points")
+        except ValueError:
+            continue
+        if legacy_usd_per_point is not None:
+            found = allowance_guard.run_points(run_dir, legacy_usd_per_point, scale)
+            if found and found["from_tokens"]:
+                out.append((when, float(found["points"])))
+                continue
+        try:
+            points = json.loads((run_dir / "cost_estimate.json").read_text(
+                encoding="utf-8")).get("points")
         except (ValueError, OSError):
             continue
         # cost_estimate.json `points` is a fraction of the allowance, as
@@ -757,15 +866,19 @@ def main(argv: list | None = None) -> int:
     automatic = json.loads(args.automatic_spend.read_text(encoding="utf-8")) \
         if args.automatic_spend else None
     measured = None
+    curves = None
+    runs = eval_run_points(args.results_tree, budget["legacy_usd_per_point"],
+                           budget.get("allowance_scale", 1))
     if args.meter_history:
         readings = [(_iso(r["ts_utc"]), float(r["percent"]))
                     for r in csv.DictReader(args.meter_history.open(encoding="utf-8"))
                     if r.get("meter_name") == "seven_day"]
-        measured = meter_non_eval_points(readings, eval_run_points(args.results_tree), now)
+        measured = meter_non_eval_points(readings, runs, now)
         if measured is None:
             p.error("--meter-history: fewer than two seven_day readings in the allowance week")
+        curves = non_eval_week_curves(readings, runs, now)
     if "eval_points_per_hour" not in assumptions:
-        measured_pace = eval_pace(eval_run_points(args.results_tree),
+        measured_pace = eval_pace(runs,
                                   budget["weekly_cap"] * 100, now)
         if measured_pace:
             assumptions["eval_points_per_hour"] = measured_pace["points_per_hour"]
@@ -775,7 +888,8 @@ def main(argv: list | None = None) -> int:
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
                    automatic, measured,
                    measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"],
-                                       budget.get("allowance_scale", 1)))
+                                       budget.get("allowance_scale", 1)),
+                   curves)
     if automatic is not None and "non_eval_points_per_week" not in assumptions:
         if assumptions.get("interactive_points_per_week") is not None:
             sources["non_eval_points_per_week"] = \
