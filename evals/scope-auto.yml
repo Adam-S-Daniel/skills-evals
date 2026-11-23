@@ -196,3 +196,8 @@ rows:
     since: "2026-11-13"
     fixture_digest: "d7e910a386f2c6d6ac1f6d40ef688c8ab214ab61ebf8924a3197e1f4205371ad"
     readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/rename-pdfs
+    rule: "zero-use"
+    since: "2026-11-23"
+    fixture_digest: "d02bbef4ba1b4206293fff1e3dd04051b3ffd9e851d04052be3edb35d3268e54"
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#82)."
