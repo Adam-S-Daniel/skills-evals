@@ -79,7 +79,8 @@ health audit's vocabulary (_agent-guidance docs/routines/fleet-health-audit.md):
       and the fixture still has no run, and a fixture missing from
       scheduled.yml stays a finding during the hold. `--budget` (default
       evals/budget.yml under `--repo`) names the limits; an unreadable
-      budget or tree holds nothing.
+      budget holds nothing, but a missing or empty results tree reads as no
+      recent reading, so the guard holds (fail safe).
 
 High is the audit's "blocks the self-improvement loop": a stuck pull request
 or an unrun fixture is a request answered and wasted. A stale request only
