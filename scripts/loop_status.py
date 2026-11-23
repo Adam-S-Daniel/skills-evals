@@ -75,6 +75,11 @@ GUIDANCE_REPO = "https://github.com/Adam-S-Daniel/_agent-guidance"
 #: The collector's reading is used for the live pace only while it is this
 #: fresh; an older one says too little about the account now.
 LIVE_MAX_AGE = timedelta(hours=1)
+#: The collector passes the usage endpoint's `seven_day.utilization`
+#: unchanged (ai-usage-dashboard collector/AiUsage.psm1), and that endpoint
+#: rounds to a whole percent; the guard's own snapshot is the CLI's, which
+#: truncates.
+LIVE_READER = guard.allowance_points.USAGE_ENDPOINT
 #: How long a subprocess (git, gh) may take before `collect` gives up on it.
 STEP_TIMEOUT = 120
 
@@ -149,7 +154,9 @@ def pace_block(reading: dict | None, limits: dict, source: str) -> dict | None:
     return {"source": source, "used_pct": points(reading["used"]), "at": iso(reading["at"]),
             "elapsed_pct": points(reading["elapsed"]), "line_pct": points(line),
             "stop_pct": points(stop),
-            "ahead": guard.ahead_of_pace(reading["used"], reading["elapsed"], limits),
+            "ahead": guard.ahead_of_pace(reading["used"], reading["elapsed"], limits,
+                                         LIVE_READER if source == "live" else
+                                         guard.allowance_points.CLI),
             "under_line_points": points(line - reading["used"])}
 
 
