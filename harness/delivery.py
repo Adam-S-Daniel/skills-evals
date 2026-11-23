@@ -74,12 +74,6 @@ class DeliveryError(guidance.GuidanceError):
         super().__init__(f"{code}: {message}")
 
 
-def check_pairing(value) -> str:
-    if value not in PAIRINGS:
-        raise DeliveryError("invalid_pairing", f"--pairing must be one of {', '.join(PAIRINGS)}")
-    return value
-
-
 def hosted(environ: Mapping[str, str]) -> bool:
     """Whether this process runs inside a hosted Claude Code session."""
     entrypoint = environ.get("CLAUDE_CODE_ENTRYPOINT", "")
