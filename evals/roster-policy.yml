@@ -106,6 +106,17 @@ tiers:
 # `judge_exclude_tiers: [fable, mythos]` and the judge comes from the strongest
 # remaining non-arm model. Absent here: the owner's plan includes Fable.
 
+# `arm_exclude_tiers` (optional): family words from `tiers` whose models never
+# take an arm seat, however much census usage they carry; they are listed
+# under `excluded` with the rule they would otherwise have met, and stay
+# eligible for the judge seat. Set to fable and mythos (one rung, one price)
+# by the owner on 2026-11-23: the 2026-11-16 refresh proposed seating
+# Fable 5.2 (skills-evals#1071), and a Fable run costs about 3x an Opus
+# run, so inside the fixed weekly cap every arm would get about a third of the
+# runs, while nothing caps the separate Fable meter. Roster updates keep
+# merging on their own (`roster_mode: auto`).
+arm_exclude_tiers: [fable, mythos]
+
 arm_enter_usage_pct: 10
 # Shortened from 4 to 2 by the owner on 2026-10-25 so tier qualification
 # reflects current use.
