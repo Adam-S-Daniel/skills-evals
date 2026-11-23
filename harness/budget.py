@@ -26,7 +26,7 @@ spent window when their day starts.
 from __future__ import annotations
 
 import math
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -235,12 +235,15 @@ def _working_hours(value, stop: float) -> dict:
 def in_working_hours(hours: dict, now: datetime) -> bool:
     """Whether `now` (aware) falls in a working day's protected span: from
     SESSION_WINDOW before `start` to `end`, in the owner's time zone. The
-    lead-in can begin the evening before."""
+    lead-in can begin the evening before. The lead-in is SESSION_WINDOW of
+    real time, taken in UTC: aware arithmetic in the owner's zone moves the
+    wall clock, which is an hour off on a day the clocks change."""
     local = now.astimezone(hours["tz"])
     for day in (local.date(), local.date() + timedelta(days=1)):
         if day.weekday() not in hours["days"]:
             continue
-        begin = datetime.combine(day, hours["start"], hours["tz"]) - SESSION_WINDOW
+        begin = datetime.combine(day, hours["start"], hours["tz"]).astimezone(
+            timezone.utc) - SESSION_WINDOW
         if begin <= now < datetime.combine(day, hours["end"], hours["tz"]):
             return True
     return False

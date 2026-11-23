@@ -477,6 +477,20 @@ class PaceHoldReplay(unittest.TestCase):
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
         self.assertAlmostEqual(replay["points"], 25.0)
 
+    def test_forecast_with_only_quiet_weeks_falls_back_to_the_flat_figure(self):
+        # Every measured week under one point of other use: pace_hold_room
+        # has no week to replay and returns None; the forecast must use the
+        # flat stop-less-other figure, not fail on the missing replay.
+        quiet = self.curve(lambda t: 0.5 * t / 168)
+        budget = {**Forecast.BUDGET, "stop_when_account_above": 0.8}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(Forecast.GATES, Forecast.CELLS, budget, Forecast.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "non_eval_points_per_week": 60.0},
+                              frozenset({"skipped-one"}), week_curves=[quiet])
+        self.assertIsNone(doc["inputs"]["pace_replay"])
+        self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 20.0)
+
 
 class EvalRunPoints(unittest.TestCase):
     """Eval runs are counted at what the guard charges them, from tokens."""
