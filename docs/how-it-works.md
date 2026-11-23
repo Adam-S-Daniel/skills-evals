@@ -675,7 +675,15 @@ Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
 `routine-outage`) are listed in the plan, not fired; each carries a
 `change_type`. A guidance section whose `eval-coverage.yml` row is `gap`
 (tracked, no fixture yet) gets `needs-fixtures` with zero fixtures, so its
-first fixture is asked for before any headroom can be measured. A skill run
+first fixture is asked for before any headroom can be measured.
+**The fixture throttle** (`throttle_fixture_work`, skills-evals#1046): a new
+fixture adds a cell per roster model, so for a subject whose verdict is not
+`keep` the plan withholds `needs-fixtures` (unless it has no fixture),
+withholds `needs-harder-fixtures` unless every counted cell is parked at the
+ceiling, and files what remains only while its priced total fits a weekly
+allowance, `undecided_fixture_share` of the weekly cap in
+[`evals/batch-policy.yml`](../evals/batch-policy.yml). The plan JSON lists
+what it withheld under `fixture_throttle`. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such

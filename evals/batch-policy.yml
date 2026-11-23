@@ -28,7 +28,7 @@
 #     the 2026-11-09 reset). A subject too dear for the room left is skipped
 #     and waits; a cheaper one after it can still join.
 #
-# plan_week.load_batch_policy validates it strictly: exactly these seven
+# plan_week.load_batch_policy validates it strictly: exactly these eight
 # keys. A change here changes what the loop spends its allowance on: it
 # is Adam's.
 
@@ -81,3 +81,11 @@ pairs_per_cell: 15
 # model's mean cost per observation (the run's measured points over its
 # paired runs), judge included (plan_week.pair_costs).
 cost_window_days: 14
+
+# The share of the weekly cap (budget.yml's weekly_cap, less the loop's
+# reserve, as the batch budget is) that fixture requests for subjects with no
+# verdict yet may cost in a week (skills-evals#1046, plan_week.
+# throttle_fixture_work). A request is priced like a batch cell:
+# pairs_per_cell times each roster model's measured cost per pair. Requests
+# for a kept subject are not charged to it. 0 files none; at most 1.
+undecided_fixture_share: 0.5

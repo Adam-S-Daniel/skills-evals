@@ -589,12 +589,15 @@ class GatherTests(unittest.TestCase):
             inputs = plan_week.batch_inputs(
                 args, {"adam-agentskills": {"path": skills}}, {"weekly_cap": 0.25}, NOW, 0.2)
         self.assertEqual(inputs["batch_budget"], 0.4)
+        # The weekly cap it was given (0.2) times the committed share.
+        share = plan_week.load_batch_policy(ROOT / "evals/batch-policy.yml")["undecided_fixture_share"]
+        self.assertAlmostEqual(inputs["fixture_allowance"], 0.2 * share)
 
     def test_without_the_policy_there_are_no_batch_inputs(self):
         args = argparse.Namespace(batch_policy=None)
         self.assertEqual(plan_week.batch_inputs(args, {}, {"weekly_cap": 0.25}, NOW), {
             "batch_policy": None, "previous_batch": None, "batch_rates": None,
-            "batch_budget": None, "batch_pair_costs": None})
+            "batch_budget": None, "batch_pair_costs": None, "fixture_allowance": None})
 
 
 if __name__ == "__main__":

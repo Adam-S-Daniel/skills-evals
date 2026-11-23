@@ -773,7 +773,8 @@ BATCH_SUBJECT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 # bare are not.
 BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
 BATCH_POLICY_KEYS = frozenset({"start", "period_days", "multiplier", "rates", "rate_window_days",
-                               "pairs_per_cell", "cost_window_days"})
+                               "pairs_per_cell", "cost_window_days",
+                               "undecided_fixture_share"})
 #: The files whose history is each kind's addition rate (`addition_histories`).
 BATCH_SKILL_HISTORY = "scripts/plugin_layout.json"
 BATCH_GUIDANCE_HISTORY = "agents-md/eval-coverage.yml"
@@ -1237,7 +1238,7 @@ def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
 def load_batch_policy(path: Path) -> dict | None:
     """evals/batch-policy.yml, validated, or None when the file is absent:
     {start, period, multiplier, rates: {kind: per week}, rate_window,
-    pairs_per_cell, cost_window}. `rates` are the fallback constants, used
+    pairs_per_cell, cost_window, undecided_fixture_share}. `rates` are the fallback constants, used
     for a kind whose addition history is unreadable (`batch_rates`). Any
     other shape is a PlanError (fixed text)."""
     import yaml  # noqa: PLC0415
@@ -1253,8 +1254,8 @@ def load_batch_policy(path: Path) -> dict | None:
     start = outcomes_mod.parse_time(doc["start"])
     period, multiplier, rates = doc["period_days"], doc["multiplier"], doc["rates"]
     windows = (doc["rate_window_days"], doc["cost_window_days"])
-    pairs = doc["pairs_per_cell"]
-    numbers = [multiplier, pairs, *(rates.values() if isinstance(rates, dict) else ())]
+    pairs, share = doc["pairs_per_cell"], doc["undecided_fixture_share"]
+    numbers = [multiplier, pairs, share, *(rates.values() if isinstance(rates, dict) else ())]
 
     def whole_days(value, low, high):
         return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
@@ -1265,12 +1266,13 @@ def load_batch_policy(path: Path) -> dict | None:
             or set(rates) != set(BATCH_KINDS) \
             or any(not isinstance(n, (int, float)) or isinstance(n, bool)
                    or not math.isfinite(n) or n < 0 for n in numbers) \
-            or multiplier <= 0 or pairs <= 0:
+            or multiplier <= 0 or pairs <= 0 or share > 1:
         raise bad
     return {"start": start, "period": timedelta(days=period), "multiplier": float(multiplier),
             "rates": {kind: float(rates[kind]) for kind in BATCH_KINDS},
             "rate_window": timedelta(days=windows[0]), "pairs_per_cell": float(pairs),
-            "cost_window": timedelta(days=windows[1])}
+            "cost_window": timedelta(days=windows[1]),
+            "undecided_fixture_share": float(share)}
 
 
 def batch_sizes(policy: dict, rates: dict | None = None) -> dict:
@@ -2694,6 +2696,95 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     return fires, work + guidance_work, status, gstatus, ranking
 
 
+FIXTURE_REQUESTS = ("needs-fixtures", "needs-harder-fixtures")
+
+
+def _all_parked_at_ceiling(cells: list) -> bool:
+    """Whether a subject's counted cells are all parked at the ceiling: at
+    least one, and none that is not `ceiling` or `ceiling-unconfirmed`. A
+    `cannot-discriminate` cell is left out of the verdict, so it is not
+    counted."""
+    counted = [c for c in cells if c.get("class") != "cannot-discriminate"]
+    return bool(counted) and all(c.get("class") in ("ceiling", "ceiling-unconfirmed")
+                                 for c in counted)
+
+
+def fixture_request_price(ctx: dict) -> float | None:
+    """What one fixture request costs, in allowance fractions: the policy's
+    `pairs_per_cell` times each roster model's measured cost per pair (the
+    dearest measured model for one with none), the way `subject_cost` prices
+    a cell. None when the policy or the pair costs are unknown."""
+    policy, costs = ctx.get("batch_policy"), ctx.get("batch_pair_costs") or {}
+    models = ctx.get("roster_models") or []
+    if not policy or not costs or not models:
+        return None
+    dearest = max(costs.values())
+    return policy["pairs_per_cell"] * sum(costs.get(m, dearest) for m in models)
+
+
+def throttle_fixture_work(ctx: dict, work: list) -> tuple:
+    """(work to file, withheld), the throttle on fixture requests for
+    subjects that have no verdict yet (skills-evals#1046). A new fixture adds
+    a cell per roster model, so one on an undecided subject makes its
+    verdict later and dearer. Of `work`'s `needs-fixtures` and
+    `needs-harder-fixtures` items, for a subject whose verdict is not `keep`:
+
+      1. `needs-fixtures` is withheld, unless the subject has no fixture at
+         all (nothing yet can decide it);
+      2. `needs-harder-fixtures` is withheld unless every counted cell is
+         parked at the ceiling, so that no existing cell can move the verdict;
+      3. what remains is filed while its priced total (`fixture_request_price`
+         each) fits ctx["fixture_allowance"], in the order of `work`; one
+         that would overflow is withheld, a cheaper later one may still be
+         filed. With the allowance known but no price (no pair cost measured),
+         none is filed. With no allowance (no --batch-policy), rule 3 does
+         not apply.
+
+    The share behind the allowance is `undecided_fixture_share` in
+    evals/batch-policy.yml. A subject whose verdict is `keep` is untouched.
+    Withheld items are {kind, skill, section, reason}."""
+    allowance, price = ctx.get("fixture_allowance"), fixture_request_price(ctx)
+    cells: dict = {}
+    for cell in ctx.get("cells") or []:
+        key = ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+        cells.setdefault(key, []).append(cell)
+    kept, withheld, spent = [], [], 0.0
+    for item in work:
+        if item["kind"] not in FIXTURE_REQUESTS:
+            kept.append(item)
+            continue
+        section = item.get("section") or ""
+        name = section or item["skill"]
+        if section:
+            verdict = ((ctx.get("guidance") or {}).get(section) or {}).get("verdict")
+        else:
+            verdicts = ctx.get("gate_verdicts")
+            verdict = (verdicts.get(name) if verdicts is not None
+                       else (ctx["skills"].get(name) or {}).get("verdict"))
+        if verdict == "keep":
+            kept.append(item)
+            continue
+        reason = None
+        if item["kind"] == "needs-fixtures":
+            if item.get("fixtures"):
+                reason = "undecided subject: needs-fixtures waits for a keep verdict"
+        elif not _all_parked_at_ceiling(cells.get(("guidance" if section else "skill", name), [])):
+            reason = "undecided subject: a cell can still move the verdict"
+        if reason is None and allowance is not None:
+            if price is None:
+                reason = "undecided subject: no pair cost measured to price the request"
+            elif spent + price > allowance + BATCH_BUDGET_SLACK:
+                reason = "undecided subject: over the weekly fixture allowance"
+            else:
+                spent += price
+        if reason is None:
+            kept.append(item)
+        else:
+            withheld.append({"kind": item["kind"], "skill": item["skill"],
+                             "section": section, "reason": reason})
+    return kept, withheld
+
+
 def hook_candidate(text: str) -> bool:
     """Whether a SKILL.md is mostly mechanical rules, so a git hook may
     serve better than a skill (Adam, 2026-10-26: hooks first). A cheap
@@ -3136,6 +3227,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
         # Cells a sweep without the batch would have queued in its bands.
         outside = sum(len(unbatched[b]) - len(bands[b]) for b in BATCH_BANDS)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
+    # THE FIXTURE THROTTLE (skills-evals#1046): new fixtures for subjects
+    # with no verdict yet wait; see `throttle_fixture_work`.
+    needs, throttled = throttle_fixture_work(ctx, needs)
     # DESCRIPTION TRIMS: a skill with a trim fire gets no ordinary or
     # trigger-only improve fire (each writes `eval-improve/<skill>`).
     trim_fires, trim_status, trims_unread = trim_items(ctx)
@@ -3227,6 +3321,7 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             # Trims first (a fixed chore), then trigger items just before
             # improve's.
             "work": trim_work(trim_status, chosen, capped) + triggers + needs + work,
+            "fixture_throttle": throttled,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
             # THE TRIGGER LANE: every judged skill, the only ones whose
             # needs-trigger-set issue the weekly workflow may close.
@@ -4408,7 +4503,7 @@ def batch_inputs(args, registries: dict, limits: dict, now: datetime,
     policy = load_batch_policy(args.batch_policy) if args.batch_policy is not None else None
     if policy is None:
         return {"batch_policy": None, "previous_batch": None, "batch_rates": None,
-                "batch_budget": None, "batch_pair_costs": None}
+                "batch_budget": None, "batch_pair_costs": None, "fixture_allowance": None}
     import compute_gates  # noqa: PLC0415
     rates = batch_rates(policy, addition_histories(registries, args.guidance), now)
     # Every validated paired run, any content digest: a pair's cost does not
@@ -4419,9 +4514,12 @@ def batch_inputs(args, registries: dict, limits: dict, now: datetime,
         if basis["source"] == "policy":
             # A fixed text and a kind only: the reason names no subject.
             print(f"batch: the {kind} addition rate is the policy's constant")
+    weekly = limits["weekly_cap"] if cap is None else cap
     return {"batch_policy": policy, "previous_batch": read_batch(args.results_tree),
             "batch_rates": rates,
-            "batch_budget": (limits["weekly_cap"] if cap is None else cap) * (policy["period"] / timedelta(weeks=1)),
+            "batch_budget": weekly * (policy["period"] / timedelta(weeks=1)),
+            # What `throttle_fixture_work` lets undecided subjects' requests cost a week.
+            "fixture_allowance": weekly * policy["undecided_fixture_share"],
             "batch_pair_costs": pair_costs(index["runs"] + index["guidance_runs"],
                                            args.results_tree, now, policy["cost_window"])}
 
