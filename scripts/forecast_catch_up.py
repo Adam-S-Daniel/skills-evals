@@ -630,16 +630,21 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             over = cap_points + other - 100
             squeeze = {"week_total_points": cap_points + other,
                        "days_at_limit_before_reset": max(0.0, over) / (other / 7) if other else 0.0}
-        elif a["pace_hold"] and week_curves:
+        else:
+            flat = max(0.0, min(cap_points, stop * 100 - other))
             # The hold releases room whenever other use runs under the pace
             # line, so the week's eval points depend on WHEN other use comes,
             # not only its total: replay the guard over measured weeks
-            # (Adam, 2026-11-23: evals still run early in the week).
-            replay = pace_hold_room(week_curves, other, stop * 100, cap_points)
-            replay["flat_points"] = max(0.0, min(cap_points, stop * 100 - other))
-            cap_points = replay["points"]
-        else:
-            cap_points = max(0.0, min(cap_points, stop * 100 - other))
+            # (Adam, 2026-11-23: evals still run early in the week). With no
+            # week to replay (every one under a point of other use), the
+            # flat figure stands.
+            if a["pace_hold"] and week_curves:
+                replay = pace_hold_room(week_curves, other, stop * 100, cap_points)
+            if replay is not None:
+                replay["flat_points"] = flat
+                cap_points = replay["points"]
+            else:
+                cap_points = flat
     costs = pair_usd(gates)
     if a["measured_usd_per_pair"] and costs:
         scale = a["measured_usd_per_pair"] / (sum(costs.values()) / len(costs))
