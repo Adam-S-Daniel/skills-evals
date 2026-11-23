@@ -189,7 +189,7 @@ class ReportTests(unittest.TestCase):
             "source": "https://github.com/jodidaniel/example-site/pull/12",
             "request": f"{REQ}1", "added_at": iso(2), "runs": 1,
             "with_pass_rate": 0.75, "without_pass_rate": 0.25,
-            "cost_points": 0.25, "cost_usd": 1.5})
+            "cost_points": 0.25, "cost_usd": 1.5, "waiting": None})
         never = by["evals/writing-adrs/never-ran"]
         self.assertEqual((never["runs"], never["with_pass_rate"], never["cost_usd"],
                           never["source"]), (0, None, 0, None))
@@ -234,6 +234,40 @@ class ReportTests(unittest.TestCase):
                               now=datetime(2026, 11, 9, 12, tzinfo=timezone.utc))
         self.assertIn("skills-evals/fixture-queue-stale-request-3",
                       [f["finding_id"] for f in exact["findings"]])
+
+    def test_a_scheduled_fixture_waits_while_the_pace_hold_refuses(self):
+        # 2026-11-23: eleven scheduled guidance fixtures read "broken, high"
+        # because the allowance guard's pace hold refused every fire all week
+        # (the weekly plan: "PACE HOLD: no fire goes"). Starvation by a
+        # refusal is not a fault: a scheduled fixture waits, a fixture the
+        # scheduler cannot reach stays a finding.
+        fid = "skills-evals/fixture-queue-unused-fixture-writing-adrs-never-ran"
+        rows = lambda report: {f["path"]: f["waiting"] for f in report["fixtures"]}
+        runs = fq.fixture_runs(self.w.tree.tree, self.w.repo.root / "evals",
+                               NOW.strftime("%Y%m%dT%H%M%SZ"))
+        build = lambda paced: fq.build_report(
+            self.issues, self.pulls, fq.origin_fixtures(self.w.repo.root), *runs,
+            self.w.tree.tree, NOW, frozenset(), paced)
+        self.assertIn(fid, [f["finding_id"] for f in build(None)["findings"]])
+        paced = build(frozenset({"evals/writing-adrs/never-ran"}))
+        self.assertNotIn(fid, [f["finding_id"] for f in paced["findings"]])
+        self.assertEqual(rows(paced)["evals/writing-adrs/never-ran"], "pace-hold")
+        self.assertIsNone(rows(paced)["evals/writing-adrs/harder"])  # has a run
+        self.assertIsNone(rows(build(None))["evals/writing-adrs/never-ran"])
+
+    def test_scheduled_paths_and_the_pace_hold_read_their_files(self):
+        root = self.w.repo.root
+        self.assertEqual(fq.scheduled_paths(root), frozenset())
+        (root / "evals" / "scheduled.yml").write_text(
+            "fixtures:\n  - path: evals/writing-adrs/never-ran\n    readiness: x\n"
+            "  - readiness: no path\n", encoding="utf-8")
+        self.assertEqual(fq.scheduled_paths(root),
+                         frozenset({"evals/writing-adrs/never-ran"}))
+        budget = Path(__file__).resolve().parents[2] / "evals" / "budget.yml"
+        # No account reading in the tree: the guard holds (fail safe).
+        self.assertTrue(fq.pace_held(self.w.tree.tree, budget, NOW))
+        # An unreadable budget holds nothing.
+        self.assertFalse(fq.pace_held(self.w.tree.tree, root / "missing.yml", NOW))
 
     def test_a_held_guidance_section_has_no_unused_fixture_finding(self):
         # A guidance fixture with no run past the threshold is a finding,
