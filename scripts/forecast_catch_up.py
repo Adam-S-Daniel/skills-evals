@@ -29,7 +29,8 @@ batch policy's `pairs_per_cell` (central), at most its remaining pairs.
 Usage:
   python3 scripts/forecast_catch_up.py --gates gates.json \
       --results-tree <persistent/eval-results checkout> \
-      --as-of 2026-11-15T14:27:23Z --out-json forecast.json [--assumptions a.yml]
+      --as-of 2026-11-15T14:27:23Z --guidance <_agent-guidance checkout> \
+      --out-json forecast.json [--assumptions a.yml]
 
 `--assumptions` (YAML) supplies the measured rates the verdict document
 does not hold; each key is documented in ASSUMPTION_KEYS. The arrival rates
@@ -652,6 +653,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         else:
             cap_points = max(0.0, min(cap_points, stop * 100 - other))
     cap_steps["after_account_stop_points"] = cap_points
+    cap_steps["account_stop_points"] = stop * 100 if stop is not None else None
     cap_steps["account_stop_basis"] = (
         "pace_replay" if replay is not None else "evals_first" if squeeze is not None
         else "stop_less_other" if a["non_eval_points_per_week"] is not None and stop is not None

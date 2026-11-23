@@ -179,6 +179,8 @@ class ForecastTests(unittest.TestCase):
         self.assertAlmostEqual(c["room_points"], 10.0)
         self.assertEqual(c["weeks_central"], 2.5)
         self.assertEqual(c["start"], "2026-11-23T17:00:00Z")
+        doc["keep_up_items"] = ["not", "a", "dict"]
+        self.assertIsNone(loop_status.forecast_block(doc)["calculation"])
 
     def test_a_document_without_the_figures_is_none(self):
         self.assertIsNone(loop_status.forecast_block({"inputs": {}}))

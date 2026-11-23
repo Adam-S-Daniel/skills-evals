@@ -209,6 +209,7 @@ def _calculation(doc: dict, inputs: dict, scenario: dict, mid: float) -> dict:
         "after_loop_jobs_points": steps.get("after_loop_jobs_points"),
         "capacity_points": _points(capacity, mid),
         "capacity_basis": steps.get("account_stop_basis"),
+        "account_stop_points": steps.get("account_stop_points"),
         "keep_up_items": [{"item": k, "points": _points(v, mid)}
                           for k, v in (doc.get("keep_up_items") or {}).items()
                           if isinstance(v, (int, float)) and v > 0],
@@ -246,7 +247,10 @@ def forecast_block(doc) -> dict | None:
                                               for w in replay.get("weeks") or []
                                               if isinstance(w, dict)])} \
         if isinstance(replay, dict) else None
-    calculation = _calculation(doc, inputs, scenario, mid)
+    try:
+        calculation = _calculation(doc, inputs, scenario, mid)
+    except (AttributeError, TypeError, ValueError):
+        calculation = None
     tasks = [{"task": t.get("task"), "in_loop": t.get("in_loop"), "model": t.get("model"),
               "fires_per_week": t.get("fires_per_week"), "points_per_week": t.get("points_per_week")}
              for t in inputs.get("scheduled_tasks") or [] if isinstance(t, dict)]
