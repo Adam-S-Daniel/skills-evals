@@ -1334,13 +1334,6 @@ def count_successful_fires(repo: str, since: datetime, token: str,
     return total
 
 
-def fires_that_fit(tree: Path, limits: dict, now: datetime,
-                   fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> int:
-    """`fits` of the accounting for `now`. `fires` and `improve` are
-    `account`'s pairs."""
-    return fits(account(tree, limits, now, fires, improve))
-
-
 def describe(state: dict) -> str:
     """One non-identifying line, in points (percent of the weekly allowance)."""
     def points(value):
