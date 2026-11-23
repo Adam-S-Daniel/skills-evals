@@ -249,7 +249,8 @@ def subject_usd(subject: dict, costs: dict, overhead_per_pair: float, key: str) 
 
 def open_subjects(ctx: dict, cells: list, prior_pairs: float) -> dict:
     """{(kind, name): subject estimate} for every subject with at least one
-    cell the planner would fire (`plan_week._produces_item`). A cell of a
+    cell the planner would fire (`plan_week._produces_item`) that still has
+    pairs left under its cap (`cell_estimate` remaining). A cell of a
     subject already kept (not on a provisional keep) is left out: the planner
     fires it only at its re-check age (`eval_items`), which the re-check
     keep-up item prices."""
@@ -259,9 +260,15 @@ def open_subjects(ctx: dict, cells: list, prior_pairs: float) -> dict:
             continue
         if cell.get("verdict") == "keep" and not cell.get("provisional_keep"):
             continue
+        estimate = cell_estimate(cell, ctx, prior_pairs)
+        if estimate["remaining"] <= 0:
+            # At its pair cap (a cap extension included): no fire can move
+            # it, so it is a cell-at-cap work item, not eval spend
+            # (docs/rules.md, "Cap"), and alone it leaves no subject open.
+            continue
         kind = "guidance" if cell.get("section") else "skill"
         name = cell.get("section") or cell.get("skill")
-        grouped.setdefault((kind, name), []).append(cell_estimate(cell, ctx, prior_pairs))
+        grouped.setdefault((kind, name), []).append(estimate)
     return {key: subject_estimate(group) for key, group in grouped.items()}
 
 
@@ -818,8 +825,9 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--as-of", required=True)
     p.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     p.add_argument("--assumptions", type=Path, default=None)
-    p.add_argument("--guidance", type=Path, default=None,
-                   help="_agent-guidance checkout: its eval-coverage skipped rows are left out")
+    p.add_argument("--guidance", type=Path, required=True,
+                   help="_agent-guidance checkout: its eval-coverage skipped rows are left out "
+                        "(required: without it skipped sections would count as open)")
     p.add_argument("--arrivals", type=Path, default=None,
                    help="arrivals document (scripts/target_arrivals.py); default: "
                         "arrivals/targets.json in --results-tree")
@@ -833,6 +841,11 @@ def main(argv: list | None = None) -> int:
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
     args = p.parse_args(argv)
+    skipped = plan_week.guidance_skipped(args.guidance)
+    if skipped is None:
+        p.error(f"--guidance {args.guidance}: cannot read {plan_week.BATCH_GUIDANCE_HISTORY} "
+                "(missing, a symlink, unparsable or not a list); without it the sections its "
+                "skipped rows leave out would count as open subjects")
     gates = json.loads(args.gates.read_text(encoding="utf-8"))
     now = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
     now = (now if now.tzinfo else now.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
@@ -867,7 +880,6 @@ def main(argv: list | None = None) -> int:
         arrivals_doc = None
     from_arrivals = arrival_assumptions(arrivals_doc, now)
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
-    skipped = plan_week.guidance_skipped(args.guidance) or frozenset()
     table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
     automatic = json.loads(args.automatic_spend.read_text(encoding="utf-8")) \
         if args.automatic_spend else None
