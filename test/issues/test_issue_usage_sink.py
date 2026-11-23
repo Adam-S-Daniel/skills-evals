@@ -1073,5 +1073,18 @@ class OutputTests(SinkCase):
             self.assertNotIn(text, proc.stdout)
 
 
+class AppendModeTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX permission bits")
+    def test_a_new_shard_is_owner_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.umask(0)
+            try:
+                path = Path(tmp) / "a" / "shard.jsonl"
+                sink._append(path, ['{"k":1}'])
+            finally:
+                os.umask(old)
+            self.assertEqual(path.stat().st_mode & 0o077, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
