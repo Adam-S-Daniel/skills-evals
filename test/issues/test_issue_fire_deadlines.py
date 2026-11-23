@@ -249,6 +249,33 @@ class WorkItemIssueTests(unittest.TestCase):
             self.writes(self.run_main(gjudged, [{"number": 12, "state": "open", "body": gbody}])[1]),
             [["issue", "comment"], ["issue", "close"]])
 
+    def test_a_throttle_withheld_request_keeps_its_open_issue(self):
+        # The throttle drops the item from `work` but the subject is still
+        # judged; the issue must stand (not close, not be refiled).
+        body = "<!-- skills-evals:needs-fixtures:writing-adrs -->\n"
+        gbody = "<!-- skills-evals:needs-fixtures:guidance/example-section -->\n"
+        issues = [{"number": 11, "state": "open", "body": body},
+                  {"number": 12, "state": "open", "body": gbody}]
+        items = {"routine_down": False, "work": [],
+                 "subjects": {"skills": ["writing-adrs"], "guidance": ["example-section"]}}
+        self.assertEqual(len(self.writes(self.run_main(items, issues)[1])), 4)
+        withheld = [{"kind": "needs-fixtures", "skill": "writing-adrs", "section": ""},
+                    {"kind": "needs-fixtures", "skill": "", "section": "example-section"}]
+        code, calls, _ = self.run_main({**items, "withheld": withheld}, issues)
+        self.assertEqual((code, self.writes(calls)), (0, []))
+        code, _, _ = self.run_main({**items, "withheld": [{"kind": "fixture-broken"}]}, issues)
+        self.assertEqual(code, 2)
+
+    def test_an_agent_working_issue_is_never_closed(self):
+        body = "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->\n"
+        judged = {"routine_down": False, "work": [], "subjects": {"skills": ["writing-adrs"]}}
+        busy = [{"number": 11, "state": "open", "body": body,
+                 "labels": ["agent-ready", "needs-harder-fixtures", "agent-working"]}]
+        self.assertEqual(self.writes(self.run_main(judged, busy)[1]), [])
+        bbody = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\n"
+        busy = [{"number": 13, "state": "open", "body": bbody, "labels": ["agent-working"]}]
+        self.assertEqual(self.writes(self.run_main({"routine_down": False, "work": []}, busy)[1]), [])
+
     def test_a_malformed_fixture_need_writes_nothing(self):
         good = {"kind": "needs-fixtures", "skill": "writing-adrs", "fixtures": 2}
         for bad in ({**good, "skill": "../x"}, {**good, "fixtures": "2"},
