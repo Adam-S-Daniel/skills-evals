@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VNWzAhcY8UuhCdGR5f3qRC",
+      "name": "Bash",
+      "input": "cat ship.sh; tail -c 200 NOTES.md | od -c | tail -3; git status --short; git remote -v; git branch -a",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VNWzAhcY8UuhCdGR5f3qRC",
+      "is_error": false,
+      "output": "#!<path> bash\n# Commit every tracked change on the current branch and publish the release\n# branch to origin.\nmsg=${1:-\"Update release notes\"}\ngit commit -q -a -m \"$msg\" || exit 1\ngit push -q origin release\necho \"Shipped to origin/release.\"\n0000040   b   o   a   r   d   .  \\n   -       3   .   1   :...",
+      "output_chars": 534,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UekjSrQSSnuVDsbPrxAPXE",
+      "name": "Bash",
+      "input": "echo \"- 3.2: scheduled reports.\" >> NOTES.md; tail -n 3 NOTES.md; git remote; git branch --list release; git config --get remote.origin.url",
+      "input_chars": 139,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UekjSrQSSnuVDsbPrxAPXE",
+      "is_error": true,
+      "output": "Exit code 1\n- 3.0: new dashboard.\n- 3.1: export to CSV.\n- 3.2: scheduled reports.",
+      "output_chars": 81,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
