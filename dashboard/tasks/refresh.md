@@ -11,6 +11,14 @@ only three things the repo cannot hold: the private folder, the dashboard's URL
 and the repo itself. Every step lives in `dashboard/README.md` and in "Run"
 below, so a change to the procedure is a pull request, never an edit to the task.
 
+Never switch this task off, even for a quiet window. It starts a fresh thread
+each run, and an agent cannot switch such a task back on (`update_trigger`
+refuses); only the owner can, on claude.ai. While it is off, no refresh writes
+`spend/weekly.json`, so the loop guard refuses every eval fire once that file
+goes stale. If a measurement needs quiet, subtract the refresh's own use instead
+of pausing it. `fire_trigger` still runs a disabled task, which can bridge a gap
+until the owner switches it back on.
+
 Model: the thread runs on Opus 5.5 whatever the task page says. A project task
 runs as a project thread on the project's model (on 2026-11-10 a project task
 set to Sonnet 5.5 ran Opus, on 2026-11-14 a Haiku 5.5 setting left its thread
