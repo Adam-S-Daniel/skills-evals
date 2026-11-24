@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W9YW3vzrH9LrSvQ9Jog2NL",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./.git -prune -o -type f -print | head -50 && ls -la .github .github/* 2><path>; cat .github/workflows/actions.lock 2><path>; cat .github/act...",
+      "input_chars": 286,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W9YW3vzrH9LrSvQ9Jog2NL",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n5e5db6e seed\n./.idea\n./.bashrc\n./.gitconfig\n./.github/actions/release-notes/action.yml\n./.github/workflows/ci.yml\n./.github/workflows/actions.lock\n./.zprofile\n./...",
+      "output_chars": 1395,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0194KgeeyMDaKBhEchjMdqcW",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; echo ---; cat README.md; which gh actionlint; gh actions-lock --help 2>&1 | head -20",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0194KgeeyMDaKBhEchjMdqcW",
+      "is_error": false,
+      "output": "name: ci\non: pull_request\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4.2.2\n      - run: make test\n---\n# example-widgets\n\nExample repository for a fixture. There is no network here, so `gh` and\n`git ls-remote` cannot be run.\n<path...",
+      "output_chars": 559,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VA9GtMAKh9aDarQ1pEDLWZ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 84,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LVeoW89fUShet8GZuCcQyR",
+      "name": "Bash",
+      "input": "python3 -c 'import yaml,sys,json; print(json.dumps(yaml.safe_load(open(\".github/workflows/release-notes.yml\")), default=str))'",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VA9GtMAKh9aDarQ1pEDLWZ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 180,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LVeoW89fUShet8GZuCcQyR",
+      "is_error": false,
+      "output": "{\"name\": \"release-notes\", \"true\": {\"push\": {\"tags\": [\"v*\"]}}, \"permissions\": {\"contents\": \"read\"}, \"jobs\": {\"release-notes\": {\"runs-on\": \"ubuntu-latest\", \"steps\": [{\"uses\": \"actions/checkout@v4.2.2\"}, {\"uses\": \"$<path>\"}]}}}",
+      "output_chars": 248,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
