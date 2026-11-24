@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GXYWX9hdp6BjctVW4aMPem",
+      "name": "Bash",
+      "input": "git status --short && ls -R vendor issues docs && cat docs/vendor-tracking.md issues/*.md",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GXYWX9hdp6BjctVW4aMPem",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndocs:\nvendor-tracking.md\n\nissues:\n01-legacy-output-flag-removed.md\n\nvendor:\nRELEASES.md\nreleases.json\n# ExampleCLI release reviews\n\n| Version | Reviewed | Issues...",
+      "output_chars": 888,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JfKFvnryZA5adYsvPTEtT5",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -100; grep -rn \"example-cli\\|legacy-output\\|examplecli\" --exclude-dir=.git --exclude-dir=vendor . -il | head",
+      "input_chars": 164,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JfKFvnryZA5adYsvPTEtT5",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v5.0.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v5.0.0](https://github.com/example-vendor/example-cli/releases/tag/v5.0.0)\n\n### Breaking Changes\n\n- Removed the `--legacy-output` flag from `example-cli check`; use `--format text` instead. (#2210) @mi...",
+      "output_chars": 1554,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SwxMMjvvVTXX1Egcn6x5kA",
+      "name": "Bash",
+      "input": "grep -rn -i \"example-cli\\|examplecli\\|CACHE_DIR\\|EXAMPLE_CLI\\|status\\|plugin\\|--config\\|legacy\" .github README.md scripts | head -40",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SwxMMjvvVTXX1Egcn6x5kA",
+      "is_error": false,
+      "output": ".github/workflows/ci.yml:7:      - run: npm install --global example-cli@4.9.2\n.github/workflows/ci.yml:8:      - run: example-cli check --legacy-output\nREADME.md:3:Uses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\nREADME.md:4:development. `.example-cli/settings.json` holds ...",
+      "output_chars": 630,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K8QKwYJZMw5KmeFedyuFrU",
+      "name": "Bash",
+      "input": "cat > issues/01-legacy-output-flag-removed.md <<'EOF'\n# ExampleCLI 5.0.0 removes --legacy-output: CI check step\n\nFound in the 5.0.0 release review.\n\n## ExampleCLI change(s)\n\n> Removed the `--legacy-ou...",
+      "input_chars": 1799,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K8QKwYJZMw5KmeFedyuFrU",
+      "is_error": false,
+      "output": "# ExampleCLI release reviews\n\n| Version | Reviewed | Issues |\n|---|---|---|\n| 4.8.0 | 2026-09-02 | none |\n| 4.9.0 | 2026-10-01 | 1 filed |\n| 5.0.0 | 2026-11-24 | 2 drafted (`issues/01`, `issues/02`), not yet filed |\n M docs/vendor-tracking.md\n M issues/01-legacy-output-flag-removed.md\n?? issues/02-c...",
+      "output_chars": 327,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
