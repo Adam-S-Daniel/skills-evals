@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LsPurJtuqyozx8TmZzeeyo",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LsPurJtuqyozx8TmZzeeyo",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VZYT3iAuThNEJzP2CDHv83",
+      "name": "Bash",
+      "input": "pwd; ls; ls bin repos 2>&1; D=<path>; ls $D/scripts; cat bin/wt.exe 2><path> | head -20",
+      "input_chars": 229,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VZYT3iAuThNEJzP2CDHv83",
+      "is_error": false,
+      "output": "<path>\nREADME.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\nlaunch-claude-session.ps1\nlaunch-session0-task.ps1\nlaunch-wsl-claude.ps1\nlaunch-wsl-claude.sh\n#!<path> bash\n# Fake Windows Terminal launcher, as reached from WSL through Windows interop.\n#\n# The eval's hermetic stand-in for `...",
+      "output_chars": 869,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xa8hG8qcVgNgv3XxaesUXF",
+      "name": "Bash",
+      "input": "D=<path>; export PATH=$PWD/bin:$PATH; cat bin/pwsh.exe | head -15; LAUNCH_WSL_CLAUDE_DRY_RUN=1 bash $D/scripts/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evide...",
+      "input_chars": 383,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xa8hG8qcVgNgv3XxaesUXF",
+      "is_error": false,
+      "output": "#!<path> bash\n# Fake PowerShell 7, reached from WSL through Windows interop. The only thing\n# the launcher asks it is the Windows session id; answer 1, an ordinary\n# interactive logon (not session 0).\necho 1\nexit 0\n<path>\nwsl.exe\n-d\nUbuntu\n--cd\n<path>\n--\nenv\n-u\nCLAUDE_CODE_CHILD_SESSION\nCLAUDE_CODE_...",
+      "output_chars": 1136,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EUCAZ3We3hqNhpqaZQkojT",
+      "name": "Bash",
+      "input": "D=<path>; export PATH=$PWD/bin:$PATH; bash $D/scripts/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evidence in docs/notes.md. Stand by.'; echo rc=$?; cat .wt-inv...",
+      "input_chars": 365,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EUCAZ3We3hqNhpqaZQkojT",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-2atnk4ob/ws/repos/example-api\nrc=0\ncat: .wt-invocations.log: No such file or directory",
+      "output_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NArhn6y8BNhcqKSQ7Xs9cw",
+      "name": "Bash",
+      "input": "sleep 2; ls -a; cut -c1-150 .wt-invocations.log bin/../.wt-invocations.log 2>&1 | head -30",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NArhn6y8BNhcqKSQ7Xs9cw",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\nrepos\ncut: .wt-invocations.log: No such file or directory\ncut: bin/../.wt-invocations.log: No such file or directory",
+      "output_chars": 254,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Nkh4yW68N3R4nicrD8BBgp",
+      "name": "Bash",
+      "input": "D=<path>; export PATH=$PWD/bin:$PATH; grep -n 'wt.exe\\|nohup\\|setsid\\|&$\\|disown' $D/scripts/launch-wsl-claude.sh | head -30; find / -name .wt-invocations.log 2><path>",
+      "input_chars": 309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Nkh4yW68N3R4nicrD8BBgp",
+      "is_error": false,
+      "output": "3:# ITSELF IS RUNNING INSIDE WSL/Linux. It uses Windows interop (wt.exe) to open a real\n35:  # wt.exe re-parses.\n89:# wt.exe is reachable from WSL via Windows interop (appendWindowsPath). It gives the\n92:WT=\"$(command -v wt.exe || true)\"\n93:[ -n \"$WT\" ] || { echo \"wt.exe not found \u2014 needs WSL with W...",
+      "output_chars": 882,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jm7FdQgwueehRFUd8J36Vv",
+      "name": "Bash",
+      "input": "D=<path>; export PATH=$PWD/bin:$PATH; bash $D/scripts/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evidence in docs/notes.md. Stand by.'; for i in 1 2 3 4 5 6 7 ...",
+      "input_chars": 452,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jm7FdQgwueehRFUd8J36Vv",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-2atnk4ob/ws/repos/example-api\n.wt-invocations.log\n--- invocation (argc=13) ---\narg: wsl.exe\narg: -d\narg: Ubuntu\narg: --cd\narg: <path>\narg: --\narg: env\narg: -u\n<redacted> CLAUDE_CODE_CHILD_SESSION\narg: CLAUDE_CODE_FORCE_SESSION...",
+      "output_chars": 591,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
