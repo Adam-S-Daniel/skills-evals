@@ -1,5 +1,5 @@
 {
-  "as_of": "20261123T200230Z",
+  "as_of": "20261124T020101Z",
   "policy": {
     "guidance": {
       "judge_drop": 1.0,
@@ -14722,17 +14722,17 @@
     },
     {
       "boundary": {
-        "after": "20261110T192229Z",
-        "before": "20261110T194720Z"
+        "after": "20261117T171406Z",
+        "before": "20261117T175401Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "944c100126daffb147e1c6cc98e4057d8acff3e6",
-          "skills_evals_commit_last": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7"
+          "skills_evals_commit_first": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7",
+          "skills_evals_commit_last": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c"
         },
         "previous": {
           "skills_evals_commit_first": "944c100126daffb147e1c6cc98e4057d8acff3e6",
-          "skills_evals_commit_last": "944c100126daffb147e1c6cc98e4057d8acff3e6"
+          "skills_evals_commit_last": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7"
         }
       },
       "fixture": "lockfile-repo",
@@ -14797,6 +14797,60 @@
       "windows": {
         "current": [
           {
+            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
+            "cli_versions": [
+              "2.1.326 (Claude Code)"
+            ],
+            "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z",
+            "report": {
+              "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261117T175401Z"
+          },
+          {
+            "arm_context_digest": "b654537e6e172dc30f975197210330423f87993678adb1358bd8260d330d249c",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002526Z",
+            "report": {
+              "path": "routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002526Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002526Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261124T002526Z"
+          },
+          {
+            "arm_context_digest": "b654537e6e172dc30f975197210330423f87993678adb1358bd8260d330d249c",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T014915Z",
+            "report": {
+              "path": "routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T014915Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T014915Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261124T014915Z"
+          }
+        ],
+        "previous": [
+          {
+            "arm_context_digest": "51a82912aac2acc317cf8d740e7bb28402a20eea54021cd4aac0739e75aa45fb",
+            "cli_versions": [
+              "2.1.322 (Claude Code)"
+            ],
+            "path": "routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z",
+            "report": {
+              "path": "routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z/report.md"
+            },
+            "tested_digest": "2d89ddd0f1d3624f02cdfd16b8037caf49a0063f3bb0133378eb23c6f239d316",
+            "timestamp": "20261110T192229Z"
+          },
+          {
             "arm_context_digest": "51a82912aac2acc317cf8d740e7bb28402a20eea54021cd4aac0739e75aa45fb",
             "cli_versions": [
               "2.1.322 (Claude Code)"
@@ -14821,76 +14875,22 @@
             },
             "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
             "timestamp": "20261117T171406Z"
-          },
-          {
-            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z",
-            "report": {
-              "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175401Z/report.md"
-            },
-            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
-            "timestamp": "20261117T175401Z"
-          }
-        ],
-        "previous": [
-          {
-            "arm_context_digest": "51a82912aac2acc317cf8d740e7bb28402a20eea54021cd4aac0739e75aa45fb",
-            "cli_versions": [
-              "2.1.322 (Claude Code)"
-            ],
-            "path": "routine-results/20261110T182449Z-0c6e06/guidance/pinning-github-actions/20261110T182620Z",
-            "report": {
-              "path": "routine-results/20261110T182449Z-0c6e06/guidance/pinning-github-actions/20261110T182620Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261110T182449Z-0c6e06/guidance/pinning-github-actions/20261110T182620Z/report.md"
-            },
-            "tested_digest": "2d89ddd0f1d3624f02cdfd16b8037caf49a0063f3bb0133378eb23c6f239d316",
-            "timestamp": "20261110T182620Z"
-          },
-          {
-            "arm_context_digest": "51a82912aac2acc317cf8d740e7bb28402a20eea54021cd4aac0739e75aa45fb",
-            "cli_versions": [
-              "2.1.322 (Claude Code)"
-            ],
-            "path": "routine-results/20261110T185214Z-2a0d65/guidance/pinning-github-actions/20261110T185405Z",
-            "report": {
-              "path": "routine-results/20261110T185214Z-2a0d65/guidance/pinning-github-actions/20261110T185405Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261110T185214Z-2a0d65/guidance/pinning-github-actions/20261110T185405Z/report.md"
-            },
-            "tested_digest": "2d89ddd0f1d3624f02cdfd16b8037caf49a0063f3bb0133378eb23c6f239d316",
-            "timestamp": "20261110T185405Z"
-          },
-          {
-            "arm_context_digest": "51a82912aac2acc317cf8d740e7bb28402a20eea54021cd4aac0739e75aa45fb",
-            "cli_versions": [
-              "2.1.322 (Claude Code)"
-            ],
-            "path": "routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z",
-            "report": {
-              "path": "routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261110T192014Z-07ff50/guidance/pinning-github-actions/20261110T192229Z/report.md"
-            },
-            "tested_digest": "2d89ddd0f1d3624f02cdfd16b8037caf49a0063f3bb0133378eb23c6f239d316",
-            "timestamp": "20261110T192229Z"
           }
         ]
       }
     },
     {
       "boundary": {
-        "after": "20261117T162416Z",
-        "before": "20261117T164813Z"
+        "after": "20261117T171507Z",
+        "before": "20261117T175509Z"
       },
       "commits": {
         "current": {
           "skills_evals_commit_first": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7",
-          "skills_evals_commit_last": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7"
+          "skills_evals_commit_last": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c"
         },
         "previous": {
-          "skills_evals_commit_first": "6dd98685df0ee4c1c81c3311002cd05ce1c7eafd",
+          "skills_evals_commit_first": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7",
           "skills_evals_commit_last": "4eb724eb85f989f9dddb0e02c0ac8d0d41d730c7"
         }
       },
@@ -14947,10 +14947,67 @@
       "pair": "in_situ",
       "reason": "no figure moved past its threshold and its noise",
       "subject": "guidance",
-      "suspects": [],
+      "suspects": [
+        "CLI version changed",
+        "arm context changed"
+      ],
       "verdict": "stable",
       "windows": {
         "current": [
+          {
+            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
+            "cli_versions": [
+              "2.1.326 (Claude Code)"
+            ],
+            "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z",
+            "report": {
+              "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261117T175509Z"
+          },
+          {
+            "arm_context_digest": "b654537e6e172dc30f975197210330423f87993678adb1358bd8260d330d249c",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002622Z",
+            "report": {
+              "path": "routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002622Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T002440Z-8b7e72/guidance/pinning-github-actions/20261124T002622Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261124T002622Z"
+          },
+          {
+            "arm_context_digest": "b654537e6e172dc30f975197210330423f87993678adb1358bd8260d330d249c",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T015007Z",
+            "report": {
+              "path": "routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T015007Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T014832Z-bf04a2/guidance/pinning-github-actions/20261124T015007Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261124T015007Z"
+          }
+        ],
+        "previous": [
+          {
+            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
+            "cli_versions": [
+              "2.1.326 (Claude Code)"
+            ],
+            "path": "routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z",
+            "report": {
+              "path": "routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z/report.md"
+            },
+            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
+            "timestamp": "20261117T162416Z"
+          },
           {
             "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
             "cli_versions": [
@@ -14976,60 +15033,6 @@
             },
             "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
             "timestamp": "20261117T171507Z"
-          },
-          {
-            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z",
-            "report": {
-              "path": "routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T175318Z-f9963c/guidance/pinning-github-actions/20261117T175509Z/report.md"
-            },
-            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
-            "timestamp": "20261117T175509Z"
-          }
-        ],
-        "previous": [
-          {
-            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T152201Z-ed6f78/guidance/pinning-github-actions/20261117T152247Z",
-            "report": {
-              "path": "routine-results/20261117T152201Z-ed6f78/guidance/pinning-github-actions/20261117T152247Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T152201Z-ed6f78/guidance/pinning-github-actions/20261117T152247Z/report.md"
-            },
-            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
-            "timestamp": "20261117T152247Z"
-          },
-          {
-            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T155129Z-ddf5fe/guidance/pinning-github-actions/20261117T155225Z",
-            "report": {
-              "path": "routine-results/20261117T155129Z-ddf5fe/guidance/pinning-github-actions/20261117T155225Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T155129Z-ddf5fe/guidance/pinning-github-actions/20261117T155225Z/report.md"
-            },
-            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
-            "timestamp": "20261117T155225Z"
-          },
-          {
-            "arm_context_digest": "aa37e8837bf724c50d4e346b45e40d097db41ca32cc06ff9eee3b13b11a2028e",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z",
-            "report": {
-              "path": "routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T162328Z-2e67a6/guidance/pinning-github-actions/20261117T162416Z/report.md"
-            },
-            "tested_digest": "543f716c2f6ef42c9b9cc1e0cfae7b9dafcc00c367a2b25ee8dfbe7626a3a40f",
-            "timestamp": "20261117T162416Z"
           }
         ]
       }
@@ -31759,17 +31762,17 @@
     },
     {
       "boundary": {
-        "after": "20261117T222256Z",
-        "before": "20261120T141645Z"
+        "after": "20261121T025008Z",
+        "before": "20261123T195442Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "8e42f1ad060e3e343dcdd3488c8e3f3961ed1fe6",
-          "skills_evals_commit_last": "e2ec62e281dfa53637ad667240f7daedae3e9267"
+          "skills_evals_commit_first": "e2ec62e281dfa53637ad667240f7daedae3e9267",
+          "skills_evals_commit_last": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c"
         },
         "previous": {
           "skills_evals_commit_first": "85802d2ce9165aafa398a2f14e6ba5192381e36a",
-          "skills_evals_commit_last": "85802d2ce9165aafa398a2f14e6ba5192381e36a"
+          "skills_evals_commit_last": "3418edae894972b4a919813f0d5248e08b13e951"
         }
       },
       "fixture": null,
@@ -31779,30 +31782,30 @@
         "counts": {
           "with": {
             "current": {
-              "checks_passed": 25,
+              "checks_passed": 26,
               "checks_total": 30,
-              "judge_mean": 5.1,
+              "judge_mean": 4.7,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 26,
+              "checks_passed": 23,
               "checks_total": 30,
-              "judge_mean": 4.699999999999999,
+              "judge_mean": 5.1,
               "runs": 3,
               "trials": 3
             }
           },
           "without": {
             "current": {
-              "checks_passed": 15,
+              "checks_passed": 23,
               "checks_total": 30,
-              "judge_mean": 5.1,
+              "judge_mean": 4.3,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 24,
+              "checks_passed": 15,
               "checks_total": 30,
               "judge_mean": 5.25,
               "runs": 3,
@@ -31811,15 +31814,15 @@
           }
         },
         "delta": {
-          "current": 0.33333333333333337,
-          "previous": 0.06666666666666654
+          "current": 0.10000000000000009,
+          "previous": 0.2666666666666666
         },
         "judge": null,
         "objective": {
-          "change": -0.033333333333333326,
-          "current": 0.8333333333333334,
-          "noise": 0.13540064007726602,
-          "previous": 0.8666666666666667
+          "change": 0.10000000000000009,
+          "current": 0.8666666666666667,
+          "noise": 0.09128709291752768,
+          "previous": 0.7666666666666666
         }
       },
       "pair": null,
@@ -31831,6 +31834,60 @@
       "verdict": "stable",
       "windows": {
         "current": [
+          {
+            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+            "cli_versions": [
+              "2.1.330 (Claude Code)"
+            ],
+            "path": "routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z",
+            "report": {
+              "path": "routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z/report.md"
+            },
+            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
+            "timestamp": "20261123T195442Z"
+          },
+          {
+            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002340Z",
+            "report": {
+              "path": "routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002340Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002340Z/report.md"
+            },
+            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
+            "timestamp": "20261124T002340Z"
+          },
+          {
+            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+            "cli_versions": [
+              "2.1.331 (Claude Code)"
+            ],
+            "path": "routine-results/20261124T014454Z-06537e/platform-release-and-bump/20261124T014731Z",
+            "report": {
+              "path": "routine-results/20261124T014454Z-06537e/platform-release-and-bump/20261124T014731Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T014454Z-06537e/platform-release-and-bump/20261124T014731Z/report.md"
+            },
+            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
+            "timestamp": "20261124T014731Z"
+          }
+        ],
+        "previous": [
+          {
+            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+            "cli_versions": [
+              "2.1.326 (Claude Code)"
+            ],
+            "path": "routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z",
+            "report": {
+              "path": "routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z/report.md"
+            },
+            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
+            "timestamp": "20261117T222256Z"
+          },
           {
             "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
             "cli_versions": [
@@ -31856,73 +31913,19 @@
             },
             "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
             "timestamp": "20261121T025008Z"
-          },
-          {
-            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
-            "cli_versions": [
-              "2.1.330 (Claude Code)"
-            ],
-            "path": "routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z",
-            "report": {
-              "path": "routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261123T195321Z-ac5681/platform-release-and-bump/20261123T195442Z/report.md"
-            },
-            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261123T195442Z"
-          }
-        ],
-        "previous": [
-          {
-            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T215604Z-ab88ff/platform-release-and-bump/20261117T215726Z",
-            "report": {
-              "path": "routine-results/20261117T215604Z-ab88ff/platform-release-and-bump/20261117T215726Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T215604Z-ab88ff/platform-release-and-bump/20261117T215726Z/report.md"
-            },
-            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261117T215726Z"
-          },
-          {
-            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221009Z",
-            "report": {
-              "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221009Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221009Z/report.md"
-            },
-            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261117T221009Z"
-          },
-          {
-            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z",
-            "report": {
-              "path": "routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T222133Z-5d1b13/platform-release-and-bump/20261117T222256Z/report.md"
-            },
-            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261117T222256Z"
           }
         ]
       }
     },
     {
       "boundary": {
-        "after": "20261117T215959Z",
-        "before": "20261117T221207Z"
+        "after": "20261117T221207Z",
+        "before": "20261117T222527Z"
       },
       "commits": {
         "current": {
           "skills_evals_commit_first": "85802d2ce9165aafa398a2f14e6ba5192381e36a",
-          "skills_evals_commit_last": "8e42f1ad060e3e343dcdd3488c8e3f3961ed1fe6"
+          "skills_evals_commit_last": "e2ec62e281dfa53637ad667240f7daedae3e9267"
         },
         "previous": {
           "skills_evals_commit_first": "85802d2ce9165aafa398a2f14e6ba5192381e36a",
@@ -31938,14 +31941,14 @@
             "current": {
               "checks_passed": 27,
               "checks_total": 30,
-              "judge_mean": 6.4,
+              "judge_mean": 5.550000000000001,
               "runs": 3,
               "trials": 3
             },
             "previous": {
               "checks_passed": 30,
               "checks_total": 30,
-              "judge_mean": 6.800000000000001,
+              "judge_mean": 7.9,
               "runs": 3,
               "trials": 3
             }
@@ -31954,14 +31957,14 @@
             "current": {
               "checks_passed": 26,
               "checks_total": 30,
-              "judge_mean": 5.1499999999999995,
+              "judge_mean": 6.8,
               "runs": 3,
               "trials": 3
             },
             "previous": {
-              "checks_passed": 28,
+              "checks_passed": 29,
               "checks_total": 30,
-              "judge_mean": 6.3999999999999995,
+              "judge_mean": 6.049999999999999,
               "runs": 3,
               "trials": 3
             }
@@ -31969,9 +31972,14 @@
         },
         "delta": {
           "current": 0.033333333333333326,
-          "previous": 0.06666666666666676
+          "previous": 0.033333333333333326
         },
-        "judge": null,
+        "judge": {
+          "change": -2.3499999999999996,
+          "current": 5.550000000000001,
+          "noise": 2.067002660859439,
+          "previous": 7.9
+        },
         "objective": {
           "change": -0.09999999999999998,
           "current": 0.9,
@@ -31980,27 +31988,14 @@
         }
       },
       "pair": null,
-      "reason": "no figure moved past its threshold and its noise",
+      "reason": "the judge mean fell by 2.35 (threshold 1, noise 2.07)",
       "subject": "skill",
       "suspects": [
         "CLI version changed"
       ],
-      "verdict": "stable",
+      "verdict": "regressed",
       "windows": {
         "current": [
-          {
-            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
-            "cli_versions": [
-              "2.1.326 (Claude Code)"
-            ],
-            "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z",
-            "report": {
-              "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z/report.md"
-            },
-            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261117T221207Z"
-          },
           {
             "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
             "cli_versions": [
@@ -32026,22 +32021,22 @@
             },
             "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
             "timestamp": "20261120T141918Z"
-          }
-        ],
-        "previous": [
+          },
           {
             "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
             "cli_versions": [
-              "2.1.326 (Claude Code)"
+              "2.1.331 (Claude Code)"
             ],
-            "path": "routine-results/20261117T212712Z-cf3096/platform-release-and-bump/20261117T213046Z",
+            "path": "routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002556Z",
             "report": {
-              "path": "routine-results/20261117T212712Z-cf3096/platform-release-and-bump/20261117T213046Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T212712Z-cf3096/platform-release-and-bump/20261117T213046Z/report.md"
+              "path": "routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002556Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T002103Z-5ac87a/platform-release-and-bump/20261124T002556Z/report.md"
             },
             "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
-            "timestamp": "20261117T213046Z"
-          },
+            "timestamp": "20261124T002556Z"
+          }
+        ],
+        "previous": [
           {
             "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
             "cli_versions": [
@@ -32067,6 +32062,19 @@
             },
             "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
             "timestamp": "20261117T215959Z"
+          },
+          {
+            "arm_context_digest": "05337a95280a57fd25d9cf2cad7004fbda395f47c8b5ae9d92197104c7c638ae:c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+            "cli_versions": [
+              "2.1.326 (Claude Code)"
+            ],
+            "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z",
+            "report": {
+              "path": "routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261117T220846Z-e42703/platform-release-and-bump/20261117T221207Z/report.md"
+            },
+            "tested_digest": "d7a0c2ed2f9885f3eaf20a6dcb21002941ddf6a8fd54227d459c283de0e293ad",
+            "timestamp": "20261117T221207Z"
           }
         ]
       }
@@ -40654,7 +40662,7 @@
       "github-actions-repo-settings": "stable",
       "github-actions-sha-pinning": "stable",
       "pdf-ocr-audit": "insufficient",
-      "platform-release-and-bump": "stable",
+      "platform-release-and-bump": "regressed",
       "post-failure-comment": "stable",
       "red-ci-adamdaniel-ai": "improved",
       "rename-pdfs": "stable",
