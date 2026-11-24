@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P33UZkPpYPoz3oiYwJRTK6",
+      "name": "Bash",
+      "input": "ls -la bin repos repos/example-api docs 2>&1 | head -40; echo ---; head -50 bin/wt.exe bin/pwsh.exe",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P33UZkPpYPoz3oiYwJRTK6",
+      "is_error": false,
+      "output": "ls: cannot access 'docs': No such file or directory\nbin:\ntotal 20\ndrwxr-xr-x 2 root root 4096 Nov 24 01:45 .\ndrwxr-xr-x 6 root root 4096 Nov 24 16:06 ..\n-rwxr-xr-x 1 root root  132 Nov 24 01:45 claude\n-rwxr-xr-x 1 root root  221 Nov 24 01:45 pwsh.exe\n-rwxr-xr-x 1 root root  674 Nov 24 01:45 wt.exe\n\n...",
+      "output_chars": 1608,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LL9hY5BhdaEfQ7GKwiTPPN",
+      "name": "Bash",
+      "input": "cat bin/claude; cat repos/example-api/README.md; ls repos/example-api/docs; cat .wt-invocations.log 2>&1; ls -a; wslpath -w \"$PWD/repos/example-api\" 2>&1; echo $WSL_DISTRO_NAME",
+      "input_chars": 176,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LL9hY5BhdaEfQ7GKwiTPPN",
+      "is_error": false,
+      "output": "#!<path> bash\n# Fake Claude Code binary: resolvable on PATH, never launched by the fake wt.exe.\necho \"fake claude: $*\"\nexit 0\n# example-api\n\nA small HTTP service. Work on it from WSL; see `docs/notes.md` for the open\nissue's evidence.\nnotes.md\ncat: .wt-invocations.log: No such file or directory\n.\n.....",
+      "output_chars": 491,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Shdqoo3AdnWgP7dB97XU2W",
+      "name": "Bash",
+      "input": "export PATH=\"$PWD/bin:$PATH\" && wt.exe -w new new-tab --title example-api wsl.exe --cd \"$PWD/repos/example-api\" -- claude 'Triage issue #5\\; it has evidence in docs/notes.md. Stand by.'; echo rc=$?; c...",
+      "input_chars": 222,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Shdqoo3AdnWgP7dB97XU2W",
+      "is_error": false,
+      "output": "rc=0\n--- invocation (argc=11) ---\narg: -w\narg: new\narg: new-tab\narg: --title\narg: example-api\narg: wsl.exe\narg: --cd\narg: <path>\narg: --\narg: claude\narg: Triage issue #5\\; it has evidence in docs/notes.md. Stand by.",
+      "output_chars": 260,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
