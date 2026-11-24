@@ -1,0 +1,399 @@
+{
+  "skill": "vendor-release-impact-issues",
+  "arm": "without_skill",
+  "timestamp": "20261124T095003Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1417386,
+    "num_turns": 6,
+    "duration_ms": 20701,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 24769,
+      "cache_read_input_tokens": 202986,
+      "output_tokens": 2234,
+      "output_tokens_details": {
+        "thinking_tokens": 118
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 24769,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 586,
+          "cache_read_input_tokens": 38680,
+          "cache_creation_input_tokens": 1069,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1069
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "issues-drafted",
+      "passed": true,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md matches"
+    },
+    {
+      "id": "stale-draft-rewritten-in-place",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md lacks /^(?:[-*] )?Removed the `--legacy-output` flag from `example-cli check`; use `--format text` instead\\. \\(#2210\\) @mira-ortiz$/"
+    },
+    {
+      "id": "stale-draft-text-gone",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md contains /^[^\\n]*#2198/"
+    },
+    {
+      "id": "cache-dir-bullet-quoted-exact",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md lacks /^(?:[-*] )?Renamed `EXAMPLE_CLI_CACHE_DIR` to `EXAMPLE_CLI_HOME`; the old name is now ignored\\. \\(#2231\\) @dev-lan$/"
+    },
+    {
+      "id": "no-references-in-blockquotes",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md contains /^>[^\\n]*#[0-9]{3,}/; issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md contains /^>[^\\n]*@[A-Za-z]/"
+    },
+    {
+      "id": "no-vendor-backlinks",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md contains /^[^\\n]*github\\.com/example-vendor/example-cli/(?:issues|pull|commit)//; issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md contains /^[^\\n]*(?<!`)example-vendor/example-cli#[0-9]/"
+    },
+    {
+      "id": "ci-workflow-surface-named",
+      "passed": true,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md matches"
+    },
+    {
+      "id": "release-script-surface-named",
+      "passed": true,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md matches"
+    },
+    {
+      "id": "publish-time-from-published-at",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md lacks /^(?!>|# )[^\\n]*(?<![0-9.])v?5\\.0\\.0(?![0-9])[^\\n]{0,40}2026-11-04T16:12Z[^\\n]*$/"
+    },
+    {
+      "id": "lead-line-and-fixed-block",
+      "passed": false,
+      "detail": "issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md lacks /^[^\\n]*Not yet verified against this repo\\.$/; issues/01-legacy-output-flag-removed.md, issues/02-cache-dir-env-renamed.md lacks /^## If behavior and the notes disagree$/"
+    },
+    {
+      "id": "tracking-doc-gained-5-0-0",
+      "passed": true,
+      "detail": "docs/vendor-tracking.md matches"
+    },
+    {
+      "id": "seed-repo-unchanged",
+      "passed": true,
+      "detail": "unchanged (.example-cli/settings.json, .github/workflows/ci.yml, AGENTS.md, README.md, scripts/release.sh, vendor/RELEASES.md, vendor/releases.json)"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.331 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 2234,
+      "cache_read_input_tokens": 202986,
+      "cache_creation_input_tokens": 24769,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "stale-draft-thin-inventory",
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "bb1097d76cf68e3ca0b41742c6178fd63de926f257d9c33a2f2d78a762fa61e7",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/_agent-guidance",
+    "revision": "3b95a4348369616fa0506e81d7f452e317f77230",
+    "digest": "65626ee64c6370c0ca7df188a846d48ebcfc68016b23452017e7ea69d01faa21",
+    "lock_digest": "5874509d0587b28c8e42dc176c4f36e36e02da85d5c6f5f7cb128c013c832de9",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "eeeb02f27120c0bd40e80ffe9e1d96000bdc3cea",
+        "digest": "f1623aa57b54c01e0a39d57f21aa59aa9b99cdd60e53adbfcd343851232ec658",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "0a6d0eb2f29fac34cd380d8ac14eb15af5e06be82fb4c2fb5e73df4e1711847b"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "7d119014f24085755962d74703a20b8a55dc609b43dde6381a012b1b723c312e"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "3b95a4348369616fa0506e81d7f452e317f77230",
+      "digest": "083b40819276bd0dbb10fa6103343a981b1327848b704124294bb74c1483b814",
+      "bytes": 26615,
+      "sections": [],
+      "hook_digest": "cfc01078b9d06990c2e458bade9aebffe10e7e25a97eaec23a59e2d3f28a2241"
+    },
+    "measurements": {
+      "guidance_bytes": 26615,
+      "skill_catalog_bytes": 6865,
+      "skill_payload_bytes": 692369
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "vendor-release-impact-issues",
+    "action": "removed",
+    "deployed_digest": "7c29bc5f0dc5f34ce510d9a98381d97eb6aa5528e28d903dbd8c304a12b10af1",
+    "tested_digest": "7c29bc5f0dc5f34ce510d9a98381d97eb6aa5528e28d903dbd8c304a12b10af1",
+    "bytes": 14930,
+    "subject_source": "main",
+    "subject_revision": "eeeb02f27120c0bd40e80ffe9e1d96000bdc3cea"
+  },
+  "arm_context": {
+    "skills": 10,
+    "skills_digest": "8671b121ca2f17670ef5e458cfc3deac5ad239eed5f7aa1ae3278ac7fce879e8",
+    "others_digest": "8671b121ca2f17670ef5e458cfc3deac5ad239eed5f7aa1ae3278ac7fce879e8",
+    "guidance_bytes": 26615,
+    "guidance_digest": "083b40819276bd0dbb10fa6103343a981b1327848b704124294bb74c1483b814",
+    "subject_present": false
+  },
+  "sandbox_probe": "passed",
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261124T094838Z-8cb2ec",
+    "session_id": "cse_01SphsQEYfJDHYYe3t1dQdhK",
+    "harness_commit": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c",
+    "cli_version": "2.1.331 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-24T09:50:03Z",
+    "ended_at": "2026-11-24T09:51:04Z",
+    "meter": {
+      "snapshot_count": 2,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-24T09:50:14.155Z",
+      "to_at": "2026-11-24T09:50:45.678Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.06,
+          "to": 0.06,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEYfJDHYYe3t1dQdhK",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3185917,
+      "agent_usd": 0.3185917,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": 0.17685309999999999,
+      "last_agent_call_usd": 0.1417386,
+      "calls_with_cost": 2,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "allowance_estimate": {
+      "table": "2026-11-20",
+      "points": 0.02057239515057988,
+      "low": 0.014108451692641334,
+      "high": 0.03325630839939199,
+      "fable": {
+        "points": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "roles_from_tokens": 2,
+      "legacy_roles": 0,
+      "legacy_usd": 0.0,
+      "unpriced_roles": 0,
+      "complete": true
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-24T09:50:42Z",
+      "ended_at": "2026-11-24T09:51:04Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-24T09:50:42Z",
+          "ended_at": "2026-11-24T09:51:04Z",
+          "duration_ms": 21931,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-24T09:50:45.678Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1796058000,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.06,
+                  "resetsAt": 1796058000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 21931,
+        "num_turns": 6,
+        "cost_usd": 0.1417386,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 2234,
+            "cache_read_input_tokens": 202986,
+            "cache_creation_input_tokens": 24769,
+            "cost_usd": 0.1417386
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 24769
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
