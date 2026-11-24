@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013a6vNp9rtnCEy5w8PheFwe",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013a6vNp9rtnCEy5w8PheFwe",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PELCnNBohWpMagdLvtezyL",
+      "name": "Bash",
+      "input": "cd <path>; ls; ls bin repos; cat bin/* | head -60; cat <path>; command -v claude wt.exe pwsh.exe; S=<path>; ls $S",
+      "input_chars": 294,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PELCnNBohWpMagdLvtezyL",
+      "is_error": false,
+      "output": "README.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\n#!<path> bash\n# Fake Claude Code binary: resolvable on PATH, never launched by the fake wt.exe.\necho \"fake claude: $*\"\nexit 0\n#!<path> bash\n# Fake PowerShell 7, reached from WSL through Windows interop. The only thing\n# the launcher...",
+      "output_chars": 1449,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QFQEr6sMexpcBgopGAkXKH",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; D=$PWD/repos/example-api; ls $D; grep -n '\"#5\\|issue' -r $D/docs 2><path> | head; f=<path> [ -f $f ] && python3 -c \"import json,sys;d=json.load(open('$f'));print(d.get('proje...",
+      "input_chars": 573,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QFQEr6sMexpcBgopGAkXKH",
+      "is_error": false,
+      "output": "# workspace\n\nThis workspace is a WSL checkout area. Windows Terminal is reachable from the\nWSL shell as `wt.exe` and PowerShell 7 as `pwsh.exe` (Windows interop); both\nare on `PATH`, as is `claude`.\n\n| Path | What |\n| --- | --- |\n| `repos/example-api/` | the repository a new session should be rooted...",
+      "output_chars": 1459,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0136NUyxZEfxjSFuipjrhs3W",
+      "name": "Bash",
+      "input": "cd <path>; S=<path>; bash $S/launch-wsl-claude.sh --dir \"$PWD/repos/example-api\" --prompt \"Triage issue #5; it has evidence in docs/notes.md. Stand by.\"; echo \"exit=$?\"; cat .wt-invocations.log | grep...",
+      "input_chars": 391,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0136NUyxZEfxjSFuipjrhs3W",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-pl12lpy5/ws/repos/example-api\nexit=0\ncat: .wt-invocations.log: No such file or directory",
+      "output_chars": 162,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WBBmQymHx21vsQSAaD1Zyw",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; cat .wt-invocations.log 2>&1 | grep -v '^arg: PATH='",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WBBmQymHx21vsQSAaD1Zyw",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x  6 root root 4096 Nov 24 19:31 .\ndrwx------  6 root root 4096 Nov 24 19:30 ..\ncrw-rw-rw-  1 root root 1, 3 Nov 24 00:00 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov 24 00:00 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov 24 19:30 .claude\ndrwxr-xr-x 12 root root 4096 Nov 24 19:31 .git...",
+      "output_chars": 960,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NAfiQGPf6N8BXAyizYoysf",
+      "name": "Bash",
+      "input": "S=<path>; grep -n 'setsid\\|nohup\\|disown\\|&$\\|Launched' $S/launch-wsl-claude.sh",
+      "input_chars": 226,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NAfiQGPf6N8BXAyizYoysf",
+      "is_error": false,
+      "output": "166:    echo \"Launched detached Claude ($MODE) in ${DISTRO}:${DIR}\"\n174:  # `disown`s it, which makes the resulting process undeterministic to wait\n181:\"${wt_args[@]}\" &\n182:disown 2><path> || true\n183:echo \"Launched detached Claude ($MODE) in ${DISTRO}:${DIR}\"",
+      "output_chars": 264,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AbKvijhurtVc76awxqirNv",
+      "name": "Bash",
+      "input": "cd <path>; S=<path>; bash $S/launch-wsl-claude.sh --dir \"$PWD/repos/example-api\" --prompt \"Triage issue #5; it has evidence in docs/notes.md. Stand by.\"; echo \"exit=$?\"; for i in $(seq 50); do [ -s .w...",
+      "input_chars": 480,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AbKvijhurtVc76awxqirNv",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-pl12lpy5/ws/repos/example-api\nexit=0\n--- invocation (argc=13) ---\narg: wsl.exe\narg: -d\narg: Ubuntu\narg: --cd\narg: <path>\narg: --\narg: env\narg: -u\n<redacted> CLAUDE_CODE_CHILD_SESSION\narg: CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=...",
+      "output_chars": 457,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
