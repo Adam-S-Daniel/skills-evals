@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PZ5gZGLjMPwfnP6fC9c8Nm",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PZ5gZGLjMPwfnP6fC9c8Nm",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018vuce3ou65bm2EGHS58a27",
+      "name": "Bash",
+      "input": "ls; ls bin repos 2>&1 | head -30; S=<path>; ls $S/scripts; grep -c microsoft <path>",
+      "input_chars": 229,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018vuce3ou65bm2EGHS58a27",
+      "is_error": false,
+      "output": "README.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\nlaunch-claude-session.ps1\nlaunch-session0-task.ps1\nlaunch-wsl-claude.ps1\nlaunch-wsl-claude.sh\n0",
+      "output_chars": 163,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DxWQYfGdSDfWt1jwBXmVFU",
+      "name": "Bash",
+      "input": "cat README.md | head -20; S=<path>; export PATH=$PWD/bin:$PATH; LAUNCH_WSL_CLAUDE_DRY_RUN=1 LAUNCH_CLAUDE_FORCE_SESSION0=0 bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt \"Triage is...",
+      "input_chars": 415,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DxWQYfGdSDfWt1jwBXmVFU",
+      "is_error": false,
+      "output": "# workspace\n\nThis workspace is a WSL checkout area. Windows Terminal is reachable from the\nWSL shell as `wt.exe` and PowerShell 7 as `pwsh.exe` (Windows interop); both\nare on `PATH`, as is `claude`.\n\n| Path | What |\n| --- | --- |\n| `repos/example-api/` | the repository a new session should be rooted...",
+      "output_chars": 1216,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JPzM31RFwJpXf7phsjNn3M",
+      "name": "Bash",
+      "input": "S=<path>; export PATH=$PWD/bin:$PATH; bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt \"Triage issue #5; it has evidence in docs/notes.md. Stand by.\"; echo \"exit=$?\"",
+      "input_chars": 330,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JPzM31RFwJpXf7phsjNn3M",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-b52s83iq/ws/repos/example-api\nexit=0",
+      "output_chars": 110,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
