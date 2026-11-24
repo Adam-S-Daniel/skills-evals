@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-24T13:03:41Z",
+  "fetched_at": "2026-11-24T13:09:45Z",
   "issues": [
    {
     "created_at": "2026-11-23T14:11:02Z",
@@ -589,6 +589,18 @@
     "created_at": "2026-11-24T13:03:42Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45399554613,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-24T13:05:11Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45399554613",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-24T13:03:42Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 45399555243,
     "state": "completed",
     "title": "Scope the evals",
@@ -631,18 +643,6 @@
     "updated_at": "2026-11-24T13:03:55Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45399554418",
     "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-24T13:03:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45399554613,
-    "state": "in_progress",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-24T13:03:47Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45399554613",
-    "workflow": "Refresh loop pull requests"
    },
    {
     "conclusion": "cancelled",
@@ -4089,7 +4089,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-10T13:03:41Z"
+  "since": "2026-11-10T13:09:45Z"
  },
  "agent_made": {
   "items": [
@@ -6902,7 +6902,7 @@
     "fired_at": "2026-11-07T13:09:51Z",
     "fixture": "vendor-release-impact-issues/closing-keywords",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-24T11:30:56Z",
+    "paired_at": "2026-11-24T12:59:54Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T130951Z-c9c3f2/vendor-release-impact-issues/20261107T131046Z/report.md",
     "run_id": "20261107T130951Z-c9c3f2",
     "skill": "vendor-release-impact-issues",
@@ -7473,6 +7473,17 @@
   ],
   "latest": [
    {
+    "checks": 6,
+    "fired_at": "2026-11-24T12:59:54Z",
+    "fixture": "vendor-release-impact-issues/closing-keywords",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261124T125954Z-42431a",
+    "with_share": 1.0,
+    "with_skill": 6,
+    "without_share": 0.6666666666666666,
+    "without_skill": 4
+   },
+   {
     "checks": 12,
     "fired_at": "2026-11-24T12:56:21Z",
     "fixture": "vendor-release-impact-issues/stale-draft-thin-inventory",
@@ -7526,17 +7537,6 @@
     "with_skill": 0,
     "without_share": 0.0,
     "without_skill": 0
-   },
-   {
-    "checks": 6,
-    "fired_at": "2026-11-24T11:30:56Z",
-    "fixture": "vendor-release-impact-issues/closing-keywords",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261124T113056Z-402131",
-    "with_share": 1.0,
-    "with_skill": 6,
-    "without_share": 0.6666666666666666,
-    "without_skill": 4
    },
    {
     "checks": 1,
@@ -9515,6 +9515,28 @@
    "tied": 53
   },
   "runs": [
+   {
+    "account_week_after": 8.0,
+    "checks": 6,
+    "cli": "2.1.331",
+    "cost_usd": 0.3529477999999999,
+    "fired_at": "2026-11-24T12:59:54Z",
+    "fixture": "vendor-release-impact-issues/closing-keywords",
+    "gain": 2,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T125954Z-42431a/vendor-release-impact-issues/20261124T130123Z/report.md",
+    "run_id": "20261124T125954Z-42431a",
+    "skill": "vendor-release-impact-issues",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 6,
+    "without_judge": null,
+    "without_share": 0.6666666666666666,
+    "without_skill": 4
+   },
    {
     "account_week_after": 8.0,
     "checks": 12,
@@ -41264,14 +41286,24 @@
   ],
   "summary": [
    {
-    "helped": 569,
+    "helped": 570,
     "hurt": 92,
-    "lift": 0.13918132216709292,
+    "lift": 0.13937166727607947,
     "model": "All",
-    "runs": 1019,
+    "runs": 1020,
     "tied": 358,
-    "with_avg": 0.871374296840441,
-    "without_avg": 0.7321929746733481
+    "with_avg": 0.8715004004709895,
+    "without_avg": 0.7321287331949101
+   },
+   {
+    "helped": 377,
+    "hurt": 66,
+    "lift": 0.14956775197305394,
+    "model": "claude-sonnet-5-5",
+    "runs": 660,
+    "tied": 217,
+    "with_avg": 0.8710406877073535,
+    "without_avg": 0.7214729357342996
    },
    {
     "helped": 186,
@@ -41282,16 +41314,6 @@
     "tied": 140,
     "with_avg": 0.8704205944946692,
     "without_avg": 0.754915420656161
-   },
-   {
-    "helped": 376,
-    "hurt": 66,
-    "lift": 0.14928889676613388,
-    "model": "claude-sonnet-5-5",
-    "runs": 659,
-    "tied": 217,
-    "with_avg": 0.8708449983108549,
-    "without_avg": 0.721556101544721
    },
    {
     "helped": 7,
@@ -42123,7 +42145,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-24T13:02:28Z",
+  "generated_at": "2026-11-24T13:08:40Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -42199,7 +42221,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-24T13:01:19Z",
+ "generated_at": "2026-11-24T13:07:28Z",
  "guidance": {
   "removed": [
    {
@@ -79978,7 +80000,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-24T12:59:41Z",
+ "newest_run": "2026-11-24T13:01:23Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -102583,11 +102605,11 @@
       "votes": true
      },
      {
-      "gain": 29.2,
-      "high": 78.5,
+      "gain": 30.0,
+      "high": 57.8,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "closing-keywords",
       "votes": true
@@ -102622,7 +102644,7 @@
      "to": "2026-11-24"
     }
    },
-   "current_text_runs": 16,
+   "current_text_runs": 17,
    "decisions": [
     {
      "class": "insufficient",
@@ -103149,11 +103171,11 @@
     {
      "class": "building",
      "cost_unknown": 0,
-     "cost_usd": 1.350684,
+     "cost_usd": 1.7036318,
      "date": "2026-11-24",
      "model": "claude-sonnet-5-5",
      "reason": null,
-     "runs": 8
+     "runs": 10
     },
     {
      "class": "decisive",
@@ -103166,6 +103188,27 @@
     }
    ],
    "runs": [
+    {
+     "at": "2026-11-24T13:01:23Z",
+     "cli_version": "2.1.331",
+     "fixture": "closing-keywords",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T125954Z-42431a/vendor-release-impact-issues/20261124T130123Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.20519909999999997,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 6,
+      "cost_usd": 0.14774869999999998,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-24T12:59:41Z",
      "cli_version": "2.1.331",
@@ -110129,7 +110172,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c",
-  "results_commit": "2081529ef486480576bec1c1c12caae1294c3c48"
+  "results_commit": "fdafac4b770edfb9bde0fa89d1695423ec0c4952"
  },
  "spend": {
   "generated_at": "2026-11-24T12:38:35Z",
