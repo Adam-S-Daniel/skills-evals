@@ -1,0 +1,187 @@
+{
+  "due_at": "2026-12-08T07:29:08Z",
+  "fit": {
+    "budget": 0.4578253450202429,
+    "floor": false,
+    "pair_costs": {
+      "claude-opus-5-5": 0.001571740844144198,
+      "claude-sonnet-5-5": 0.0005915099939024632
+    },
+    "pairs_per_cell": 15.0,
+    "priced": true,
+    "total": 0.38938515084839903
+  },
+  "members": [
+    {
+      "cost": 0.03244876257069992,
+      "joined": 4,
+      "kind": "skill",
+      "subject": "launch-top-level-claude-session"
+    },
+    {
+      "cost": 0.1622438128534996,
+      "joined": 4,
+      "kind": "skill",
+      "subject": "vendor-release-impact-issues"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "joined": 4,
+      "kind": "guidance",
+      "subject": "security"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "joined": 4,
+      "kind": "guidance",
+      "subject": "name-becomes-scanner-data"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "joined": 4,
+      "kind": "guidance",
+      "subject": "git-push-does-not-mean-commit-exists"
+    }
+  ],
+  "multiplier": 3.0,
+  "number": 4,
+  "previous": {
+    "members": [
+      {
+        "kind": "skill",
+        "status": "blocked",
+        "subject": "platform-release-and-bump"
+      },
+      {
+        "kind": "guidance",
+        "status": "decided",
+        "subject": "pinning-github-actions"
+      }
+    ],
+    "number": 3
+  },
+  "rate_basis": {
+    "guidance": {
+      "added": 4,
+      "rate": 1.0,
+      "since": "2026-10-27T07:29:08Z",
+      "source": "measured",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 3,
+      "rate": 0.75,
+      "since": "2026-10-27T07:29:08Z",
+      "source": "measured",
+      "weeks": 4.0
+    }
+  },
+  "rates": {
+    "guidance": 1.0,
+    "skill": 0.75
+  },
+  "schema_version": 1,
+  "sizes": {
+    "guidance": 3,
+    "skill": 2
+  },
+  "started_at": "2026-11-24T07:29:08Z",
+  "waiting": [
+    {
+      "cost": 0.09734628771209976,
+      "kind": "skill",
+      "reason": "size",
+      "subject": "writing-adrs"
+    },
+    {
+      "cost": 0.12979505028279967,
+      "kind": "skill",
+      "reason": "size",
+      "subject": "workflow-path-audit"
+    },
+    {
+      "cost": 0.12979505028279967,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "git-practices"
+    },
+    {
+      "cost": 0.018674958410954297,
+      "kind": "skill",
+      "reason": "size",
+      "subject": "post-failure-comment"
+    },
+    {
+      "cost": 0.12979505028279967,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "turn-lessons-into-checks"
+    },
+    {
+      "cost": 0.09734628771209976,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "two-github-connectors"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "dependency-updates"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "working-in-these-repos"
+    },
+    {
+      "cost": 0.1622438128534996,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "anything-you-name-gets-its-link"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "two-setup-gaps"
+    },
+    {
+      "cost": 0.09734628771209976,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "watch-finished-is-not-ci-passed"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "subagent-delegation"
+    },
+    {
+      "cost": 0.12979505028279967,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "automation-vs-branch-protection"
+    },
+    {
+      "cost": 0.12979505028279967,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "fleet-spans-two-owners"
+    },
+    {
+      "cost": 0.03244876257069992,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "finding-your-unknowns"
+    },
+    {
+      "cost": 0.06489752514139983,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "github-404-means-not-authorized"
+    }
+  ]
+}
