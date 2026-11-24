@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WVhFmqwmvefjR5GdcwGpUD",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WVhFmqwmvefjR5GdcwGpUD",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SzEtdrZoxdZXRwLpA1sfk7",
+      "name": "Bash",
+      "input": "pwd && ls; ls bin repos repos/example-api 2>&1 | head -30; S=<path>; ls $S",
+      "input_chars": 221,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SzEtdrZoxdZXRwLpA1sfk7",
+      "is_error": false,
+      "output": "<path>\nREADME.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\n\nrepos/example-api:\nREADME.md\ndocs\nlaunch-claude-session.ps1\nlaunch-session0-task.ps1\nlaunch-wsl-claude.ps1\nlaunch-wsl-claude.sh",
+      "output_chars": 230,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S3kSuATuXmhmjnrV26DbLq",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH && S=<path>; cat bin/wt.exe | head -20; LAUNCH_WSL_CLAUDE_DRY_RUN=1 bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evidence in d...",
+      "input_chars": 383,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S3kSuATuXmhmjnrV26DbLq",
+      "is_error": false,
+      "output": "#!<path> bash\n# Fake Windows Terminal launcher, as reached from WSL through Windows interop.\n#\n# The eval's hermetic stand-in for `wt.exe` (DESIGN.md, Class B): it opens no\n# window and runs nothing. It appends every invocation to `.wt-invocations.log`\n# beside `bin/` (the workspace root), one `arg:...",
+      "output_chars": 1589,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GNcBHvS6En37Ap3ebfsVnY",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH && S=<path>; bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evidence in docs/notes.md. Stand by.'; echo rc=$?; sleep 1; tail -n ...",
+      "input_chars": 383,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GNcBHvS6En37Ap3ebfsVnY",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-ymuw0rfo/ws/repos/example-api\nrc=0\n--- invocation (argc=13) ---\narg: wsl.exe\narg: -d\narg: Ubuntu\narg: --cd\narg: <path>\narg: --\narg: env\narg: -u\n<redacted> CLAUDE_CODE_CHILD_SESSION\narg: CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1\n...",
+      "output_chars": 656,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

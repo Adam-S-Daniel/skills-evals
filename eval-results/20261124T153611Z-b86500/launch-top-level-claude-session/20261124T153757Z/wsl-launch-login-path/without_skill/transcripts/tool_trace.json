@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FE6hN5D41vSCVtqcG3hGjo",
+      "name": "Bash",
+      "input": "ls; ls bin repos repos/example-api; cat bin/wt.exe bin/pwsh.exe | head -60",
+      "input_chars": 74,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FE6hN5D41vSCVtqcG3hGjo",
+      "is_error": false,
+      "output": "README.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\n\nrepos/example-api:\nREADME.md\ndocs\n#!<path> bash\n# Fake Windows Terminal launcher, as reached from WSL through Windows interop.\n#\n# The eval's hermetic stand-in for `wt.exe` (DESIGN.md, Class B): it opens no\n# window and runs nothin...",
+      "output_chars": 997,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JbaCjNxMnxJMyJrMKosQgK",
+      "name": "Bash",
+      "input": "cat README.md; cat bin/claude | head -30; ls docs repos/example-api/docs; wslpath -w \"$PWD/repos/example-api\"; echo $WSL_DISTRO_NAME",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JbaCjNxMnxJMyJrMKosQgK",
+      "is_error": false,
+      "output": "# workspace\n\nThis workspace is a WSL checkout area. Windows Terminal is reachable from the\nWSL shell as `wt.exe` and PowerShell 7 as `pwsh.exe` (Windows interop); both\nare on `PATH`, as is `claude`.\n\n| Path | What |\n| --- | --- |\n| `repos/example-api/` | the repository a new session should be rooted...",
+      "output_chars": 568,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013aDFDsGZtmC1eAKxv9uen2",
+      "name": "Bash",
+      "input": "wt.exe -w 0 new-tab --title example-api wsl.exe --cd \"$PWD/repos/example-api\" -- claude 'Triage issue #5\\; it has evidence in docs/notes.md. Stand by.'; echo rc=$?; cat .wt-invocations.log",
+      "input_chars": 188,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013aDFDsGZtmC1eAKxv9uen2",
+      "is_error": false,
+      "output": "rc=0\n--- invocation (argc=11) ---\narg: -w\narg: 0\narg: new-tab\narg: --title\narg: example-api\narg: wsl.exe\narg: --cd\narg: <path>\narg: --\narg: claude\narg: Triage issue #5\\; it has evidence in docs/notes.md. Stand by.",
+      "output_chars": 258,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
