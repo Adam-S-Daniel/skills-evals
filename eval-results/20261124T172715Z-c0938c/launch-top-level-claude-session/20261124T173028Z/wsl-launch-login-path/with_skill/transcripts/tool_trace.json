@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UvHL1sgar7fQmdzkFtMBui",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UvHL1sgar7fQmdzkFtMBui",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tr5ttE5FepkERKr9N6L5SH",
+      "name": "Bash",
+      "input": "pwd && ls; ls bin repos 2>&1; S=<path>; ls $S/scripts",
+      "input_chars": 192,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tr5ttE5FepkERKr9N6L5SH",
+      "is_error": false,
+      "output": "<path>\nREADME.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos:\nexample-api\nlaunch-claude-session.ps1\nlaunch-session0-task.ps1\nlaunch-wsl-claude.ps1\nlaunch-wsl-claude.sh",
+      "output_chars": 195,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G3QsJ3krJTU7XQBU2EMwFX",
+      "name": "Bash",
+      "input": "S=<path>; export PATH=$PWD/bin:$PATH; LAUNCH_WSL_CLAUDE_DRY_RUN=1 bash $S/scripts/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt \"Triage issue #5; it has evidence in docs/notes.md. Stand b...",
+      "input_chars": 358,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G3QsJ3krJTU7XQBU2EMwFX",
+      "is_error": false,
+      "output": "<path>\nwsl.exe\n-d\nUbuntu\n--cd\n<path>\n--\nenv\n-u\nCLAUDE_CODE_CHILD_SESSION\nCLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1\nPATH=<path>:/opt/rbenv/bin:/opt/rbenv/shims:/opt/node22/bin:/opt/maven/bin:/usr/lib/jvm/java-21-openjdk-amd64/bin:/opt/gradle/bin:/root/.bun/bin:/tmp/skills-evals-arm-qnhrrs7z/ws/bin:/tmp...",
+      "output_chars": 910,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B5uLThcmxnw3hA5noWqc8P",
+      "name": "Bash",
+      "input": "S=<path>; export PATH=$PWD/bin:$PATH; bash $S/scripts/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt \"Triage issue #5; it has evidence in docs/notes.md.\" 2>&1 | tail -15; echo \"exit ${PIPE...",
+      "input_chars": 350,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B5uLThcmxnw3hA5noWqc8P",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-qnhrrs7z/ws/repos/example-api\nexit 0",
+      "output_chars": 110,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
