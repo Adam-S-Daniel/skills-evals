@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-24T15:47:24Z",
+  "fetched_at": "2026-11-24T15:52:58Z",
   "issues": [
    {
     "created_at": "2026-11-23T14:11:02Z",
@@ -486,14 +486,14 @@
   ],
   "runs": [
    {
-    "conclusion": null,
+    "conclusion": "success",
     "created_at": "2026-11-24T15:47:13Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 45429524184,
-    "state": "queued",
+    "state": "completed",
     "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-24T15:48:27Z",
+    "updated_at": "2026-11-24T15:48:47Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45429524184",
     "workflow": "Refresh loop pull requests"
    },
@@ -4026,7 +4026,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-10T15:47:24Z"
+  "since": "2026-11-10T15:52:58Z"
  },
  "agent_made": {
   "items": [
@@ -4992,7 +4992,7 @@
     "created": "2026-11-07T16:26:05Z",
     "id": "security",
     "impact": {
-     "current_text_runs": 96,
+     "current_text_runs": 98,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -7410,6 +7410,28 @@
   ],
   "latest": [
    {
+    "checks": 2,
+    "fired_at": "2026-11-24T15:43:16Z",
+    "fixture": "guidance/security/search-query",
+    "model": "claude-opus-5-5",
+    "run_id": "20261124T154316Z-65ef3b",
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_share": 1.0,
+    "without_skill": 2
+   },
+   {
+    "checks": 2,
+    "fired_at": "2026-11-24T15:43:16Z",
+    "fixture": "guidance/security/search-query",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261124T154316Z-65ef3b",
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_share": 1.0,
+    "without_skill": 2
+   },
+   {
     "checks": 3,
     "fired_at": "2026-11-24T15:39:41Z",
     "fixture": "guidance/name-becomes-scanner-data/bundle-lock-name",
@@ -7441,28 +7463,6 @@
     "with_skill": 8,
     "without_share": 0.5,
     "without_skill": 4
-   },
-   {
-    "checks": 2,
-    "fired_at": "2026-11-24T14:58:58Z",
-    "fixture": "guidance/security/search-query",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261124T145858Z-1ec3f8",
-    "with_share": 1.0,
-    "with_skill": 2,
-    "without_share": 1.0,
-    "without_skill": 2
-   },
-   {
-    "checks": 2,
-    "fired_at": "2026-11-24T14:58:58Z",
-    "fixture": "guidance/security/search-query",
-    "model": "claude-opus-5-5",
-    "run_id": "20261124T145858Z-1ec3f8",
-    "with_share": 1.0,
-    "with_skill": 2,
-    "without_share": 1.0,
-    "without_skill": 2
    },
    {
     "checks": 1,
@@ -9452,6 +9452,50 @@
    "tied": 53
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.331",
+    "cost_usd": 0.5219604,
+    "fired_at": "2026-11-24T15:43:16Z",
+    "fixture": "guidance/security/search-query",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T154316Z-65ef3b/guidance/security/20261124T154359Z/report.md",
+    "run_id": "20261124T154316Z-65ef3b",
+    "skill": "guidance/security",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 2
+   },
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.331",
+    "cost_usd": 0.22743860000000005,
+    "fired_at": "2026-11-24T15:43:16Z",
+    "fixture": "guidance/security/search-query",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T154316Z-65ef3b/guidance/security/20261124T154529Z/report.md",
+    "run_id": "20261124T154316Z-65ef3b",
+    "skill": "guidance/security",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 2
+   },
    {
     "account_week_after": null,
     "checks": 3,
@@ -41639,7 +41683,7 @@
   ]
  },
  "fires_without_results": {
-  "counted": 316,
+  "counted": 317,
   "rejected": 0,
   "since": "2026-11-10T15:52:11Z",
   "sweeps": [],
@@ -42456,7 +42500,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-24T15:46:28Z",
+  "generated_at": "2026-11-24T15:51:56Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -42532,7 +42576,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-24T15:45:11Z",
+ "generated_at": "2026-11-24T15:50:44Z",
  "guidance": {
   "removed": [
    {
@@ -48654,7 +48698,7 @@
        "high": 100.0,
        "low": -100.0,
        "model": "claude-opus-5-5",
-       "pairs": 1,
+       "pairs": 2,
        "status": "open",
        "task": "search-query",
        "votes": true
@@ -48664,7 +48708,7 @@
        "high": 100.0,
        "low": -100.0,
        "model": "claude-sonnet-5-5",
-       "pairs": 1,
+       "pairs": 2,
        "status": "open",
        "task": "search-query",
        "votes": true
@@ -48673,11 +48717,11 @@
      "helps": 0.0,
      "keep_family": 8,
      "keep_pairs": 0,
-     "max_pairs": 1,
+     "max_pairs": 2,
      "no_help": 0.0,
      "no_help_pairs": null
     },
-    "current_text_runs": 96,
+    "current_text_runs": 98,
     "decisions": [
      {
       "class": "insufficient",
@@ -49053,23 +49097,69 @@
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 0.5381142000000001,
+      "cost_usd": 1.0600746,
       "date": "2026-11-24",
       "model": "claude-opus-5-5",
       "reason": null,
-      "runs": 2
+      "runs": 4
      },
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 0.2297998,
+      "cost_usd": 0.45723840000000004,
       "date": "2026-11-24",
       "model": "claude-sonnet-5-5",
       "reason": null,
-      "runs": 2
+      "runs": 4
      }
     ],
     "runs": [
+     {
+      "at": "2026-11-24T15:45:29Z",
+      "cli_version": "2.1.331",
+      "fixture": "search-query",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.11253990000000001,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.11489870000000002,
+        "judge_mean": 9.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T154316Z-65ef3b/guidance/security/20261124T154529Z/report.md"
+     },
+     {
+      "at": "2026-11-24T15:43:59Z",
+      "cli_version": "2.1.331",
+      "fixture": "search-query",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.2739058,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.24805460000000001,
+        "judge_mean": 9.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261124T154316Z-65ef3b/guidance/security/20261124T154359Z/report.md"
+     },
      {
       "at": "2026-11-24T15:01:13Z",
       "cli_version": "2.1.331",
@@ -80642,7 +80732,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-24T15:41:18Z",
+ "newest_run": "2026-11-24T15:45:29Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -110940,7 +111030,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "4dcf6db1192f1e247303d1506da0d0a2f492fb5c",
-  "results_commit": "767f6145a1ee34f934078a59ba13110c7a9ce8e7"
+  "results_commit": "ccfbb4aff100032c67dcbd6481850306c72f9554"
  },
  "spend": {
   "generated_at": "2026-11-24T12:38:35Z",
