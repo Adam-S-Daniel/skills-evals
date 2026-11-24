@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RkSE5jvVHgWfC6oKEnrXyw",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RkSE5jvVHgWfC6oKEnrXyw",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RGK6XwgAWP33VB6FWs8jMF",
+      "name": "Bash",
+      "input": "git status --short | head; ls -R . 2><path> | grep -v '^./.git' | head -60; wc -c vendor/* docs/*",
+      "input_chars": 100,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RGK6XwgAWP33VB6FWs8jMF",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n441 vendor/RELEASES.md\n178 vendor/release...",
+      "output_chars": 344,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013M6nMBG4c9XNfuk2Z2o9mo",
+      "name": "Bash",
+      "input": "cat README.md AGENTS.md docs/vendor-tracking.md vendor/RELEASES.md vendor/releases.json hooks/warm-cache.sh; cat .gitmodules; git log --oneline | head",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013M6nMBG4c9XNfuk2Z2o9mo",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n# AGENTS.md\n\n- Each ExampleCLI release ...",
+      "output_chars": 1567,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WSCcnTfADboBMk6fY85Jdb",
+      "name": "Bash",
+      "input": "ls -la . .example-cli 2>&1 | head -30; cat .example-cli/settings.json 2>&1; git ls-files; grep -rn \"example-cli\\|ExampleCLI\" --exclude-dir=.git -l . 2><path> | head",
+      "input_chars": 167,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WSCcnTfADboBMk6fY85Jdb",
+      "is_error": false,
+      "output": ".:\ntotal 40\ndrwxr-xr-x  8 root root 4096 Nov 24 11:01 .\ndrwx------  7 root root 4096 Nov 24 11:01 ..\ncrw-rw-rw-  1 root root 1, 3 Nov 23 23:54 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov 23 23:54 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov 24 11:01 .claude\ndrwxr-xr-x  2 root root 4096 Nov 24 01:45 ....",
+      "output_chars": 1771,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YM641wQ8szYGFhMRJfHBRy",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re, json, sys\nws = sys.argv[1]\nsrc = open(f\"{ws}<path>\").read()\nsec = src.split(\"## v4.4.0\")[1]\nbullets = [l[2:] for l in sec.splitlines() if l.s...",
+      "input_chars": 4309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YM641wQ8szYGFhMRJfHBRy",
+      "is_error": false,
+      "output": "rc=0\n# ExampleCLI 4.4.0 honors SessionStart hook timeout: warm-cache.sh may exceed the 20s limit\n\nFound in the ExampleCLI 4.4.0 release review (tracking pull request: PR_LINK_PENDING). Not yet verified against this repo.\n\n## ExampleCLI change\n\n4.4.0 (published 2026-10-06T18:31Z):\n```text\n**hooks:** ...",
+      "output_chars": 3865,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WAN5665Ge6pRoqrYocKCeQ",
+      "name": "Bash",
+      "input": "sed -i 's/the ExampleCLI 4.4.0 release review/the ExampleCLI release review/' $TMPDIR/gen.py && sed -i 's/the SessionStart hook above would not be registered/the SessionStart hook in that file would n...",
+      "input_chars": 2360,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WAN5665Ge6pRoqrYocKCeQ",
+      "is_error": false,
+      "output": "issues/01-session-start-hook-timeout.md:3:Found in the ExampleCLI release review (tracking pull request: PR_LINK_PENDING). Not yet verified against this repo.\nissues/02-reject-unknown-config-keys.md:<redacted> in the ExampleCLI release review (tracking pull request: PR_LINK_PENDING). Not yet verifie...",
+      "output_chars": 811,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
