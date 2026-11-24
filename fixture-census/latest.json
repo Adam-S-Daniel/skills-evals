@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
-    "context_declared": 73,
+    "context_declared": 74,
     "context_missing": 105,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 178
+    "total": 179
   },
-  "generated_at": "2026-11-23T16:28:43Z",
+  "generated_at": "2026-11-24T16:21:29Z",
   "include_private_names": false,
   "paused_removed": [
     {
@@ -25,8 +25,8 @@
   "registries": [
     {
       "counts": {
-        "covered": 15,
-        "gap": 1,
+        "covered": 16,
+        "gap": 0,
         "skipped": 7,
         "total": 23
       },
@@ -125,11 +125,11 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 0,
+          "fixtures": 1,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "launch-top-level-claude-session",
-          "status": "gap"
+          "status": "covered"
         },
         {
           "bundle": "adam-coding-local",
@@ -362,8 +362,8 @@
   "schema": 2,
   "status": "complete",
   "totals": {
-    "covered": 25,
-    "gap": 3,
+    "covered": 26,
+    "gap": 2,
     "skipped": 10,
     "total": 38
   },

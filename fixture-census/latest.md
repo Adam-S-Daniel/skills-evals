@@ -2,11 +2,11 @@
 
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
-| adam-agentskills | 23 | 15 | 7 | 1 |
+| adam-agentskills | 23 | 16 | 7 | 0 |
 | cms-platform | 11 | 8 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 3 | 1 | 0 | 2 |
-| **Total** | 38 | 25 | 10 | 3 |
+| **Total** | 38 | 26 | 10 | 2 |
 
 ## adam-agentskills
 
@@ -23,7 +23,7 @@
 | adam-coding-anywhere | skills-doctor | covered | 5 |  |
 | adam-coding-anywhere | vendor-release-impact-issues | covered | 5 |  |
 | adam-coding-anywhere | workflow-path-audit | covered | 6 |  |
-| adam-coding-local | launch-top-level-claude-session | GAP | 0 |  |
+| adam-coding-local | launch-top-level-claude-session | covered | 1 |  |
 | adam-coding-local | migrate-claude-memory | skipped | 0 | rechecked 2026-11-05, holds on criterion 1 only: one recorded local use since 2026-09-14 (week of 2026-09-21). Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows |
 | adam-coding-local | sync-cc-settings-between-wsl-and-windows | skipped | 0 | rechecked 2026-11-18, holds: fails criterion 1 (no recorded local use since 2026-09-14; the 2026-11-18 local census, from 2026-09-28, still counts none) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply) |
 | adam-coding-local | tool-powershell | covered | 8 |  |
@@ -75,6 +75,6 @@ Fixtures whose skill is gone from its registry, kept by the eval scope pass. Not
 
 ## Fixture metadata readiness
 
-- Fixtures: 178; draft: 11.
-- Context declared: 73; missing: 105; guidance unproven: 0.
+- Fixtures: 179; draft: 11.
+- Context declared: 74; missing: 105; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
