@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GeAkafUTnkhoC63YZHiWB5",
+      "name": "Bash",
+      "input": "cat ship.sh; git status --short; git branch -a; tail -c 200 NOTES.md | od -c | tail -3",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GeAkafUTnkhoC63YZHiWB5",
+      "is_error": false,
+      "output": "#!<path> bash\n# Commit every tracked change and publish it to origin's feature branch.\n# The commit's chatter goes to .ship.log to keep the output short.\nmsg=${1:-\"Update release notes\"}\ngit -c core.hooksPath=hooks commit -q -a -m \"$msg\" >>.ship.log 2>&1\ngit push -q origin HEAD:feature\necho \"Shipped...",
+      "output_chars": 606,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BWPKccYKTSjR59TJE2fgC8",
+      "name": "Bash",
+      "input": "echo \"- 2.4: adds dark mode.\" >> NOTES.md; ls hooks; ./ship.sh; echo \"code $?\"; tail -5 .ship.log; git log --oneline -3; git ls-remote origin feature",
+      "input_chars": 149,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BWPKccYKTSjR59TJE2fgC8",
+      "is_error": true,
+      "output": "Exit code 128\npre-commit\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\nShipped to origin/feature.\ncode 0\nrelease-lint: VERSION is 2.3 but NOTES.md lists 2.4; refusin...",
+      "output_chars": 506,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
