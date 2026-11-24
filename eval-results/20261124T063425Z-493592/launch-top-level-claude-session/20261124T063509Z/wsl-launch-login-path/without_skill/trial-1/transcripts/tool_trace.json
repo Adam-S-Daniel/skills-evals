@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L4N8gfonwfoKy7gwLPYBNK",
+      "name": "Bash",
+      "input": "cd <path>; ls; ls bin; cat bin/*; ls repos/example-api repos/example-api/docs 2>&1",
+      "input_chars": 99,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L4N8gfonwfoKy7gwLPYBNK",
+      "is_error": false,
+      "output": "README.md\nbin\nrepos\nclaude\npwsh.exe\nwt.exe\n#!<path> bash\n# Fake Claude Code binary: resolvable on PATH, never launched by the fake wt.exe.\necho \"fake claude: $*\"\nexit 0\n#!<path> bash\n# Fake PowerShell 7, reached from WSL through Windows interop. The only thing\n# the launcher asks it is the Windows s...",
+      "output_chars": 1137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WgNsX8nSg6eoHyfuiu82ag",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; echo ----; cat repos/example-api/README.md; echo ----; cat repos/example-api/docs/notes.md",
+      "input_chars": 133,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WgNsX8nSg6eoHyfuiu82ag",
+      "is_error": false,
+      "output": "# workspace\n\nThis workspace is a WSL checkout area. Windows Terminal is reachable from the\nWSL shell as `wt.exe` and PowerShell 7 as `pwsh.exe` (Windows interop); both\nare on `PATH`, as is `claude`.\n\n| Path | What |\n| --- | --- |\n| `repos/example-api/` | the repository a new session should be rooted...",
+      "output_chars": 581,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CML1hL4CaQm2athMqDw7HT",
+      "name": "Bash",
+      "input": "cd <path>; export PATH=\"$PWD/bin:$PATH\"; echo \"distro=${WSL_DISTRO_NAME:-unset}\"; command -v claude wt.exe pwsh.exe wsl.exe; pwsh.exe -NoProfile -Command '(Get-Process -Id $PID).SessionId'; cat .wt-in...",
+      "input_chars": 262,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CML1hL4CaQm2athMqDw7HT",
+      "is_error": false,
+      "output": "distro=unset\n<path>\n<path>\n<path>\n1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc",
+      "output_chars": 260,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UbvAzgkMjxx5DyHQ44CXSg",
+      "name": "Bash",
+      "input": "cd <path>; export PATH=\"$PWD/bin:$PATH\"\nrepo=\"$PWD/repos/example-api\"; claude_bin=\"$(command -v claude)\"\nwt.exe -w 0 new-tab --title \"example-api\" wsl.exe --cd \"$repo\" --exec \"$claude_bin\" 'Triage iss...",
+      "input_chars": 309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UbvAzgkMjxx5DyHQ44CXSg",
+      "is_error": false,
+      "output": "exit=0\n--- invocation (argc=11) ---\narg: -w\narg: 0\narg: new-tab\narg: --title\narg: example-api\narg: wsl.exe\narg: --cd\narg: <path>\narg: --exec\narg: <path>\narg: Triage issue #5\\; it has evidence in docs/notes.md. Stand by.",
+      "output_chars": 282,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

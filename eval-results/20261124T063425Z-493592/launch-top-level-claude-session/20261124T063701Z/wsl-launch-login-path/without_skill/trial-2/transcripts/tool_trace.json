@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Sa4enDZqty8xgAWBrJiaZn",
+      "name": "Bash",
+      "input": "ls bin repos/example-api; head -50 bin/wt.exe bin/pwsh.exe; which claude",
+      "input_chars": 72,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Sa4enDZqty8xgAWBrJiaZn",
+      "is_error": false,
+      "output": "bin:\nclaude\npwsh.exe\nwt.exe\n\nrepos/example-api:\nREADME.md\ndocs\n==> bin/wt.exe <==\n#!<path> bash\n# Fake Windows Terminal launcher, as reached from WSL through Windows interop.\n#\n# The eval's hermetic stand-in for `wt.exe` (DESIGN.md, Class B): it opens no\n# window and runs nothing. It appends every i...",
+      "output_chars": 1033,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R6buP3F1c4t5VQPy1oYpn8",
+      "name": "Bash",
+      "input": "cat bin/claude; ls -a; ls repos/example-api/docs; wslpath -w repos/example-api 2>&1",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R6buP3F1c4t5VQPy1oYpn8",
+      "is_error": true,
+      "output": "Exit code 127\n#!<path> bash\n# Fake Claude Code binary: resolvable on PATH, never launched by the fake wt.exe.\necho \"fake claude: $*\"\nexit 0\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\nrepos\nnotes.md\n<path>:...",
+      "output_chars": 344,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014LsRcSCodyEyAS6wjkX2Go",
+      "name": "Bash",
+      "input": "echo \"distro=$WSL_DISTRO_NAME\"; pwsh.exe -NoProfile -Command '(Get-Process -Id $PID).SessionId' 2>&1; export PATH=\"$PWD/bin:$PATH\"; dir=\"$PWD/repos/example-api\"; wt.exe -w 0 new-tab --title \"example-a...",
+      "input_chars": 380,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014LsRcSCodyEyAS6wjkX2Go",
+      "is_error": false,
+      "output": "distro=\n1\nrc=0\n--- invocation (argc=11) ---\narg: -w\narg: 0\narg: new-tab\narg: --title\narg: example-api\narg: wsl.exe\narg: --cd\narg: <path>\narg: --exec\narg: claude\narg: Triage issue #5\\; it has evidence in docs/notes.md. Stand by.",
+      "output_chars": 262,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
