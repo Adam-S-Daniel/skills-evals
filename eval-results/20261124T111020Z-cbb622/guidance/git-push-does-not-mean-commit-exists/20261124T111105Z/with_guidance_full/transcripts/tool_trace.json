@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U9EdfzuwxETbqkTXKPEm6o",
+      "name": "Bash",
+      "input": "cat ship.sh; git status --short; git branch -a; git remote -v; tail -3 NOTES.md",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U9EdfzuwxETbqkTXKPEm6o",
+      "is_error": false,
+      "output": "#!<path> bash\n# Commit every tracked change on the current branch and publish the release\n# branch to origin.\nmsg=${1:-\"Update release notes\"}\ngit commit -q -a -m \"$msg\" || exit 1\ngit push -q origin release\necho \"Shipped to origin/release.\"\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n??...",
+      "output_chars": 439,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AppZsHEMDLXMjP7M4SirU1",
+      "name": "Bash",
+      "input": "git remote -v; git ls-remote origin 2>&1 | head; git log --oneline -3; tail -c 50 NOTES.md | od -c | tail -3",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AppZsHEMDLXMjP7M4SirU1",
+      "is_error": false,
+      "output": "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n52f9c61 seed\n0000040   1   :       e   x   p   o   r   t       t   o       C   S   V\n0000060   .  \\n\n0000062",
+      "output_chars": 289,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014q3dR48cbLwC1KKk3fEshj",
+      "name": "Bash",
+      "input": "echo \"- 3.2: scheduled reports.\" >> NOTES.md; tail -3 NOTES.md",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014q3dR48cbLwC1KKk3fEshj",
+      "is_error": false,
+      "output": "- 3.0: new dashboard.\n- 3.1: export to CSV.\n- 3.2: scheduled reports.",
+      "output_chars": 69,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
