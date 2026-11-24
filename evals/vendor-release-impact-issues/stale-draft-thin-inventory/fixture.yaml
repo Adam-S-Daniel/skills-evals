@@ -216,10 +216,11 @@ judge_rubric: >
 
 # In-place context (ADR 0012), added on 2026-11-15 by scripts/contextualize_fixtures.py:
 # the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+# Re-pinned on 2026-11-24 by scripts/repin_drifted_fixtures.py (context drift, evidence not in use).
 context:
   repository: Adam-S-Daniel/_agent-guidance
-  revision: acb23735bbb4c069dbeda19bbff4faf6ab42175d
-  guidance_revision: acb23735bbb4c069dbeda19bbff4faf6ab42175d
+  revision: 3b95a4348369616fa0506e81d7f452e317f77230
+  guidance_revision: 3b95a4348369616fa0506e81d7f452e317f77230
   budget:
     guidance_bytes: 33274
     skill_catalog_bytes: 8797
