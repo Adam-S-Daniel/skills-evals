@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JnrfJUj3dTDRyrYSUdkCFJ",
+      "name": "Skill",
+      "input": "adam-coding-local:launch-top-level-claude-session",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JnrfJUj3dTDRyrYSUdkCFJ",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:launch-top-level-claude-session",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F3tJs1V7KXW1ArME7npiWJ",
+      "name": "Bash",
+      "input": "ls; ls bin repos/example-api; S=<path>; ls $S; PATH=$PWD/bin:$PATH LAUNCH_WSL_CLAUDE_DRY_RUN=1 LAUNCH_CLAUDE_FORCE_SESSION0=0 bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage...",
+      "input_chars": 402,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F3tJs1V7KXW1ArME7npiWJ",
+      "is_error": false,
+      "output": "README.md\nbin\nrepos\nbin:\nclaude\npwsh.exe\nwt.exe\n\nrepos/example-api:\nREADME.md\ndocs\nlaunch-claude-session.ps1\nlaunch-session0-task.ps1\nlaunch-wsl-claude.ps1\nlaunch-wsl-claude.sh\n<path>\nwsl.exe\n-d\nUbuntu\n--cd\n<path>\n--\nenv\n-u\nCLAUDE_CODE_CHILD_SESSION\nCLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1\nPATH=<path...",
+      "output_chars": 1087,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QDWXgAHSXM14ixWUd6TUdf",
+      "name": "Bash",
+      "input": "S=<path>; PATH=$PWD/bin:$PATH bash $S/launch-wsl-claude.sh --dir $PWD/repos/example-api --prompt 'Triage issue #5; it has evidence in docs/notes.md. Stand by.'; echo \"exit=$?\"",
+      "input_chars": 322,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QDWXgAHSXM14ixWUd6TUdf",
+      "is_error": false,
+      "output": "Launched detached Claude (initial-prompt) in Ubuntu:/tmp/skills-evals-arm-me443gpb/ws/repos/example-api\nexit=0",
+      "output_chars": 110,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
