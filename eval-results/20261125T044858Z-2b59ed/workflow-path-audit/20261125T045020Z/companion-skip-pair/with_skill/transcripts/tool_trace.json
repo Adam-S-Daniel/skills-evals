@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y9nr5oSP8x11bsHY4i1C7e",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y9nr5oSP8x11bsHY4i1C7e",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LJahPBBSbQsUYqWJbEAYHN",
+      "name": "Bash",
+      "input": "ls .github/workflows .github/rulesets 2>&1; git status --short | head; grep -nE '^on:|paths|schedule:|workflow_dispatch:|pull_request|push:' .github/workflows/*.y*ml",
+      "input_chars": 165,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LJahPBBSbQsUYqWJbEAYHN",
+      "is_error": false,
+      "output": ".github/rulesets:\nmain.json\n\n.github/workflows:\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.github/workflows/docs-site.yml:3:on:\n.github/workflows/docs-site....",
+      "output_chars": 869,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UDAbuNvaT4odmaLAg6Dokw",
+      "name": "Bash",
+      "input": "cat .github/workflows/docs-site.yml .github/workflows/tests.yml .github/workflows/tests-skip.yml; cat .github/rulesets/main.json; ls; ls docs 2><path>; grep -n -i 'workflow' AGENTS.md README.md 2><pat...",
+      "input_chars": 215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UDAbuNvaT4odmaLAg6Dokw",
+      "is_error": false,
+      "output": "name: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n  contents: read\n\njobs:\n  build-docs...",
+      "output_chars": 2662,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AsENUC6SAA2xgRsej3XTCf",
+      "name": "Bash",
+      "input": "cat package.json; ls scripts bin test | head -30; grep -rn \"scripts/\\|bin/\" package.json test 2><path> | head; ls -a | grep -i -E 'babel|eslint|jest|mocha|tsconfig|nvmrc|vitest|\\.npmrc'",
+      "input_chars": 188,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AsENUC6SAA2xgRsej3XTCf",
+      "is_error": false,
+      "output": "{\n  \"name\": \"example-service\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"start\": \"node src/index.js\",\n    \"test\": \"node --test test/\"\n  }\n}\nbin:\ngh\n\nscripts:\nsweep-stale.sh\n\ntest:\nutil.test.js",
+      "output_chars": 237,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KmsGYBRWxukysoAKLgUYwZ",
+      "name": "Bash",
+      "input": "git rm -q .github/workflows/tests-skip.yml && cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so this\n# workflow has no `...",
+      "input_chars": 1862,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KmsGYBRWxukysoAKLgUYwZ",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
