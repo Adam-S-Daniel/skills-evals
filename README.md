@@ -212,7 +212,7 @@ scripts/
   build_rules.py           # writes docs/rules.md and docs/rules.json from the policy YAMLs
   check_rule_restatements.py  # fails on a rule value restated elsewhere that disagrees
   forecast_catch_up.py     # eval catch-up time and weekly keep-up cost, from the planner's own per-cell projection
-  automatic_spend.py       # scheduled and event-fired jobs (tasks, workflows, BOXY tasks) -> meter spend by category (evals/automatic-spend.yml)
+  automatic_spend.py       # scheduled and event-fired jobs (tasks, workflows, workstation tasks) -> meter spend by category (evals/automatic-spend.yml)
 docs/
   rules.md, rules.json     # the keep, remove, pause and re-check rules, generated from the policy YAMLs
   forecasts/               # dated catch-up forecasts: measured assumptions and the report each run produced

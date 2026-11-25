@@ -3,7 +3,7 @@
 # 2026-11-15: the forecast breaks non-eval spend down by these).
 #
 # The script discovers the jobs itself (scheduled tasks from list_triggers,
-# GitHub workflows from the fleet's checkouts, BOXY tasks from wsl-automation's
+# GitHub workflows from the fleet's checkouts, workstation tasks from wsl-automation's
 # register-tasks.ps1); this file only names the categories and the few facts
 # no source file states. Nothing here is a count or a cost.
 #

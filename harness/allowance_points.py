@@ -234,7 +234,7 @@ def estimate_blocks(blocks, legacy_usd_per_point=None, lock: Path | None = None,
 
 #: Who read a whole-percent weekly-meter value, as `usage_weights.reading_bounds`
 #: names them: the CLI's meter event (run_eval's snapshots) truncates, and the
-#: usage endpoint BOXY's collector stores (spend/meter-history.csv) rounds.
+#: usage endpoint the workstation's collector stores (spend/meter-history.csv) rounds.
 CLI = "cli"
 USAGE_ENDPOINT = "usage_endpoint"
 

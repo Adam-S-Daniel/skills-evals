@@ -12,7 +12,7 @@ now builds that inventory from sources, and
 ## Result
 
 217 automatic jobs: 17 scheduled tasks, 189 workflows on a schedule or event
-across the 16 fleet repos, and 11 BOXY scheduled tasks. Only 17 spend from the
+across the 16 fleet repos, and 11 workstation scheduled tasks. Only 17 spend from the
 subscription meter; 188 use GitHub Actions minutes alone, counted as $0.
 
 | Category | Meter $/wk | Points/wk | Biggest jobs |
@@ -22,8 +22,8 @@ subscription meter; 188 use GitHub Actions minutes alone, counted as $0.
 | Personal assistant tasks | 29 | 4.1 | another project's check-ins and briefs |
 | Improving and re-checking targets | 23 | 3.3 | daily eval scope review 7 × $2.90; hook block review; prompt audit |
 | Watching vendors and articles | 14 | 2.0 | changelog watcher 7 × $1.81 |
-| Centralizing targets and memories | 4.5 | 0.6 | cloud memory curation 1 × $4.54; BOXY memory curation unmeasured |
-| New targets from transcripts | 0 | 0 | the BOXY session miner runs no model; drafting a skill from a lesson runs inside the eval cap; public-gap drafting spends API dollars, unmeasured |
+| Centralizing targets and memories | 4.5 | 0.6 | cloud memory curation 1 × $4.54; workstation memory curation unmeasured |
+| New targets from transcripts | 0 | 0 | the workstation's session miner runs no model; drafting a skill from a lesson runs inside the eval cap; public-gap drafting spends API dollars, unmeasured |
 | **All automatic jobs** | **208** | **29.3** | |
 | Interactive threads and local sessions | | 31.1 | the measured 60.4 points a week less the automatic 29.3 |
 | **All non-eval use (measured)** | | **60.4** | |
@@ -75,8 +75,8 @@ Run: [`forecast-2026-11-15-automatic.json`](forecast-2026-11-15-automatic.json),
   `persistent/usage-events:spend/routine-fires.jsonl` (it names private tasks
   and session ids). 24 fires, Nov 9 to 15, topped up from `get_session` for
   this run.
-- **Unmeasured (6 jobs, add nothing):** BOXY memory curation (runs `claude -p`
-  on BOXY), the lockfile weekly check (a persistent session, no per-fire
+- **Unmeasured (6 jobs, add nothing):** workstation memory curation (runs `claude -p`
+  on the workstation), the lockfile weekly check (a persistent session, no per-fire
   cost), two media-discovery workflows and the public-gap drafter (Anthropic
   API dollars, not meter), and one twice-a-year personal task.
 
