@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-25T13:25:47Z",
+  "fetched_at": "2026-11-25T13:31:36Z",
   "issues": [
    {
     "created_at": "2026-11-24T02:19:55Z",
@@ -506,6 +506,18 @@
   ],
   "runs": [
    {
+    "conclusion": "success",
+    "created_at": "2026-11-25T13:25:40Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45623465464,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-25T13:27:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45623465464",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
     "conclusion": null,
     "created_at": "2026-11-25T12:59:42Z",
     "event": "workflow_run",
@@ -564,18 +576,6 @@
     "updated_at": "2026-11-25T13:25:49Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45623465733",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-25T13:25:40Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45623465464,
-    "state": "in_progress",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-25T13:25:44Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45623465464",
-    "workflow": "Refresh loop pull requests"
    },
    {
     "conclusion": "cancelled",
@@ -4082,7 +4082,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-11T13:25:47Z"
+  "since": "2026-11-11T13:31:36Z"
  },
  "agent_made": {
   "items": [
@@ -4867,7 +4867,7 @@
     "created": "2026-03-01T15:00:20Z",
     "id": "git-practices",
     "impact": {
-     "current_text_runs": 25,
+     "current_text_runs": 26,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -7471,6 +7471,17 @@
   ],
   "latest": [
    {
+    "checks": 2,
+    "fired_at": "2026-11-25T13:23:16Z",
+    "fixture": "guidance/git-practices/rebase-shared-branch",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261125T132316Z-9662bb",
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
+   {
     "checks": 1,
     "fired_at": "2026-11-25T13:19:43Z",
     "fixture": "guidance/git-practices/amend-published-commit-message",
@@ -7590,17 +7601,6 @@
     "with_skill": 10,
     "without_share": 0.6,
     "without_skill": 6
-   },
-   {
-    "checks": 2,
-    "fired_at": "2026-11-25T08:04:27Z",
-    "fixture": "guidance/git-practices/rebase-shared-branch",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261125T080427Z-a7d9db",
-    "with_share": 0.0,
-    "with_skill": 0,
-    "without_share": 0.0,
-    "without_skill": 0
    },
    {
     "checks": 4,
@@ -9568,6 +9568,28 @@
    "tied": 52
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.332",
+    "cost_usd": 0.18721480000000001,
+    "fired_at": "2026-11-25T13:23:16Z",
+    "fixture": "guidance/git-practices/rebase-shared-branch",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T132316Z-9662bb/guidance/git-practices/20261125T132407Z/report.md",
+    "run_id": "20261125T132316Z-9662bb",
+    "skill": "guidance/git-practices",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_judge": null,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
    {
     "account_week_after": null,
     "checks": 1,
@@ -45595,7 +45617,7 @@
     "origin_kind": "invented",
     "path": "evals/guidance/git-practices/rebase-shared-branch",
     "request": "https://github.com/Adam-S-Daniel/skills-evals/issues/849",
-    "runs": 1,
+    "runs": 2,
     "source": null,
     "subject": "guidance/git-practices",
     "waiting": null,
@@ -46121,7 +46143,7 @@
     "without_pass_rate": 0.9409722222222222
    }
   ],
-  "generated_at": "2026-11-25T13:24:37Z",
+  "generated_at": "2026-11-25T13:30:32Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -46207,7 +46229,7 @@
   "totals": {
    "cost_points": null,
    "cost_usd": null,
-   "fixture_runs": 347,
+   "fixture_runs": 348,
    "fixtures_invented": 49,
    "fixtures_real_work": 5,
    "prs_merged": 1,
@@ -46215,7 +46237,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-25T13:23:22Z",
+ "generated_at": "2026-11-25T13:29:29Z",
  "guidance": {
   "removed": [
    {
@@ -79325,7 +79347,7 @@
      "no_help": 0.0,
      "no_help_pairs": null
     },
-    "current_text_runs": 25,
+    "current_text_runs": 26,
     "decisions": [
      {
       "class": "cannot-discriminate",
@@ -79590,11 +79612,11 @@
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 0.41292870000000004,
+      "cost_usd": 0.6001435,
       "date": "2026-11-25",
       "model": "claude-sonnet-5-5",
       "reason": null,
-      "runs": 4
+      "runs": 6
      },
      {
       "class": "discarded",
@@ -79607,6 +79629,29 @@
      }
     ],
     "runs": [
+     {
+      "at": "2026-11-25T13:24:07Z",
+      "cli_version": "2.1.332",
+      "fixture": "rebase-shared-branch",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0939046,
+        "judge_mean": 6.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0933102,
+        "judge_mean": 5.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T132316Z-9662bb/guidance/git-practices/20261125T132407Z/report.md"
+     },
      {
       "at": "2026-11-25T13:20:28Z",
       "cli_version": "2.1.332",
@@ -86595,7 +86640,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-25T13:20:28Z",
+ "newest_run": "2026-11-25T13:24:07Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -118731,7 +118776,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-  "results_commit": "b0a3ddd0a842c8aa9fbd2a46cf2fde0134ad3b6d"
+  "results_commit": "586b5024fb593e599e8047d0954103781dc026f4"
  },
  "spend": {
   "generated_at": "2026-11-25T12:38:35Z",
