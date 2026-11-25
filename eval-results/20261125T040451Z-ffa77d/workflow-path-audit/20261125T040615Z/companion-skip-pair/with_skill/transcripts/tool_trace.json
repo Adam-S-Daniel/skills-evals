@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J2UThndDrNgmn4UNfFQLuk",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J2UThndDrNgmn4UNfFQLuk",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017jw1k8nr5NFypUzb2waimT",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 66,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017jw1k8nr5NFypUzb2waimT",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\ndocs\nmk...",
+      "output_chars": 413,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AvrW794M7aFANWbd4n549J",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml; do echo \"=== $f\"; cat $f; done; ls .github .github/rulesets 2><path>; cat package.json; ls bin scripts src test docs; ls AGENTS.md CLAUDE.md 2>&1 | head",
+      "input_chars": 189,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AvrW794M7aFANWbd4n549J",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 2833,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UPArDSUSy2QA2n4s7TX2Hc",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; grep -rn \"require\\|import\\|scripts\\|bin/\" src test | head -20; cat mkdocs.yml",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UPArDSUSy2QA2n4s7TX2Hc",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 1157,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E2vPKUEqYASx9NU1FQVpbC",
+      "name": "Bash",
+      "input": "git rm -q .github/workflows/tests-skip.yml && cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so\n# this workflow has no `...",
+      "input_chars": 1794,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E2vPKUEqYASx9NU1FQVpbC",
+      "is_error": false,
+      "output": "D  .github/workflows/tests-skip.yml\n M .github/workflows/tests.yml",
+      "output_chars": 66,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
