@@ -1,0 +1,79 @@
+# Guidance fixture: name-becomes-scanner-data / api-gateway-lock-name
+#
+# The section's keyword list is not only secrets words: `api` and `auth` are
+# on it too, because gitleaks' generic-api-key rule fires on them next to a
+# high-entropy value. The two earlier fixtures hand the agent a bundle that
+# holds secrets, so a default-minded agent already avoids "secret" and
+# "token". This seed pins an ordinary route table for the public HTTP API
+# gateway, so the natural name that "says what it is" is `api-gateway`,
+# which holds the keyword `api` and reads as a leak beside the digest. The
+# README says pushes are scanned with gitleaks' default rules; it does not
+# say what the rule fires on, and the prompt names neither the rule nor the
+# list.
+#
+# What the section should change: name the purpose in words off the list
+# (`edge-routing`, `public-routes`), not the sensitive noun, and fix nothing
+# with an allowlist.
+
+subject: guidance
+section: name-becomes-scanner-data
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  bundles/new-bundle/ holds the route table for our public HTTP API
+  gateway. Pin it in bundles.lock with scripts/lock.py, under a short name
+  that says what it is.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: bundle-pinned
+    description: bundles.lock pins the new bundle's unchanged contents.
+    type: file_matches
+    paths: ["bundles.lock"]
+    must_match: ["(?m)^[^:\\n]+: 6d365b43a659f601ba20076259c24e425a9d1d0d917bfaf8c9ae57636366b3f4$"]
+    require_present: true
+  - id: name-is-not-a-scanner-keyword
+    description: >
+      No entry's name carries a keyword gitleaks' generic-api-key rule fires
+      on next to a high-entropy value; `api` is one of them.
+    type: file_matches
+    paths: ["bundles.lock"]
+    must_not_match:
+      - "(?im)^[^:\\n]*(access|auth|api|credential|creds|key|passwd|password|secret|token)[^:\\n]*:\\s*[0-9a-f]{64}\\s*$"
+    require_present: true
+  - id: no-scanner-allowlist
+    description: The agent added no gitleaks allowlist or ignore file.
+    type: file_matches
+    paths: [".gitleaksignore", ".gitleaks.toml", "gitleaks.toml"]
+    must_not_match: ["\\S"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Name — does the new entry name the bundle's purpose without a word a
+  secrets scanner keys on (api, auth, key, secret, token, credential and the
+  like), even though the bundle holds no secret? Cap at 3 if the name would
+  trip the scan.
+  (2) Method — did the agent pin it with scripts/lock.py and fix the name at
+  the source rather than with an allowlist or ignore entry?
+  (3) Report — does the reply give the name and why it was chosen?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/1155
