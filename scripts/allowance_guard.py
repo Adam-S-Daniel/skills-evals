@@ -229,6 +229,20 @@ an `as_of` more than `LOOP_RESERVE_MAX_AGE` (3 days) old, refuses with a
 message naming the file and the fix: no hidden default. `pace_room` and the
 account stop are unchanged.
 
+Eval routine session (Adam, 2026-11-24: "Make this measured cost thing
+automated and dynamic"): the routine session that runs an eval has calls of
+its own that no trial summary records. A run priced from its own calls is
+charged, once per ingested run, `eval_routine.points_per_fire` / 100 from the
+same spend file: the median priced fire of the eval runner routine over the
+fire ledger's last 14 days (dashboard/build.py `eval_routine`, from
+scripts/automatic_spend.py `fire_points`), so the charge follows the measured
+fires with no number typed in. When the block is missing, malformed or older
+than `LOOP_RESERVE_MAX_AGE`, each such run is charged the configured
+`per_run_overrun` instead, and the state's `eval_routine_source` and
+`describe` say so: the fallback is named, never hidden. A run charged by its
+meter delta or its reservation already carries `per_run_overrun`, which
+covers the routine session, so it gets no second charge.
+
 Pace hold (Adam, 2026-11-20: "I am far ahead of usage pace", put "the
 kibosh on such runs"): the cap above is the loop's share of the week, but it
 was a floor, so with the whole account well ahead of pace the loop still
@@ -383,6 +397,10 @@ IMPROVE_WEEKLY_SHARE = 0.20
 LOOP_RESERVE_FILE = "spend/weekly.json"
 LOOP_RESERVE_MAX_AGE = timedelta(days=3)
 LOOP_RESERVE_MAX_BYTES = 64 * 1024
+#: The limits key `account` sets to the eval routine session's per-run charge
+#: (module docstring, "Eval routine session"); `run_cost` falls back to
+#: `per_run_overrun` without it.
+ROUTINE_CHARGE = "eval_routine_per_fire"
 # A refusal exits 3, apart from 1 (an unreadable spend, fail closed): the
 # weekly planner plans surplus fires at their historical cost, so the guard
 # refusing one at full reservation is the planned outcome (#524). The fire
@@ -457,9 +475,21 @@ def _own_points_cost(measured: list, limits: dict) -> float | None:
 def _invocation_cost(usage, limits: dict, measured: list = ()) -> float:
     """One run_eval invocation's charge from its run-level `usage` block and
     its trial summaries' `usage.measured` blocks."""
+    return _invocation_charge(usage, limits, measured)[0]
+
+
+def _invocation_charge(usage, limits: dict, measured: list = ()) -> tuple[float, bool]:
+    """(`_invocation_cost`, whether it was priced from the invocation's own
+    calls, so with no `per_run_overrun` in it)."""
     own = _own_points_cost(list(measured), limits)
     if own is not None:
-        return own
+        return own, True
+    return _fallback_cost(usage, limits), False
+
+
+def _fallback_cost(usage, limits: dict) -> float:
+    """An invocation's charge when its own calls cannot be priced: its
+    measured weekly delta plus `per_run_overrun`, or the reservation."""
     reserve = budget_file.run_reservation(limits)
     delta = usage.get("meter_delta") if isinstance(usage, dict) else None
     windows = delta.get("windows") if isinstance(delta, dict) else None
@@ -502,8 +532,20 @@ def run_cost(run_dir: Path, limits: dict) -> float:
         _add_invocation(blocks, usage)
     if not blocks:
         return reserve
-    return sum(_invocation_cost(usage, limits, measured)
-               for usage, measured in blocks.values())
+    return _with_routine(blocks, limits)
+
+
+def _with_routine(blocks: dict, limits: dict) -> float:
+    """The invocations' charges summed, plus the eval routine session's
+    per-run charge (`ROUTINE_CHARGE`, else `per_run_overrun`) once when every
+    invocation was priced from its own calls: otherwise some invocation
+    already carries `per_run_overrun`, which covers the session."""
+    charges = [_invocation_charge(usage, limits, measured)
+               for usage, measured in blocks.values()]
+    total = sum(cost for cost, _ in charges)
+    if all(own for _, own in charges):
+        total += limits.get(ROUTINE_CHARGE, limits["per_run_overrun"])
+    return total
 
 
 def _unmeasured(usage) -> bool:
@@ -529,8 +571,7 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
         _add_invocation(blocks, usage)
     if not blocks:
         return None
-    return sum(_invocation_cost(usage, limits, measured)
-               for usage, measured in blocks.values())
+    return _with_routine(blocks, limits)
 
 
 def run_points(run_dir: Path, legacy_usd_per_point, scale=1) -> dict | None:
@@ -1040,6 +1081,43 @@ def loop_reserve_fraction(tree: Path, now: datetime) -> float:
     return points / 100
 
 
+def eval_routine(tree: Path, now: datetime) -> tuple[dict | None, str]:
+    """(the spend file's `eval_routine` block, a one-line source) for the
+    routine session's per-run charge (module docstring, "Eval routine
+    session"). The block is None, and the line says why, when the file or
+    block is missing, malformed, older than `LOOP_RESERVE_MAX_AGE` or ahead
+    of the clock by over an hour.
+    Never raises: the loop reserve already refuses on a missing file."""
+    where = f"{LOOP_RESERVE_FILE} eval_routine"
+    path = tree / LOOP_RESERVE_FILE
+    try:
+        if path.is_symlink() or path.stat().st_size > LOOP_RESERVE_MAX_BYTES:
+            return None, f"{LOOP_RESERVE_FILE} is a symlink or too large"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None, f"{LOOP_RESERVE_FILE} is missing or unreadable"
+    block = doc.get("eval_routine") if isinstance(doc, dict) else None
+    if not isinstance(block, dict):
+        return None, f"{where} is missing"
+    points, fires, as_of = block.get("points_per_fire"), block.get("fires"), block.get("as_of")
+    if not _number(points) or points < 0 or isinstance(fires, bool) \
+            or not isinstance(fires, int) or fires < 1:
+        return None, f"{where} is malformed"
+    try:
+        if not isinstance(as_of, str) or not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", as_of):
+            raise ValueError
+        measured = datetime.strptime(as_of, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None, f"{where}.as_of is not a UTC timestamp"
+    if now - measured > LOOP_RESERVE_MAX_AGE:
+        return None, (f"{where} was measured {as_of}, more than "
+                      f"{LOOP_RESERVE_MAX_AGE.days} days ago")
+    if measured - now > timedelta(hours=1):
+        return None, f"{where}.as_of is ahead of the clock"
+    return block, f"measured: median of {fires} eval runner fire(s), as of {as_of}"
+
+
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
             since: datetime | None = None,
@@ -1081,7 +1159,8 @@ def account(tree: Path, limits: dict, now: datetime,
     module docstring, 2026-11-15), with `cap_configured` and `loop_reserve`
     kept beside it; `loop_reserve=False` (the dashboard page, which must still
     build when the file is stale) leaves the cap as configured and the
-    reserve 0.
+    reserve 0. `eval_routine_per_fire` and `eval_routine_source` are the
+    routine session's per-run charge and where it came from (`eval_routine`).
     `improve_fires`, one {mode, target, started} per successful improve fire
     of the window (`improve_details`; as many as `improve`'s count), lets each
     be matched to its cost record (`match_fires`, #577): a matched fire is
@@ -1127,6 +1206,11 @@ def account(tree: Path, limits: dict, now: datetime,
             raise GuardError("improve counts by kind are not non-negative integers")
         kinds.append({mode: given.get(mode, 0) for mode in IMPROVE_MODES})
     reserved = loop_reserve_fraction(tree, now) if loop_reserve else 0.0
+    routine, routine_source = eval_routine(tree, now)
+    per_fire = routine["points_per_fire"] / 100 if routine else limits["per_run_overrun"]
+    if routine is None:
+        routine_source = f"configured per_run_overrun, as a fallback: {routine_source}"
+    limits = {**limits, ROUTINE_CHARGE: per_fire}
     if since is None:
         since = window_start(now)
     runs = ingested_runs(tree, now, since)
@@ -1226,6 +1310,7 @@ def account(tree: Path, limits: dict, now: datetime,
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": max(0.0, limits["weekly_cap"] - reserved),
             "cap_configured": limits["weekly_cap"], "loop_reserve": reserved,
+            "eval_routine_per_fire": per_fire, "eval_routine_source": routine_source,
             "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
             "improve_fires": improve_7d + len(matched), "improve_charge": charge,
@@ -1356,6 +1441,10 @@ def describe(state: dict) -> str:
                f"{points(state['loop_reserve'])} reserved for the loop's automatic jobs; "
                if "cap_configured" in state else "")
             + "since the account's weekly reset, at most 7 days)")
+    if "eval_routine_source" in state:
+        line += (f"; each run priced from its own calls also charged "
+                 f"{state['eval_routine_per_fire'] * 100:.2f} points for its routine session "
+                 f"({state['eval_routine_source']})")
     if state.get("improve_fires"):
         line += (f"; {state['improve_fires']} improve fire(s) held at "
                  f"{points(state['improve_charge'])} points each")

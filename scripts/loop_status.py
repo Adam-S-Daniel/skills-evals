@@ -40,8 +40,13 @@ number, computed by their code, never recomputed here:
     (`calculation`: each open subject's pairs and points, the backlog, the
     capacity from the weekly cap down, the keep-up items, the room and the
     weeks). `collect` runs it at most every
-    `--forecast-every-minutes` from the newest `gates` artifact of
-    loop-pr-refresh.yml, the results branch and the account's meter history.
+    `--forecast-every-minutes` (15 by default since 2026-11-25, was 60:
+    Adam, "make the forecast update for all the factors more often"; it
+    costs no allowance) from the newest `gates` artifact of
+    loop-pr-refresh.yml, the results branch (fetched every
+    `--results-every-minutes`, with the loop jobs' reserve and the eval
+    routine session's measured cost in its spend file) and the account's
+    meter history.
     Its per-task rows need the scheduled tasks' fire ledger, which only the
     daily dashboard refresh holds, so they are listed only when the
     forecast's input carries them.
@@ -289,8 +294,9 @@ def forecast_block(doc) -> dict | None:
 def estimated_spend(tree: Path, limits: dict, now: datetime, since: datetime,
                     state: dict) -> dict:
     """What the loop has used since `since`, as fractions of the week:
-    `evals` (each ingested run's token-priced `run_points`, or the guard's
-    `run_cost` when it cannot be priced, never zero), `improve` (matched
+    `evals` (each ingested run's token-priced `run_points` plus its
+    routine session's measured charge, the guard's `eval_routine_per_fire`,
+    or the guard's `run_cost` when it cannot be priced, never zero), `improve` (matched
     improve fires at their measured charge), and `jobs` (the scheduled
     jobs' weekly reserve times the share of the week gone)."""
     legacy = limits.get(budget_file.LEGACY_RATE)
@@ -298,7 +304,8 @@ def estimated_spend(tree: Path, limits: dict, now: datetime, since: datetime,
     evals = 0.0
     for run_dir in guard.ingested_runs(tree, now, since):
         found = guard.run_points(run_dir, legacy, scale)
-        evals += found["points"] / 100 if found else guard.run_cost(run_dir, limits)
+        evals += (found["points"] / 100 + state.get(guard.ROUTINE_CHARGE, 0.0)) if found \
+            else guard.run_cost(run_dir, limits)
     gone = min(1.0, max(0.0, (now - since) / guard.WINDOW))
     jobs = state.get("loop_reserve", 0.0) * gone
     improve = state.get("improve_matched_cost", 0.0)
@@ -352,6 +359,8 @@ def status(tree: Path, limits: dict, now: datetime, state: dict | None,
             "eval_cap_points": points(state["cap"]),
             "room_points": points(guard.room(state)),
             "eval_runs": state["runs"], "fires": state["fires"],
+            "eval_routine_points_per_run": points(state.get(guard.ROUTINE_CHARGE)),
+            "eval_routine_source": state.get("eval_routine_source"),
         }
     doc["pace"] = pace_block(live, limits, "live") or doc["guard_pace"]
     return doc
@@ -544,7 +553,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None, **stand_ins
     p.add_argument("--week-at", default=None, help="when it was read (ISO)")
     p.add_argument("--week-resets", default=None, help="when that week resets (ISO)")
     p.add_argument("--results-every-minutes", type=float, default=10)
-    p.add_argument("--forecast-every-minutes", type=float, default=60)
+    p.add_argument("--forecast-every-minutes", type=float, default=15)
     p.add_argument("--claude-settings", type=Path, default=None,
                    help="collect: a Claude Code settings.json to set subagentPromptCacheTtl in")
     p.add_argument("--claude-projects", type=Path, default=None,

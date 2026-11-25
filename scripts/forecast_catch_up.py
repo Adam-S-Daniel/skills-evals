@@ -78,7 +78,10 @@ ASSUMPTION_KEYS = {
     "usd_per_point_high": (None, "high end of the same; default: as low"),
     "measured_usd_per_pair": (None, "mean run cost per pair over recent fires (cost_estimate.json); "
                                     "scales the verdict document's per-model costs to it"),
-    "fire_overhead_usd": (0.19, "routine session cost per eval fire, outside the run's own calls"),
+    "fire_overhead_usd": (0.19, "routine session cost per eval fire, outside the run's own calls; "
+                                "default: --results-tree spend/weekly.json `eval_routine` "
+                                "usd_per_fire (the median measured fire), else this figure, "
+                                "named as the fallback in assumption_sources"),
     "pairs_per_fire": (2.0, "pairs (one fixture x one model, both arms) one fire carries"),
     "api_credit_usd_per_week": (0.0, "extra eval dollars a week from the monthly API credit lane"),
     "new_hooks_per_week": (None, "git hooks added per week; default: arrivals/targets.json "
@@ -162,6 +165,25 @@ def merge_assumptions(given: dict, arrivals: dict) -> tuple[dict, dict]:
     sources = {k: "arrivals/targets.json" for k in arrivals}
     sources.update({k: "assumptions" for k in given})
     return merged, sources
+
+
+def fire_overhead(results_tree: Path, now: datetime, assumptions: dict, sources: dict) -> None:
+    """Fill `fire_overhead_usd`, unless given, from the results tree's
+    spend/weekly.json `eval_routine` (allowance_guard.eval_routine: the
+    median measured eval runner fire, at most LOOP_RESERVE_MAX_AGE old), and
+    record its source. Without a usable block the ASSUMPTION_KEYS default
+    stays, and the source names it as the fallback and says why."""
+    if "fire_overhead_usd" in assumptions:
+        return
+    routine, why = allowance_guard.eval_routine(results_tree, now)
+    usd = routine.get("usd_per_fire") if routine else None
+    if _number(usd) and usd >= 0:
+        assumptions["fire_overhead_usd"] = float(usd)
+        sources["fire_overhead_usd"] = f"spend/weekly.json eval_routine ({why})"
+        return
+    sources["fire_overhead_usd"] = (
+        f"fallback {ASSUMPTION_KEYS['fire_overhead_usd'][0]}: "
+        + (why if routine is None else "eval_routine has no usd_per_fire"))
 
 
 def _number(value) -> bool:
@@ -897,6 +919,7 @@ def main(argv: list | None = None) -> int:
         arrivals_doc = None
     from_arrivals = arrival_assumptions(arrivals_doc, now)
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
+    fire_overhead(args.results_tree, now, assumptions, sources)
     table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
     automatic = json.loads(args.automatic_spend.read_text(encoding="utf-8")) \
         if args.automatic_spend else None

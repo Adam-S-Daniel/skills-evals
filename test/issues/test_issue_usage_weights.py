@@ -358,9 +358,10 @@ class GuardChargeTests(TmpCase):
     def test_token_bearing_trial_blocks_are_charged_their_points_not_a_larger_delta(self):
         run = self.run_dir()
         self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.usage(block()))
-        # Measured cost, no overrun (Adam, 2026-11-25).
-        expected = points(block())["points"] / 100
-        self.assertLess(expected, 0.30)
+        # Measured cost (Adam, 2026-11-25) plus the routine session at its
+        # per_run_overrun fallback (no eval_routine block in the tree).
+        expected = points(block())["points"] / 100 + LIMITS["per_run_overrun"]
+        self.assertLess(expected, 0.30 + LIMITS["per_run_overrun"])
         self.assertAlmostEqual(self.spent(), expected, places=12)
 
     def test_a_max5x_budget_is_charged_twice_the_ultra_estimate(self):
@@ -368,15 +369,18 @@ class GuardChargeTests(TmpCase):
         self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.usage(block()))
         ultra = {**LIMITS, "legacy_usd_per_point": RATE, "allowance_scale": 1}
         max5x = {**ultra, "allowance_scale": budget.ALLOWANCE_SCALE["max5x"]}
-        self.assertAlmostEqual(self.spent(max5x), 2 * self.spent(ultra), places=12)
-        self.assertAlmostEqual(self.spent(ultra), points(block())["points"] / 100, places=12)
+        overrun = LIMITS["per_run_overrun"]
+        self.assertAlmostEqual(self.spent(max5x) - overrun, 2 * (self.spent(ultra) - overrun),
+                               places=12)
+        self.assertAlmostEqual(self.spent(ultra), points(block())["points"] / 100 + overrun,
+                               places=12)
 
     def test_an_arm_scope_block_is_not_counted_twice(self):
         run = self.run_dir()
         self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.usage(block()))
         self.summary(run, "k/20261019T100000Z/with_skill", self.usage(
             block(), scope="arm"))
-        expected = points(block())["points"] / 100
+        expected = points(block())["points"] / 100 + LIMITS["per_run_overrun"]
         self.assertAlmostEqual(self.spent(), expected, places=12)
 
     def test_an_unpriced_role_falls_back_to_the_meter_delta(self):
@@ -389,7 +393,8 @@ class GuardChargeTests(TmpCase):
         run = self.run_dir()
         self.summary(run, "k/20261019T100000Z/with_skill/trial-1", self.usage(
             {"calls": 1, "models": None, "cost_usd": 3.0}))
-        self.assertAlmostEqual(self.spent(), 3.0 / RATE / 100, places=12)
+        self.assertAlmostEqual(self.spent(), 3.0 / RATE / 100 + LIMITS["per_run_overrun"],
+                               places=12)
 
 
 class IngestCheckTests(unittest.TestCase):

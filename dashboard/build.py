@@ -1044,6 +1044,48 @@ def loop_jobs(inputs, config, workflows_root, now, ledger=None, window_days=14, 
     return {"as_of": iso(now), "points_per_week": points, "usd_per_week": usd}
 
 
+def eval_routine(inputs, config, workflows_root, now, ledger=None, window_days=14, tb=None):
+    """The `eval_routine` block of spend/weekly.json: what one fire of the eval runner routine
+    (lane `eval_cap`) costs in its own session, which no trial summary records. `points_per_fire`
+    is the median of its fires in the last `window_days` on its current model, each priced from
+    its token counts by type (scripts/automatic_spend.py `fire_points`; dollars at
+    `legacy_usd_per_point` when it has none), `usd_per_fire` the same fires' median dollars and
+    `fires` how many. scripts/allowance_guard.py charges it once per run priced from its own calls,
+    and scripts/forecast_catch_up.py takes `usd_per_fire` as its `fire_overhead_usd`. None (the
+    block is left out, and both say they fall back) with no breakdown or no such fire."""
+    import statistics
+    import automatic_spend
+    tb = tb or task_breakdown(inputs, config, workflows_root, now, ledger, window_days)
+    if not tb:
+        return None
+    doc, fires = tb
+    since = now - timedelta(days=window_days)
+    legacy, scale = legacy_usd_per_point(), budget_allowance_scale()
+    points, usd = [], []
+    for job in doc["jobs"]:
+        if job["kind"] != "scheduled task" or job["lane"] != "eval_cap":
+            continue
+        for row in fires:
+            at = parse(row.get("fired_at"))
+            if row.get("trigger_id") != job["id"] or at is None or not since <= at <= now:
+                continue
+            if job.get("model") and row.get("last_served_model") != job["model"]:
+                continue
+            priced = automatic_spend.fire_points(row, legacy, scale)
+            if priced is None:
+                continue
+            points.append(priced)
+            cost = automatic_spend._cost(row)
+            if cost is not None:
+                usd.append(cost)
+    if not points:
+        return None
+    block = {"as_of": iso(now), "points_per_fire": statistics.median(points), "fires": len(points)}
+    if usd:
+        block["usd_per_fire"] = statistics.median(usd)
+    return block
+
+
 # --- main ----------------------------------------------------------------------
 
 # Datasets the page reads only when they exist: build() never writes them.
@@ -1115,6 +1157,9 @@ def main(argv=None):
             jobs = loop_jobs(a.inputs, a.config, a.workflows_root, now, tb=tb)
             if jobs:
                 doc["loop_jobs"] = jobs
+            routine = eval_routine(a.inputs, a.config, a.workflows_root, now, tb=tb)
+            if routine:
+                doc["eval_routine"] = routine
             json.dump(doc, f, indent=1)
     print(" ".join(f"{k}={len(v)}" for k, v in out.items()))
 
