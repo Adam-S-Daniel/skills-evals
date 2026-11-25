@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MyPxceJonBzvrzmVxUYDeG",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows 2><path>; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 101,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MyPxceJonBzvrzmVxUYDeG",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml",
+      "output_chars": 263,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AKzZZLtSDsEqqhiWL7TxQh",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml; do echo \"=== $f\"; cat $f; done; ls -a; cat package.json; git ls-files | head -80",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AKzZZLtSDsEqqhiWL7TxQh",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 3439,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WAZ4QqWgKkVyzQNE85EnMD",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json mkdocs.yml; cat src/*.js test/*.js scripts/sweep-stale.sh; head -50 docs/*.md; cat README.md; git log --oneline | head",
+      "input_chars": 149,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WAZ4QqWgKkVyzQNE85EnMD",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 2704,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DMvrrhfBKgJwBE5FspmLxL",
+      "name": "Bash",
+      "input": "cat .gh/replay/repo-view.json; cat .gh/replay/api/repos/example-org/example-service/rulesets/4410273.json | head -60; ls .claude; cat .gitmodules",
+      "input_chars": 145,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DMvrrhfBKgJwBE5FspmLxL",
+      "is_error": true,
+      "output": "Exit code 1\n{\n  \"name\": \"example-service\",\n  \"nameWithOwner\": \"example-org/example-service\",\n  \"owner\": {\n    \"login\": \"example-org\"\n  },\n  \"defaultBranchRef\": {\n    \"name\": \"main\"\n  }\n}\n{\n  \"id\": 4410273,\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"source_type\": \"Repository\",\n  \"source\": \"example-or...",
+      "output_chars": 1013,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
