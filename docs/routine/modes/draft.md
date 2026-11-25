@@ -17,7 +17,7 @@ Limits for the whole mode: at most 12 nested agent runs and 60 minutes.
 On either limit, stop drafting and still push the record (step 6).
 
 Setup, in the skills-evals checkout:
-- python3 -m pip install --user pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
+- python3 -m pip install --user pyyaml==6.0.3 markdown-it-py==4.3.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 - Build the guard unset list at run time from scripts/local_eval_guard.py's
   refused_env_names, exactly as IMPROVE MODE does, and run every
   draft_new_skill.py command below with those names unset.

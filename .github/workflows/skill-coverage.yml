@@ -306,7 +306,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the offline verdict dependency
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
 
       - name: Compute the retirement verdicts
         id: verdicts
@@ -565,7 +565,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the offline verdict dependency
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
 
       - name: Detect and report regressions
         working-directory: skills-evals

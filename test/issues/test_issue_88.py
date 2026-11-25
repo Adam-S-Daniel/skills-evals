@@ -781,7 +781,7 @@ class ParsedCheckIntegration(CheckWorkspace):
                         if (name == "pip" and len(args) > 2
                                 and args[0] == "install"
                                 and args[1].split("==")[0] == "pyyaml"
-                                and args[2] == "markdown-it-py==4.2.0"):
+                                and args[2] == "markdown-it-py==4.3.0"):
                             installs.append(args)
                             self.assertEqual(args[1], "pyyaml==6.0.3")
                             self.assertIn("tree-sitter==0.26.0", args)
