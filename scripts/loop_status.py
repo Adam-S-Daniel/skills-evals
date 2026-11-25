@@ -25,9 +25,9 @@ number, computed by their code, never recomputed here:
     improve runs at their measured charge, and the loop's scheduled jobs
     (`loop_reserve`, spend/weekly.json `loop_jobs`) for the share of the
     week gone. `used_points` is what the guard books against the configured
-    cap: its `committed` (every run's `per_run_overrun` safety margin
-    included, never more than the account reading's `bound`, which holds
-    the whole account's use) plus the jobs' WHOLE week up front. The booked
+    cap: its `committed` (measured cost since 2026-11-25; before that with
+    every run's `per_run_overrun` safety margin; never more than the account
+    reading's `bound`, which holds the whole account's use) plus the jobs' WHOLE week up front. The booked
     figure is a guard's safe upper bound, not spend: on 2026-11-24 it read
     17.6 while the whole account had used 13% (Adam: "Loop spend is shown
     as higher than all usage"). Project threads are development, not loop

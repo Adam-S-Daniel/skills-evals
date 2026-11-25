@@ -657,8 +657,9 @@ class GuardTests(unittest.TestCase):
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "k/20261019T100000Z/with_skill/trial-1",
                      self.priced_usage(delta=0.30))
-        expected = self.points(self.token_block()) / 100 + 0.005
-        self.assertGreater(expected, 0.005)
+        # Measured cost, no overrun (Adam, 2026-11-25).
+        expected = self.points(self.token_block()) / 100
+        self.assertGreater(expected, 0.0)
         self.assertLess(expected, 0.30)
         self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
 
@@ -669,7 +670,7 @@ class GuardTests(unittest.TestCase):
             block["measured"]["scope"] = scope
             block["measured"]["started_at"] = rel
             self.summary(run, f"k/20261019T100000Z/{rel}", block)
-        expected = self.points(self.token_block()) / 100 + 0.005
+        expected = self.points(self.token_block()) / 100
         self.assertAlmostEqual(self.spent_of()["spent"], expected, places=12)
 
     def test_a_role_without_tokens_is_charged_its_dollars_at_the_legacy_rate(self):
@@ -678,7 +679,7 @@ class GuardTests(unittest.TestCase):
             {"calls": 1, "models": None, "cost_usd": 10.0}, delta=0.30))
         limits = {**LIMITS, "legacy_usd_per_point": 12.5}
         self.assertAlmostEqual(self.spent_of(limits)["spent"],
-                               10.0 / 12.5 / 100 + 0.005, places=12)
+                               10.0 / 12.5 / 100, places=12)
 
     def test_a_run_that_cannot_be_priced_keeps_the_meter_charge(self):
         cases = {
@@ -718,7 +719,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(state["runs"], 1)
         # The arm aggregate adds nothing; the two trials are each priced once.
         expected = (self.points(self.token_block())
-                    + self.points(self.token_block(output_tokens=200_000))) / 100 + 0.005
+                    + self.points(self.token_block(output_tokens=200_000))) / 100
         self.assertAlmostEqual(state["spent"], expected, places=12)
 
     def test_two_invocations_in_one_run_are_each_charged(self):

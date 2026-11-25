@@ -49,7 +49,10 @@ weekly_cap: 0.25
 # also cause; charging the run its own spend ended that.
 per_run_cap: 0.01
 
-# Added to every run's charge. The routine session that ran the eval has a
+# Added to a run's charge only when the run is charged by its meter delta or
+# its reservation; a run priced from its own calls' token counts is charged
+# that measured cost alone (Adam, 2026-11-25: "Count runs at their measured
+# cost"). Pending fires keep it. The routine session that ran the eval has a
 # cost no summary records: about $0.67 per fire (12 fires measured), which is
 # about 0.0003 at the rate below. It also covers each run's last call (agent
 # or judge), which the meter delta never includes: 0.180 points at p95 over

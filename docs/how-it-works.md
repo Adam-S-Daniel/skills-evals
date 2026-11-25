@@ -250,7 +250,7 @@ weekly allowance):
 |---|---|---|
 | `weekly_cap` | 0.25 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
-| `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
+| `per_run_overrun` | 0.0005 | added to every run charged by meter delta or reservation (not to a run priced from its own calls, since 2026-11-25): the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
 | `legacy_usd_per_point` | 12.35 | dollars per point, used only for calls recorded without token counts (summaries from before tokens were kept, a result with no `modelUsage`, a model the weight table does not price) and for improve cost records, which keep dollars only. Night 1 (2026-11-19) measured the eval mix at $17.15 a point on Opus 5.5 and $12.35 on Sonnet 5.5; this is the lower. It replaced `points_per_usd` (0.0015, $6.67 a point), which charged eval runs about 1.9 to 2.6 times their real use |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 | `stop_when_session_above` | not set | required on a plan with a 5-hour window, refused on one without (`claude_plan`): a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
@@ -278,7 +278,8 @@ Three layers enforce it:
    (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
    saving does not move it; a rolling seven days until 2026-10-26; a manual reset the owner pressed, listed in `MANUAL_RESETS`, starts it at that instant for the rest of its week): each ingested run on `persistent/eval-results` at its
    estimated points (its trial summaries' token counts by type, priced as
-   below) plus the overrun; at its measured weekly delta plus the overrun when
+   below), with no overrun since 2026-11-25 (Adam: "Count runs at their
+   measured cost"); at its measured weekly delta plus the overrun when
    some call of it has neither tokens nor dollars (the delta is the whole account's movement, so it charged
    each run every other thread's use: 116 points booked against about 23 real
    in the week to 2026-11-04); or at the full reservation,

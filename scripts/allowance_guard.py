@@ -25,7 +25,7 @@ one week's sanctioned push to the next):
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
     run id's timestamp falls in the window, each invocation charged its own
-    estimated points plus `per_run_overrun`: its trial summaries' token
+    estimated points (no `per_run_overrun` since 2026-11-25): its trial summaries' token
     counts by type priced with the weight table evals/usage-weights.lock pins
     (harness/allowance_points.py; since 2026-11-20, replacing dollars at a
     flat rate, which charged eval runs about twice their real use). A role
@@ -435,16 +435,23 @@ def _own_points_cost(measured: list, limits: dict) -> float | None:
     made: its trial summaries' `usage.measured` blocks priced from their
     token counts by type (harness/allowance_points.py, the table
     evals/usage-weights.lock pins; a role without token counts at
-    `legacy_usd_per_point`), as a fraction of the week, plus the overrun.
-    None when no trial block records a call, or some role has neither tokens
-    nor dollars: nothing of the run's own was priced."""
+    `legacy_usd_per_point`), as a fraction of the week, with no
+    `per_run_overrun`: every call is in those blocks, so the run is charged
+    its measured cost (Adam, 2026-11-25, approving "count runs at their
+    measured cost": the overrun on every invocation, capped at the whole
+    account's reading, had the guard booking 13 of an account's 13% and
+    allowing 7 runs where measured costs left room for about 11). The
+    routine session that ran the eval is not in the blocks; it is small
+    beside the runs (evals/budget.yml, `per_run_overrun`). None when no
+    trial block records a call, or some role has neither tokens nor
+    dollars: nothing of the run's own was priced."""
     estimate = allowance_points.estimate_blocks(
         measured, limits.get(budget_file.LEGACY_RATE),
         scale=budget_file.allowance_scale(limits))
     if estimate["unpriced_roles"] or not (estimate["roles_from_tokens"]
                                           or estimate["legacy_roles"]):
         return None
-    return estimate["points"] / 100 + limits["per_run_overrun"]
+    return estimate["points"] / 100
 
 
 def _invocation_cost(usage, limits: dict, measured: list = ()) -> float:
