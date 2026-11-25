@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0124Fn7BFPnPUqGZ41TVrshL",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0124Fn7BFPnPUqGZ41TVrshL",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LfvsPsYpJE28LW1zD2zFKy",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LfvsPsYpJE28LW1zD2zFKy",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml",
+      "output_chars": 263,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NsUfFettfG7VW3pHsUTifM",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; ls .github .github/rulesets 2><path>; cat package.json; ls scripts test src bin docs; ls AGENTS.md CLAUDE.md 2>&1",
+      "input_chars": 178,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NsUfFettfG7VW3pHsUTifM",
+      "is_error": true,
+      "output": "Exit code 2\n=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\np...",
+      "output_chars": 2845,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FHPVitsQyWL7xcPwyGu4SL",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat mkdocs.yml",
+      "input_chars": 46,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FHPVitsQyWL7xcPwyGu4SL",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 822,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K3anDWRkzSGQrtkTFPYpkz",
+      "name": "Bash",
+      "input": "git rm -q .github/workflows/tests-skip.yml && cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so\n# this workflow has no `...",
+      "input_chars": 1828,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K3anDWRkzSGQrtkTFPYpkz",
+      "is_error": false,
+      "output": "D  .github/workflows/tests-skip.yml\n M .github/workflows/tests.yml",
+      "output_chars": 66,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
