@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-25T14:21:10Z",
+  "fetched_at": "2026-11-25T14:35:18Z",
   "issues": [
    {
     "created_at": "2026-11-24T02:19:55Z",
@@ -507,6 +507,174 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635350052,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-25T14:34:59Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635350052",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:33:56Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635442438,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/guidance/git-practices/one-change-per-commit claude-sonnet-5-5",
+    "updated_at": "2026-11-25T14:34:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635442438",
+    "workflow": "Fire eval routine"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635350010,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-25T14:34:00Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635350010",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635349967,
+    "state": "completed",
+    "title": "Arm queued guidance improvements in the merge window",
+    "updated_at": "2026-11-25T14:33:41Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635349967",
+    "workflow": "Arm queued guidance improvements in the merge window"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635350012,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-25T14:33:39Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635350012",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635350089,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-25T14:33:35Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635350089",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-25T14:33:26Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635350036,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-25T14:33:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635350036",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-25T14:25:50Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45633959532,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-25T14:33:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45633959532",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:32:56Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635256914,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-25T14:33:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635256914",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:32:46Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45635227936,
+    "state": "completed",
+    "title": "Eval results 20261125T143025Z-32434a",
+    "updated_at": "2026-11-25T14:32:52Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45635227936",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:30:14Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45634755201,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/guidance/finding-your-unknowns/ci-watch-fleet-rule claude-sonnet-5-5",
+    "updated_at": "2026-11-25T14:30:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45634755201",
+    "workflow": "Fire eval routine"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-25T14:15:22Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45632055234,
+    "state": "queued",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-25T14:30:02Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45632055234",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T14:23:26Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45633516131,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-25T14:25:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45633516131",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T13:49:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45627564222,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-25T14:23:29Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45627564222",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-25T14:15:22Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -528,18 +696,6 @@
     "updated_at": "2026-11-25T14:16:03Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45632053895",
     "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-25T13:49:49Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45627564222,
-    "state": "in_progress",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-25T14:16:00Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45627564222",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "success",
@@ -576,18 +732,6 @@
     "updated_at": "2026-11-25T14:15:32Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45632055051",
     "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-25T14:15:22Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45632055234,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-25T14:15:23Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45632055234",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -1406,18 +1550,6 @@
     "workflow": "Follow drafted-skill fixtures"
    },
    {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-25T13:18:48Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622292142,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-25T13:21:54Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292142",
-    "workflow": "Weekly routine evals"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-25T13:21:25Z",
     "event": "workflow_run",
@@ -1443,18 +1575,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-25T13:18:48Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622292101,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-25T13:20:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292101",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-25T13:19:32Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -1467,42 +1587,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-25T13:18:48Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622292385,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-25T13:19:27Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292385",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:18:48Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622292391,
-    "state": "completed",
-    "title": "Arm queued guidance improvements in the merge window",
-    "updated_at": "2026-11-25T13:19:15Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292391",
-    "workflow": "Arm queued guidance improvements in the merge window"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:18:48Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622292392,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-25T13:18:59Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292392",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-25T13:18:49Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -1512,66 +1596,6 @@
     "updated_at": "2026-11-25T13:18:57Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622292603",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-25T13:10:52Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45620954050,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-25T13:18:50Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45620954050",
-    "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:18:22Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622219536,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-25T13:18:44Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622219536",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:18:13Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45622190157,
-    "state": "completed",
-    "title": "Eval results 20261125T131610Z-06c3b0",
-    "updated_at": "2026-11-25T13:18:18Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45622190157",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:16:01Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45621819203,
-    "state": "completed",
-    "title": "Fire eval routine: eval evals/guidance/finding-your-unknowns/ci-watch-fleet-rule claude-sonnet-5-5",
-    "updated_at": "2026-11-25T13:16:30Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45621819203",
-    "workflow": "Fire eval routine"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T13:08:17Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45620526500,
-    "state": "completed",
-    "title": "Routine eval watchdog",
-    "updated_at": "2026-11-25T13:10:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45620526500",
-    "workflow": "Routine eval watchdog"
    },
    {
     "conclusion": "success",
@@ -4190,7 +4214,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-11T14:21:10Z"
+  "since": "2026-11-11T14:35:18Z"
  },
  "agent_made": {
   "items": [
@@ -4949,7 +4973,7 @@
     "created": "2026-08-10T19:37:13Z",
     "id": "finding-your-unknowns",
     "impact": {
-     "current_text_runs": 47,
+     "current_text_runs": 48,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -7579,6 +7603,17 @@
   ],
   "latest": [
    {
+    "checks": 3,
+    "fired_at": "2026-11-25T14:30:25Z",
+    "fixture": "guidance/finding-your-unknowns/ci-watch-fleet-rule",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261125T143025Z-32434a",
+    "with_share": 1.0,
+    "with_skill": 3,
+    "without_share": 1.0,
+    "without_skill": 3
+   },
+   {
     "checks": 1,
     "fired_at": "2026-11-25T14:12:52Z",
     "fixture": "guidance/git-practices/amend-published-commit-message",
@@ -7599,17 +7634,6 @@
     "with_skill": 0,
     "without_share": 0.0,
     "without_skill": 0
-   },
-   {
-    "checks": 3,
-    "fired_at": "2026-11-25T14:05:43Z",
-    "fixture": "guidance/finding-your-unknowns/ci-watch-fleet-rule",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261125T140543Z-a38c9f",
-    "with_share": 1.0,
-    "with_skill": 3,
-    "without_share": 1.0,
-    "without_skill": 3
    },
    {
     "checks": 2,
@@ -9698,6 +9722,28 @@
    "tied": 52
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 3,
+    "cli": "2.1.332",
+    "cost_usd": 0.28903140000000005,
+    "fired_at": "2026-11-25T14:30:25Z",
+    "fixture": "guidance/finding-your-unknowns/ci-watch-fleet-rule",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md",
+    "run_id": "20261125T143025Z-32434a",
+    "skill": "guidance/finding-your-unknowns",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 3,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 3
+   },
    {
     "account_week_after": null,
     "checks": 1,
@@ -45581,7 +45627,7 @@
   ]
  },
  "fires_without_results": {
-  "counted": 375,
+  "counted": 378,
   "rejected": 0,
   "since": "2026-11-16T20:00:40Z",
   "sweeps": [],
@@ -45788,11 +45834,11 @@
     "origin_kind": "invented",
     "path": "evals/guidance/finding-your-unknowns/ci-watch-fleet-rule",
     "request": "https://github.com/Adam-S-Daniel/skills-evals/issues/857",
-    "runs": 11,
+    "runs": 12,
     "source": null,
     "subject": "guidance/finding-your-unknowns",
     "waiting": null,
-    "with_pass_rate": 0.9696969696969697,
+    "with_pass_rate": 0.9722222222222222,
     "without_pass_rate": 1.0
    },
    {
@@ -46398,7 +46444,7 @@
     "without_pass_rate": 0.9409722222222222
    }
   ],
-  "generated_at": "2026-11-25T14:20:21Z",
+  "generated_at": "2026-11-25T14:34:15Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -46484,7 +46530,7 @@
   "totals": {
    "cost_points": null,
    "cost_usd": null,
-   "fixture_runs": 354,
+   "fixture_runs": 355,
    "fixtures_invented": 49,
    "fixtures_real_work": 5,
    "prs_merged": 1,
@@ -46492,7 +46538,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-25T14:19:21Z",
+ "generated_at": "2026-11-25T14:33:14Z",
  "guidance": {
   "removed": [
    {
@@ -49664,10 +49710,10 @@
      "cells": [
       {
        "gain": 0.0,
-       "high": 48.3,
+       "high": 45.9,
        "low": -100.0,
        "model": "claude-sonnet-5-5",
-       "pairs": 4,
+       "pairs": 5,
        "status": "open",
        "task": "ci-watch-fleet-rule",
        "votes": true
@@ -49676,11 +49722,11 @@
      "helps": 0.0,
      "keep_family": 10,
      "keep_pairs": 0,
-     "max_pairs": 4,
+     "max_pairs": 5,
      "no_help": 0.0,
      "no_help_pairs": 0
     },
-    "current_text_runs": 47,
+    "current_text_runs": 48,
     "decisions": [
      {
       "class": "paused",
@@ -50031,14 +50077,37 @@
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 1.0669781,
+      "cost_usd": 1.3560095,
       "date": "2026-11-25",
       "model": "claude-sonnet-5-5",
       "reason": null,
-      "runs": 8
+      "runs": 10
      }
     ],
     "runs": [
+     {
+      "at": "2026-11-25T14:31:17Z",
+      "cli_version": "2.1.332",
+      "fixture": "ci-watch-fleet-rule",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.15010790000000004,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.1389235,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md"
+     },
      {
       "at": "2026-11-25T14:06:35Z",
       "cli_version": "2.1.332",
@@ -87062,7 +87131,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-25T14:13:40Z",
+ "newest_run": "2026-11-25T14:31:17Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -119198,7 +119267,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-  "results_commit": "5a5dfe663937925b3ca3c8ee77293b8f80057cd1"
+  "results_commit": "f7d6c2821e9342b002198551b8a352c2c0741781"
  },
  "spend": {
   "generated_at": "2026-11-25T12:38:35Z",
