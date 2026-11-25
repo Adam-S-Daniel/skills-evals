@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R1o4EgkQZ4bipNqiePP7Pa",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -5; git branch --show-current; git log origin/fix-retry..HEAD --oneline",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R1o4EgkQZ4bipNqiePP7Pa",
+      "is_error": true,
+      "output": "Exit code 128\n## master\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\nb86d0c4 seed\nmaster\nfatal: ambiguous argument 'origin/fix-retry..HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisi...",
+      "output_chars": 362,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W6qacUxoqdUYES6V2YoBKJ",
+      "name": "Bash",
+      "input": "git branch -a; git remote -v; git log --all --oneline | head",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W6qacUxoqdUYES6V2YoBKJ",
+      "is_error": false,
+      "output": "* master\nb86d0c4 seed",
+      "output_chars": 21,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
