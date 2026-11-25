@@ -560,12 +560,12 @@ await test('the data URL is built from the one DATA_REPO value', () => {
   eq(allowedDataUrl(DEFAULT_DATA_URL), DEFAULT_DATA_URL);
   eq(allowedDataUrl('https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals-x/main/x'), null);
 });
-await test('no source file but config.js names the owner/repo', () => {
+await test('no source file names the data owner/repo: config.js derives it from display.json', () => {
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
   const files = walk(path.join(EXPLORER, 'src')).concat(walk(path.join(EXPLORER, 'template')));
   ok(files.length > 10, 'found the source files');
   const naming = files.filter((f) => fs.readFileSync(f, 'utf8').includes(DATA_REPO)).map((f) => path.relative(EXPLORER, f));
-  eq(naming.join(','), path.join('src', 'config.js'));
+  eq(naming.join(','), '');
 });
 
 // --- the public bundle -------------------------------------------------------------
@@ -2113,8 +2113,11 @@ await test('display.json: a missing, empty or malformed repo list fails naming t
   throwsWith(() => validateDisplay({ time_zone: 'Europe/Berlin', issue_repos: ['a/b', 'a/b'] }, 'cfg/display.json'), '"issue_repos"', 'twice');
   throwsWith(() => validateDisplay([], 'cfg/display.json'), 'cfg/display.json', '"time_zone"', '"issue_repos"');
 });
+const TMP_DIRS = [];
+process.on('exit', () => { for (const d of TMP_DIRS) fs.rmSync(d, { recursive: true, force: true }); });
 const tmpDisplay = (obj) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'display-'));
+  TMP_DIRS.push(dir);
   const file = path.join(dir, 'display.json');
   fs.writeFileSync(file, typeof obj === 'string' ? obj : JSON.stringify(obj));
   return file;
@@ -2140,7 +2143,7 @@ await test('the build reads the zone from the config: a Tokyo build names Tokyo 
   const pub = (await bundleResult('public.js', MIN, file)).outputFiles[0].text;
   const priv = (await bundleResult('private.js', MIN, file)).outputFiles[0].text;
   ok(pub.includes('Asia/Tokyo') && !pub.includes('America/New_York'), 'the public bundle has the configured zone only');
-  ok(!pub.includes('zed/alpha'), 'the public bundle names no issue repo');
+  ok(pub.includes('zed/alpha') && !pub.includes('zed/beta'), 'the public bundle names the data repo and no other');
   ok(priv.includes('zed/alpha') && priv.includes('zed/beta') && !priv.includes('claude-memory-map'), 'the private bundle lists the configured repos');
 });
 async function zoneModules(zone) {
@@ -2207,6 +2210,7 @@ await test('datasets.json: the queries and sentences that name repos are written
   const out = applyIssueRepos(JSON.parse(JSON.stringify(cur)), ['zed/alpha', 'zed/beta', 'zed/gamma']);
   eq(out.merged_prs.source.args.query, 'is:merged repo:zed/alpha repo:zed/beta repo:zed/gamma');
   eq(out.open_prs.source.args.query, 'is:open repo:zed/alpha repo:zed/beta repo:zed/gamma');
+  eq(out.budget.request.args.repo + out.eval_ingests.source.args.repo + out.eval_ingests.source.args.owner, 'alphaalphazed', 'the data repo is the first entry');
   eq(out.open_issues.source.args.owner, 'zed');
   eq(out.open_issues.source.args.repo, 'alpha');
   ok(out.open_issues.description.includes('in alpha, beta and gamma (title and label rule'), out.open_issues.description);
@@ -2229,6 +2233,34 @@ await test('the open_issues loader reads each configured repo once and builds it
   eq(calls.join(','), d.issueRepos.slice(1).join(','), 'one call per other configured repo, none for the first');
   for (const r of rows) ok(r.url === 'https://github.com/' + d.issueRepos.find((x) => x.endsWith('/' + r.repo)) + '/issues/' + r.number, r.url);
   ok(new Set(rows.map((r) => r.repo)).size <= d.issueRepos.length);
+});
+await test('a local aside with noon or midnight instead of AM/PM is read as data and shown as the computed time, in both seasons', () => {
+  const winter = Date.parse('2026-01-15T00:00:00Z'), summer = Date.parse('2026-07-15T00:00:00Z');
+  eq(etSchedule('Mondays 17:00 UTC (noon ET)', winter), 'Mondays 12:00 PM ET');
+  eq(etSchedule('Mondays 17:00 UTC (noon ET)', summer), 'Mondays 1:00 PM ET', 'the data\'s noon is winter time; the page computes July');
+  eq(etSchedule('Daily 05:00 UTC (midnight ET), GitHub Actions', winter), 'Daily 12:00 AM ET, GitHub Actions');
+  eq(etSchedule('Daily 04:00 UTC (midnight ET)', summer), 'Daily 12:00 AM ET');
+});
+await test('display.json: a zone must look like an IANA name, and a repo name cannot be dots', () => {
+  for (const z of ['est', '+05:00', 'Europe', 'europe berlin']) throwsWith(() => validateDisplay({ time_zone: z, issue_repos: ['o/r'] }, 'f.json'), '"time_zone"', 'IANA');
+  for (const z of ['UTC', 'Asia/Tokyo', 'America/Argentina/Buenos_Aires']) validateDisplay({ time_zone: z, issue_repos: ['o/r'] }, 'f.json');
+  throwsWith(() => validateDisplay({ time_zone: 'UTC', issue_repos: ['o/..'] }, 'f.json'), '"issue_repos"', '"o/.."');
+});
+await test('the zone words for a zone whose offset crosses zero name the day for each season', async () => {
+  const azo = (await zoneModules('Atlantic/Azores')).zone;
+  eq(azo.utcDayStartWords(), '11 PM ' + azo.ZONE_ABBR + ' the evening before (12 AM during daylight saving time)');
+});
+await test('a browser without the shortGeneric zone label still loads: the label falls back to the short name', async () => {
+  const file = tmpDisplay({ time_zone: 'America/New_York', issue_repos: ['o/r'] });
+  const code = await bundleModule(path.join(EXPLORER, 'src', 'core', 'zone.js'), 'Z', file);
+  const Real = Intl;
+  function Limited(loc, o) {
+    if (o && o.timeZoneName === 'shortGeneric') throw new RangeError('Value ' + o.timeZoneName + ' out of range for Intl.DateTimeFormat options property timeZoneName');
+    return new Real.DateTimeFormat(loc, o);
+  }
+  const Z = vm.runInNewContext(code + ';Z', { Intl: { DateTimeFormat: Limited } });
+  eq(Z.ZONE_ABBR, 'EST', 'the short name of the winter probe');
+  eq(Z.utcDayStartWords(), '7 PM EST the evening before (8 PM during daylight saving time)');
 });
 /* The AST scan: src holds no zone and no repo of anyone's. */
 function stringLiteralsOf(file) {
@@ -2258,7 +2290,7 @@ await test('explorer/src names no IANA time zone and no repository from display.
     for (const [line, text] of stringLiteralsOf(file)) {
       const t = text.trim();
       if (IANA_SHAPE.test(t)) bad.push(rel + ':' + line + ' time zone ' + JSON.stringify(t));
-      if (rel !== path.join('src', 'config.js')) {
+      {
         for (const r of d.issueRepos) if (text.includes(r)) bad.push(rel + ':' + line + ' repo ' + r);
         for (const n of names) if (new RegExp('(^|[^A-Za-z0-9_.-])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9_.-])').test(text)) bad.push(rel + ':' + line + ' repo name ' + n);
       }
@@ -2268,6 +2300,7 @@ await test('explorer/src names no IANA time zone and no repository from display.
 });
 await test('the zone guard fails on the shapes it exists for', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-'));
+  TMP_DIRS.push(dir);
   const f = path.join(dir, 'x.js');
   fs.writeFileSync(f, "const a = 'America/New_York'; const b = `Europe/Berlin`; const c = 'not a zone/at all'; const d = 'UTC';");
   const lits = stringLiteralsOf(f).map((x) => x[1]).filter((t) => IANA_SHAPE.test(t.trim()));

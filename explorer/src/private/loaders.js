@@ -82,7 +82,7 @@ export function registerLoaders(dash) {
     },
   });
   dash.loader('open_issues', {
-    description: 'Open issues in each issue_repos repository (explorer/display.json), one row per issue; only the loop\'s',
+    description: 'Open issues in each issue_repos repository, one row per issue; only the loop\'s',
     fn: async ({ answer, call, args }) => {
       const parse = (x) => {
         const a = unwrap(x, 'issues');

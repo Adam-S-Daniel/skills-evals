@@ -7,7 +7,8 @@ const WINTER = Date.UTC(2026, 0, 12), SUMMER = Date.UTC(2026, 6, 13);
 /* An instant formatted in the display zone (or `zone`), with Intl options and locale (en-US unless given). */
 export const fmt = (ms, o, zone, locale) => new Intl.DateTimeFormat(locale || 'en-US', { timeZone: zone || TIME_ZONE, ...o }).format(new Date(ms));
 /* "ET": the locale's short name for the zone, the same all year (the part after the date). */
-export const ZONE_ABBR = fmt(WINTER, { timeZoneName: 'shortGeneric' }).split(', ').pop();
+const abbr = (style) => fmt(WINTER, { timeZoneName: style }).split(', ').pop();
+export const ZONE_ABBR = (() => { try { return abbr('shortGeneric'); } catch { return abbr('short'); } })();
 
 /* "7 PM", "5:30 AM" or "noon" of an instant in the zone. */
 const clock = (ms) => {
@@ -29,7 +30,7 @@ const paren = (words) => ' (' + words + ' during daylight saving time)';
 /* "7 PM ET the evening before (8 PM during daylight saving time)": when a UTC day starts. */
 export const utcDayStartWords = () => {
   const [s, d] = seasons(0);
-  return clock(s) + ' ' + ZONE_ABBR + before(s) + (d ? paren(clock(d) + before(d).slice(before(s).length)) : '');
+  return clock(s) + ' ' + ZONE_ABBR + before(s) + (d ? paren(clock(d)) : '');
 };
 
 /* "Monday at noon ET (1 PM during daylight saving time)": when a spend week starts (Monday 17:00 UTC). */

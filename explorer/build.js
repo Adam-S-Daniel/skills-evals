@@ -43,7 +43,7 @@ export function loadDisplay(file) {
 
 /* Serves explorer/display.json (or `file`, for a test) to every import of it.
    Only the private page lists issues, so the other bundles get the time zone
-   alone and carry no repository name. */
+   and the first repository (the one they read data from), not the rest. */
 function displayPlugin(file, keepRepos) {
   return {
     name: 'display-config',
@@ -52,7 +52,7 @@ function displayPlugin(file, keepRepos) {
         path.resolve(args.resolveDir, args.path) === DISPLAY_FILE ? { path: DISPLAY_FILE, namespace: 'display-config' } : undefined);
       b.onLoad({ filter: /.*/, namespace: 'display-config' }, () => {
         const d = loadDisplay(file);
-        return { contents: JSON.stringify(keepRepos ? { time_zone: d.timeZone, issue_repos: d.issueRepos } : { time_zone: d.timeZone }), loader: 'json' };
+        return { contents: JSON.stringify({ time_zone: d.timeZone, issue_repos: keepRepos ? d.issueRepos : d.issueRepos.slice(0, 1) }), loader: 'json' };
       });
     }
   };
@@ -196,6 +196,8 @@ export function applyIssueRepos(datasets, repos) {
     if (!datasets[id]) throw new Error('dashboard/page/datasets.json has no dataset "' + id + '", which build.js writes from issue_repos');
     fn(datasets[id]);
   };
+  set('budget', (d) => { d.request.args.owner = first[0]; d.request.args.repo = first[1]; });
+  set('eval_ingests', (d) => { d.source.args.owner = first[0]; d.source.args.repo = first[1]; });
   set('merged_prs', (d) => {
     d.source.args.query = 'is:merged ' + qualifiers;
     d.description = d.description.replace(/in the same [a-z0-9]+ repos/, 'in the same ' + same);

@@ -61,7 +61,7 @@ const BARE_UTC = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+|\b(?:(J
 /* A UTC clock time that already has a local time beside it, as the data words
    it: "06:53 UTC, GitHub Actions (1:53 AM ET)". The parenthesized time is data
    and is read only to find it; the page shows the time computed in its zone. */
-const UTC_WITH_LOCAL = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+)?(\d{1,2}):(\d{2}) UTC([^()]*)\(([^()]*\b[AP]M [A-Z]{2,5})\)/gi;
+const UTC_WITH_LOCAL = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+)?(\d{1,2}):(\d{2}) UTC([^()]*)\(([^()]*\b(?:[AP]M|noon|midnight) [A-Z]{2,5})\)/gi;
 /* The text of the clause before a match: since the last ; . or ( . */
 const clauseBefore = (whole, offset) => whole.slice(0, offset).split(/[;.(]/).pop();
 
