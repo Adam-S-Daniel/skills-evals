@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-25T09:23:27Z",
+  "fetched_at": "2026-11-25T09:27:25Z",
   "issues": [
    {
     "created_at": "2026-11-24T02:19:55Z",
@@ -485,6 +485,18 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-25T09:22:13Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45584737289,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-25T09:24:45Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45584737289",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-25T09:22:01Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -493,18 +505,6 @@
     "title": "Refresh loop pull requests",
     "updated_at": "2026-11-25T09:23:28Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45584706702",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-25T09:22:13Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45584737289,
-    "state": "in_progress",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-25T09:23:15Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45584737289",
     "workflow": "Refresh loop pull requests"
    },
    {
@@ -4096,7 +4096,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-11T09:23:27Z"
+  "since": "2026-11-11T09:27:25Z"
  },
  "agent_made": {
   "items": [
@@ -45486,7 +45486,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-25T09:22:45Z",
+  "generated_at": "2026-11-25T09:26:44Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -45580,7 +45580,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-25T09:22:05Z",
+ "generated_at": "2026-11-25T09:25:52Z",
  "guidance": {
   "removed": [
    {
@@ -117417,7 +117417,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "795bdf037d03aa427b0c4a2b0de22095b09244f1",
-  "results_commit": "9f2524d194c288117ade4482be971379a43b8427"
+  "results_commit": "2d4f93bdf9575aa39d33dafb776e7f081a2a6e5f"
  },
  "spend": {
   "generated_at": "2026-11-24T12:38:35Z",
