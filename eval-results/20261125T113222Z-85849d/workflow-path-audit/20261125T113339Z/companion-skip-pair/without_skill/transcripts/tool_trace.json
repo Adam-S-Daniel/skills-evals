@@ -1,0 +1,449 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V6hZAVHJmVm57idfVQcw1p",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && ls -la && ls .github/workflows && cat AGENTS.md 2><path> | head -100",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V6hZAVHJmVm57idfVQcw1p",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n6a3499f initial commit\ntotal 64\ndrwxr-xr-x 11 root root 4096 Nov 25 11:35 .\ndrwx------  6 root root 4096 Nov 25 11:35 ..\ncrw-rw-rw-  1 root root 1, 3 Nov 25 09:0...",
+      "output_chars": 1589,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013WAFKLpVdpFPY1Rg1gyxKf",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml; do echo \"=== $f\"; cat \"$f\"; done; echo; find .github .gh bin docs scripts src test -type f | sort; echo; cat README.md package.json mkdocs.yml .editorconfig; for f in...",
+      "input_chars": 284,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013WAFKLpVdpFPY1Rg1gyxKf",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.2KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths...",
+      "output_chars": 2258,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PddGV9mkaz2zjBdBFiVYtk",
+      "name": "Bash",
+      "input": "cat .github/workflows/tests.yml; find .github .gh bin docs scripts src test .claude -type f | xargs wc -c | sort -n",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PddGV9mkaz2zjBdBFiVYtk",
+      "is_error": false,
+      "output": "name: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json).\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/tests.yml\"\n\npermissions:\n  contents: read\n\njobs:\n ...",
+      "output_chars": 1310,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012Bv8T1HQfKiLiS87ohYxJ1",
+      "name": "Bash",
+      "input": "for f in README.md package.json package-lock.json mkdocs.yml src/* test/* docs/* scripts/* .github/rulesets/main.json .gh/replay/*.json .gh/replay/*.txt .gh/replay/api/repos/example-org/example-servic...",
+      "input_chars": 298,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012Bv8T1HQfKiLiS87ohYxJ1",
+      "is_error": false,
+      "output": "=== README.md\n# example-service\n\nA tiny HTTP service. The documentation site is built from `docs/`.\n\n- `npm start` runs it\n- `npm test` runs the unit tests\n\n=== package.json\n{\n  \"name\": \"example-service\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"start\": ...",
+      "output_chars": 8199,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VmkbPGDbrxgvUhp4ptPqG4",
+      "name": "Bash",
+      "input": "git branch -a; ls .claude; cat .claude/* 2><path> | head -50; which actionlint yamllint python3 node jq; python3 -c \"import yaml; print(yaml.__version__)\"",
+      "input_chars": 157,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VmkbPGDbrxgvUhp4ptPqG4",
+      "is_error": false,
+      "output": "* master\n<path>\n<path>\n<path>\n6.0.1",
+      "output_chars": 70,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G9wK5DPxkW9aPn69CrcH7R",
+      "name": "ToolSearch",
+      "input": "select:EnterWorktree",
+      "input_chars": 20,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G9wK5DPxkW9aPn69CrcH7R",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H1NkwMQkQiGakzCRt9efp3",
+      "name": "EnterWorktree",
+      "input": "{\"name\": \"fix-workflow-path-filters\"}",
+      "input_chars": 37,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H1NkwMQkQiGakzCRt9efp3",
+      "is_error": false,
+      "output": "Created worktree at \u201c<path>\u201d on branch \u201cworktree-fix-workflow-path-filters\u201d. The session is now working in the worktree. Use ExitWorktree to leave mid-session, or exit the session to be prompted.",
+      "output_chars": 266,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PENnG7t8knv4uAzGisiga5",
+      "name": "Bash",
+      "input": "npm view yaml time --json 2>&1 | tail -8",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PENnG7t8knv4uAzGisiga5",
+      "is_error": false,
+      "output": "{\n  \"error\": {\n    \"code\": \"E403\",\n    \"summary\": \"403 host is not on the allow list - GET https://registry.npmjs.org/yaml\",\n    \"detail\": \"In most cases, you or one of your dependencies are requesting\\na package version that is forbidden by your security policy, or\\non a server you do not have acce...",
+      "output_chars": 648,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VPChumpmwDEGNUYSwZ1pJX",
+      "name": "Agent",
+      "input": "Apply workflow path-filter fix",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012Ekf6H2atqhZzEAeZZCdZA",
+      "name": "Bash",
+      "input": "git status --short && ls -la && ls .github/workflows && cat .github/workflows/tests.yml && echo ---- && cat .github/workflows/tests-skip.yml && echo ---- && ls AGENTS.md 2><path>; echo \"agents-exists=...",
+      "input_chars": 206,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012Ekf6H2atqhZzEAeZZCdZA",
+      "is_error": false,
+      "output": "total 64\ndrwxr-xr-x 10 root root 4096 Nov 25 11:35 .\ndrwxr-xr-x  3 root root 4096 Nov 25 11:35 ..\ndrwxr-xr-x  3 root root 4096 Nov 25 11:35 .claude\n-rw-r--r--  1 root root  115 Nov 25 11:35 .editorconfig\ndrwxr-xr-x  3 root root 4096 Nov 25 11:35 .gh\n-rw-r--r--  1 root root   83 Nov 25 11:35 .git\ndrw...",
+      "output_chars": 2083,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NokZtmQfUfknwxTydUZaGa",
+      "name": "Bash",
+      "input": "git rm .github/workflows/tests-skip.yml",
+      "input_chars": 39,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016YQ5gkugu4aGvhCsgoyiCA",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 105,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NokZtmQfUfknwxTydUZaGa",
+      "is_error": true,
+      "output": "Exit code 128\nfatal: git rm: '.github/workflows/tests-skip.yml': Read-only file system\nrm '.github/workflows/tests-skip.yml'",
+      "output_chars": 124,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016YQ5gkugu4aGvhCsgoyiCA",
+      "is_error": false,
+      "output": "1\tname: Tests\n2\t\n3\t# `unit-tests` is a required status check (.github/rulesets/main.json).\n4\ton:\n5\t  pull_request:\n6\t    branches: [main]\n7\t    paths:\n8\t      - \"src/**\"\n9\t      - \"test/**\"\n10\t      - \"package.json\"\n11\t      - \"package-lock.json\"\n12\t      - \".github/workflows/tests.yml\"\n13\t\n14\tpermi...",
+      "output_chars": 676,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018xSsRWpzwYXXzc4TiHH1Fo",
+      "name": "Bash",
+      "input": "ls -la .github/workflows/ && git status --short; echo \"status-exit=$?\"; cat .git; ls -la \"$(cat .git | sed 's/^gitdir: //')\" | head -30",
+      "input_chars": 135,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018xSsRWpzwYXXzc4TiHH1Fo",
+      "is_error": true,
+      "output": "This session is isolated in the worktree <path>, but this command names git in a form too complex to verify that it stays inside the worktree. Refusing to run it \u2014 a worktree-isolated session's git operations must target its own worktree. Split it into plain, separate commands and run them from <pat...",
+      "output_chars": 445,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VTK2jCrisgKRPrT59WWDh9",
+      "name": "Bash",
+      "input": "ls -la .github/workflows/",
+      "input_chars": 25,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019eYhaPNtDbRBLvpi5KZfth",
+      "name": "Bash",
+      "input": "git status --short",
+      "input_chars": 18,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019eYhaPNtDbRBLvpi5KZfth",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VTK2jCrisgKRPrT59WWDh9",
+      "is_error": false,
+      "output": "total 24\ndrwxr-xr-x 2 root root 4096 Nov 25 11:35 .\ndrwxr-xr-x 4 root root 4096 Nov 25 11:35 ..\n-rw-r--r-- 1 root root  669 Nov 25 11:35 docs-site.yml\n-rw-r--r-- 1 root root  365 Nov 25 11:35 nightly-sweep.yml\n-rw-r--r-- 1 root root  597 Nov 25 11:35 tests-skip.yml\n-rw-r--r-- 1 root root  601 Nov 25...",
+      "output_chars": 316,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018BLDSScGRTAC6KtVmNn6Rm",
+      "name": "Bash",
+      "input": "git rm .github/workflows/tests-skip.yml",
+      "input_chars": 39,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018BLDSScGRTAC6KtVmNn6Rm",
+      "is_error": true,
+      "output": "Exit code 128\nfatal: git rm: '.github/workflows/tests-skip.yml': Read-only file system\nrm '.github/workflows/tests-skip.yml'",
+      "output_chars": 124,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012MdQjQF8hJRqcrFxbnTKZe",
+      "name": "Bash",
+      "input": "rm .github/workflows/tests-skip.yml && ls .github/workflows/",
+      "input_chars": 60,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HECSL2qo5rvdAdEv3Cp4mZ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 105,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011CrJsWrKahuXgePoBCpMBr",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 87,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019hmKmBabSKpeKBdj2F9Cyi",
+      "name": "Bash",
+      "input": "git status --short; echo \"---\"; python3 -I -c \"import yaml,sys,pathlib; [yaml.safe_load(p.read_text()) for p in pathlib.Path('.github/workflows').glob('*.yml')]; print('ok', sorted(p.name for p in pat...",
+      "input_chars": 247,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012MdQjQF8hJRqcrFxbnTKZe",
+      "is_error": true,
+      "output": "Exit code 1\nrm: cannot remove '.github/workflows/tests-skip.yml': Read-only file system",
+      "output_chars": 87,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HECSL2qo5rvdAdEv3Cp4mZ",
+      "is_error": true,
+      "output": "<tool_use_error>File is in a directory that is denied by your permission settings.</tool_use_error>",
+      "output_chars": 99,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011CrJsWrKahuXgePoBCpMBr",
+      "is_error": true,
+      "output": "<tool_use_error>File is in a directory that is denied by your permission settings.</tool_use_error>",
+      "output_chars": 99,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019hmKmBabSKpeKBdj2F9Cyi",
+      "is_error": false,
+      "output": "---\nok ['docs-site.yml', 'nightly-sweep.yml', 'tests-skip.yml', 'tests.yml']",
+      "output_chars": 76,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012UNMyNJp4ULe5rZosHsJoi",
+      "name": "Bash",
+      "input": "touch AGENTS.md 2>&1; echo \"touch-root=$?\"; touch .github/workflows/tests.yml 2>&1; echo \"touch-wf=$?\"; ls -la AGENTS.md 2>&1",
+      "input_chars": 125,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012UNMyNJp4ULe5rZosHsJoi",
+      "is_error": true,
+      "output": "Permission to use Bash with command touch AGENTS.md 2>&1; echo \"touch-root=$?\"; touch .github/workflows/tests.yml 2>&1; echo \"touch-wf=$?\"; ls -la AGENTS.md 2>&1 has been denied.",
+      "output_chars": 178,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017Ah31BfqDRBUGiZuVjCRuu",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"BLOCKED. None of the three edits landed. The worktree is effectively read-only for this session, and the tree is unchanged.\\n\\nWhat I tried, in order:\\n1. `git rm .github/workflows/tests-...",
+      "input_chars": 2294,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017Ah31BfqDRBUGiZuVjCRuu",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VPChumpmwDEGNUYSwZ1pJX",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a36c9141781d6cf44\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a36c9141781d6cf44 (use SendMessage with to: 'a36c9141781d6cf44', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QhcmdtwM8um3dMWEmuVwDw",
+      "name": "Bash",
+      "input": "git status --short; git log --oneline -1; ls .github/workflows; test -e AGENTS.md && echo AGENTS_EXISTS || echo no-AGENTS",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QhcmdtwM8um3dMWEmuVwDw",
+      "is_error": false,
+      "output": "6a3499f initial commit\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml\nno-AGENTS",
+      "output_chars": 89,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
