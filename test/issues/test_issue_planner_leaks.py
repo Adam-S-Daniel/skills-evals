@@ -342,7 +342,7 @@ class GuidanceParserTests(unittest.TestCase):
                 for s in job.get("steps", [])]
         at = next(i for i, r in enumerate(runs) if "plan_week.py guidance-headroom" in r)
         installs = " ".join(r for r in runs[:at] if "pip install" in r).split()
-        self.assertIn("markdown-it-py==4.2.0", installs)
+        self.assertIn("markdown-it-py==4.3.0", installs)
 
     def test_the_plan_job_installs_the_parser_before_planning(self):
         doc = yaml.safe_load((ROOT / ".github" / "workflows" / "routine-eval-weekly.yml")
@@ -352,7 +352,7 @@ class GuidanceParserTests(unittest.TestCase):
         plan_at = next(i for i, r in enumerate(runs) if "scripts/plan_week.py plan" in r)
         installs = [i for i, r in enumerate(runs[:plan_at]) if "pip install" in r]
         self.assertTrue(installs)
-        self.assertIn("markdown-it-py==4.2.0", " ".join(runs[i] for i in installs).split())
+        self.assertIn("markdown-it-py==4.3.0", " ".join(runs[i] for i in installs).split())
         self.assertIn("--guidance", runs[plan_at])
 
 

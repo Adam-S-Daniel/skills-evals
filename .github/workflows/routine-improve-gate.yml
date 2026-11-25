@@ -220,7 +220,7 @@ jobs:
       # adam-agentskills' scripts/check_one_way_doors.py imports it when a
       # name is lost; the version adam-agentskills' requirements-dev.txt pins.
       - name: Install the one-way-door check's other dependency
-        run: python3 -m pip install markdown-it-py==4.2.0
+        run: python3 -m pip install markdown-it-py==4.3.0
 
       # The same validator, on the sha `validate` judged: this job stages its
       # own copy of the files instead of trusting an artifact, and fails if

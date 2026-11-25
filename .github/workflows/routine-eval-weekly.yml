@@ -124,7 +124,7 @@ jobs:
       # incomplete", so kept sections were fired for nothing (2026-11-08).
       # plan_week.py now refuses to plan without it.
       - name: Install PyYAML and markdown-it-py
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
       - name: Check out persistent/eval-results (the ingested runs)
         uses: actions/checkout@v7.0.1
         with:
@@ -339,7 +339,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install the pins regression_issue.py's imports need
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
       - name: Download the issue-routed work items
         uses: actions/download-artifact@v8.0.2
         with:
