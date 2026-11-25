@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S86EAGBAHtZN3u1qFBVsCL",
+      "name": "Bash",
+      "input": "git log --oneline | head; git status --short; find . -path ./.git -prune -o -type f -print | head -50; cat scripts/retry.sh; cat CHANGELOG.md",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S86EAGBAHtZN3u1qFBVsCL",
+      "is_error": false,
+      "output": "7606521 initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 1486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014WrJxsZG6wg8gnyf6BQLgH",
+      "name": "Bash",
+      "input": "cat README.md; ls -la .idea .vscode",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014WrJxsZG6wg8gnyf6BQLgH",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\ncrw-rw-rw- 1 root root 1, 3 Nov 24 23:44 .idea\ncrw-rw-rw- 1 root root 1, 3 Nov 24 23:44 .vscode",
+      "output_chars": 275,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Mm4VfGqiC6nAp5nS5pswUf",
+      "name": "Bash",
+      "input": "mkdir -p docs/decisions && cat > docs/decisions/0001-retry-policy.md <<'EOF'\n# 0001: Retry policy for transient upstream failures\n\n- Status: Accepted\n- Implemented in: `scripts/retry.sh` (PR #41, afte...",
+      "input_chars": 1702,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Mm4VfGqiC6nAp5nS5pswUf",
+      "is_error": false,
+      "output": "ok\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# Policy: at most 5 attempts, exponential backoff (1s, 2s, 4s, 8s, 16s).\n# Rationale and rejected alternatives: docs/decisions/0001-retry-policy.md\nset -euo pipefail\n\nmax_attempts=5\n M scripts/retry.sh\n...",
+      "output_chars": 314,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
