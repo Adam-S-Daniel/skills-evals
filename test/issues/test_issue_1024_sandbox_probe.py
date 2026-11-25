@@ -132,13 +132,52 @@ class SandboxProbeTests(unittest.TestCase):
         self.assertEqual(out["error"], "sandbox_unavailable", out)
         self.assertIn("inconclusive", out["detail"])
         self.assertNotIn("not enforcing", out["detail"])
-        self.assertEqual(len(self.calls()), 2)  # tried, retried once, no arm
+        # Tried, retried twice, no arm; the detail says how often.
+        self.assertEqual(len(self.calls()), run_eval._SANDBOX_PROBE_ATTEMPTS)
+        self.assertEqual(run_eval._SANDBOX_PROBE_ATTEMPTS, 3)
+        self.assertIn("(all 3 tries)", out["detail"])
 
     def test_a_probe_whose_command_never_ran_fails_closed(self):
         self.use_cli("skip")
         out = run_eval.run_agent(self.ws, "do it", self.arm())
         self.assertEqual(out["error"], "sandbox_unavailable", out)
         self.assertIn("inconclusive", out["detail"])
+        self.assertIn("the model made no Bash call", out["detail"])
+
+    def test_an_inconclusive_probe_says_why_in_the_clis_terms(self):
+        # A routine run lost a model's arms to two inconclusive probes with no
+        # word on why (skills-evals routine run 20261125T020222Z-59af29).
+        cmd = "cat /x 2>&1; echo probe-ran-3"
+        def run(*events, result=None):
+            tail = [result or {"type": "result", "is_error": False,
+                               "subtype": "success"}]
+            return run_eval._probe_unproven_reason(
+                [*events, *tail], cmd, *run_eval._probe_outcomes([*events, *tail], cmd))
+        def bash(command, id_="t1"):
+            return {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": id_, "name": "Bash",
+                 "input": {"command": command}}]}}
+        self.assertIn("not a JSON event list",
+                      run_eval._probe_unproven_reason(None, cmd, [], []))
+        self.assertIn("no result event",
+                      run_eval._probe_unproven_reason([], cmd, [], []))
+        self.assertIn("error (subtype error_max_turns)", run(result={
+            "type": "result", "is_error": True, "subtype": "error_max_turns"}))
+        self.assertIn("1 tool call(s) were denied permission", run(bash(cmd), result={
+            "type": "result", "is_error": False, "subtype": "success",
+            "permission_denials": [{"tool_name": "Bash"}]}))
+        self.assertEqual(run(), "the model made no Bash call")
+        self.assertIn("none with the exact probe command", run(bash("cat /x")))
+        self.assertIn("lacked the marker", run(bash(cmd), {
+            "type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "hi"}]}}))
+
+    def test_tries_that_fail_differently_are_each_reported(self):
+        answers = iter([("unproven", "a"), ("unproven", "b"), ("unproven", "b")])
+        with mock.patch.object(run_eval, "_probe_once",
+                               side_effect=lambda *a, **k: next(answers)):
+            self.assertEqual(run_eval.probe_arm_sandbox(),
+                             "try 1: a | try 2: b | try 3: b")
 
     def test_a_probe_timeout_fails_closed(self):
         self.use_cli("deny")
@@ -165,7 +204,7 @@ class SandboxProbeTests(unittest.TestCase):
                 self.assertEqual(out["error"], "sandbox_unavailable", out)
                 self.assertIn("inconclusive", out["detail"])
 
-    def test_an_inconclusive_probe_is_retried_once(self):
+    def test_an_inconclusive_probe_is_retried(self):
         self.use_cli("once_skip")
         out = run_eval.run_agent(self.ws, "do it", self.arm())
         self.assertNotIn("error", out, out)

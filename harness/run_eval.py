@@ -2268,7 +2268,9 @@ _SANDBOX_PROBE_VERDICT: str | None = None
 # Set by `main()` when the test-only skip variable was honored.
 _SANDBOX_PROBE_SKIPPED = False
 _SANDBOX_NOT_ENFORCING = "sandbox not enforcing: "
-_SANDBOX_PROBE_ATTEMPTS = 2
+# Three tries: an inconclusive probe failed both of two tries in 3 of 316
+# routine runs (2026-11-16 to 11-25), each losing a whole model's arms.
+_SANDBOX_PROBE_ATTEMPTS = 3
 
 
 def _walk_blocks(node):
@@ -2309,6 +2311,32 @@ def _probe_outcomes(decoded, command: str) -> tuple[list[str], list[str]]:
     return every, matched
 
 
+def _probe_unproven_reason(decoded, command: str, every: list[str],
+                           matched: list[str]) -> str:
+    """Why a probe proved nothing, in the CLI's own terms, never the model's
+    text: the next inconclusive probe then says which way it failed."""
+    if not isinstance(decoded, list):
+        return "its output was not a JSON event list"
+    result = next((event for event in reversed(decoded) if isinstance(event, dict)
+                   and event.get("type") == "result"), None)
+    if result is None:
+        return "it printed no result event"
+    if result.get("is_error") or result.get("subtype") not in (None, "success"):
+        return f"its result was an error (subtype {str(result.get('subtype'))[:40]})"
+    denials = result.get("permission_denials")
+    if isinstance(denials, list) and denials:
+        return f"{len(denials)} tool call(s) were denied permission"
+    bash = [block for block in _walk_blocks(decoded)
+            if block.get("type") == "tool_use" and block.get("name") == "Bash"]
+    if not bash:
+        return "the model made no Bash call"
+    if not matched:
+        return (f"the model made {len(bash)} Bash call(s), none with the exact "
+                "probe command")
+    return ("the exact probe call's result lacked the marker or the read's "
+            f"denial ({len(every)} tool result(s))")
+
+
 def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
                 cwd: Path, env: dict, timeout: int) -> tuple[str, str]:
     """One canary launch: ("held", ""), ("refused", the CLI's line), ("leak", why)
@@ -2332,18 +2360,19 @@ def _probe_once(command: str, token: str, marker: str, sentinel: Path, flags,
     if down is not None:
         return "refused", down  # the CLI itself refused to start
     try:
-        every, matched = _probe_outcomes(json.loads(result.stdout), command)
+        decoded = json.loads(result.stdout)
     except ValueError:
-        every, matched = [], []
+        decoded = None
+    every, matched = _probe_outcomes(decoded, command)
     if any(token in text for text in every):
         return "leak", (_SANDBOX_NOT_ENFORCING + "a Bash command read a file under "
                         "filesystem.denyRead (hosted Claude Code sessions start "
                         "without a command sandbox, CLI 2.1.325)")
     if any(marker in text and f"cat: {sentinel}:" in text for text in matched):
         return "held", ""
+    why = _probe_unproven_reason(decoded, command, every, matched)
     return "unproven", (f"sandbox probe inconclusive (CLI exit {result.returncode}; "
-                        "no exact probe Bash call showed the denied read); the "
-                        "fence is unproven")
+                        f"{why}); the fence is unproven")
 
 
 def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
@@ -2373,7 +2402,7 @@ def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
         for name in ARM_DROPPED_ENV:
             env.pop(name, None)
         command = f"cat {sentinel} 2>&1; echo probe-ran-$(({left}+{right}))"
-        detail = ""
+        details = []
         for _ in range(_SANDBOX_PROBE_ATTEMPTS):
             verdict, detail = _probe_once(command, token, marker, sentinel,
                                           flags, cwd, env, timeout)
@@ -2381,7 +2410,10 @@ def probe_arm_sandbox(checkouts=(), outputs=(), *, timeout: int = 120) -> str:
                 return detail  # the CLI's own refusal line
             if verdict != "unproven":
                 return "" if verdict == "held" else detail
-        return detail
+            details.append(detail)
+        if len(set(details)) == 1:
+            return f"{details[-1]} (all {len(details)} tries)"
+        return " | ".join(f"try {n}: {d}" for n, d in enumerate(details, 1))
     finally:
         shutil.rmtree(holder, ignore_errors=True)
         shutil.rmtree(cwd, ignore_errors=True)
