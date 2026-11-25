@@ -421,6 +421,12 @@ jobs:
         working-directory: skills-evals
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+          # The owner's private denylist, for test_issue_privacy_denylist_scan.py's
+          # whole-tree scan, which fails in CI without it (a scan that checked
+          # nothing must not read green). It prints only `path:line: pattern #N`.
+          # A Dependabot run reads Dependabot secrets, so the same name must
+          # exist there too.
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
         # `auto` (one worker per CPU) for fleet consistency with
         # agentskills#179's own `-n auto`; ubuntu-latest has 4 vCPUs on a
         # public repo and 8 workers measured no faster than 4, so this
