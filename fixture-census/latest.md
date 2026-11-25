@@ -75,6 +75,6 @@ Fixtures whose skill is gone from its registry, kept by the eval scope pass. Not
 
 ## Fixture metadata readiness
 
-- Fixtures: 179; draft: 11.
-- Context declared: 74; missing: 105; guidance unproven: 0.
+- Fixtures: 180; draft: 11.
+- Context declared: 74; missing: 106; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
