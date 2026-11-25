@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SfUxoZdgQn2yPfpD8M65cT",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -R . | grep -v '^./.git' | head -50 && cat config/retry.yaml && git diff HEAD --stat && cat CHANGELOG.md",
+      "input_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SfUxoZdgQn2yPfpD8M65cT",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndeaa8f8 initial commit\n.:\nAGENTS.md\nCHANGELOG.md\nREADME.md\nconfig\ndocs\nscripts\n\n./config:\nretry.yaml\n\n./docs:\ndecisions\n\n./docs/decisions:\n0001-store-passcodes-h...",
+      "output_chars": 654,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AJsYo2yaNPoKCbkidaAHQk",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002*.md docs/decisions/README.md scripts/show-retry.sh README.md",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AJsYo2yaNPoKCbkidaAHQk",
+      "is_error": false,
+      "output": "# 0002. Expire passcodes after five minutes\n\n- **Status:** Accepted\n- **Date:** 2025-12-09\n\n## Context\n\nPasscodes sent by SMS can sit unread on a lock screen for a long time. A\npasscode that stays valid for an hour is a long window for anyone who sees\nthe message.\n\n## Decision\n\nA passcode stops veri...",
+      "output_chars": 2067,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S7vZDoj8yT3mGzGbHvTvhJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 44,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S7vZDoj8yT3mGzGbHvTvhJ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 140,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
