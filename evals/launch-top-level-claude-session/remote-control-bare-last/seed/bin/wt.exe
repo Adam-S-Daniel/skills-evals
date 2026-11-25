@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake Windows Terminal launcher, as reached from WSL through Windows interop.
+#
+# The eval's hermetic stand-in for `wt.exe` (DESIGN.md, Class B): it opens no
+# window and runs nothing. It appends every invocation to `.wt-invocations.log`
+# beside `bin/` (the workspace root), one `arg: <value>` line per argv element,
+# so the objective checks can read exactly what the launched session would have
+# been given, element by element, from the log alone.
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+log="$here/../.wt-invocations.log"
+{
+  printf -- '--- invocation (argc=%s) ---\n' "$#"
+  for a in "$@"; do printf 'arg: %s\n' "$a"; done
+} >> "$log"
+exit 0
