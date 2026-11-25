@@ -532,10 +532,14 @@ detail starting `sandbox not enforcing`, never retried. The fence held only
 if the result shows the marker and the read's denial message
 (`cat: <sentinel path>:`) and not the sentinel; anything else (an echo alone,
 another command, no Bash call, a CLI error, a timeout) is unproven, is
-retried once, and then fails every arm `sandbox_unavailable` with a detail
-starting `sandbox probe`, so the owner can tell "routines cannot sandbox"
-from a flake. The stderr detection stays as well. The probe is one short
-model turn per run (two on a retry).
+tried up to three times, and then fails every arm `sandbox_unavailable` with a
+detail starting `sandbox probe`, so the owner can tell "routines cannot sandbox"
+from a flake. That detail names, in the CLI's terms and never the model's
+text, why each try proved nothing (no Bash call, another command, a denied
+permission, an error result). Three tries replaced two on 2026-11-25, after
+3 of 316 routine runs lost a whole model's arms to two inconclusive tries
+with no word on why. The stderr detection stays as well. The probe is one
+short model turn per run (up to three on retries).
 
 The probe checks the host's sandbox once per process, not each arm's rules:
 every arm still passes its own `--settings`, and nothing re-proves them per
