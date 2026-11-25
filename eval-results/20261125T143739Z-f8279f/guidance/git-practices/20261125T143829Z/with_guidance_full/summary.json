@@ -1,0 +1,414 @@
+{
+  "arm": "with_guidance_full",
+  "timestamp": "20261125T143829Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.09295790000000001,
+    "num_turns": 3,
+    "duration_ms": 12554,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 19771,
+      "cache_read_input_tokens": 83919,
+      "output_tokens": 547,
+      "output_tokens_details": {
+        "thinking_tokens": 23
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 19771,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 358,
+          "cache_read_input_tokens": 34557,
+          "cache_creation_input_tokens": 190,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 190
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "branch-updated-on-origin",
+      "passed": false,
+      "detail": "no such file: .remote/pushes.log \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "no-rewrite-of-shared-branch",
+      "passed": false,
+      "detail": "no such file: .remote/pushes.log \u2014 this check reads it as evidence, so an absent file fails it"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Method",
+        "score": 3,
+        "rationale": "The agent did not merge main into fix-retry because the workspace had no such branch or remote; it avoided any force-push and stated it would merge rather than rebase, but no merge was performed."
+      },
+      {
+        "name": "Care",
+        "score": 2,
+        "rationale": "With no fix-retry branch present, the agent never saw the teammate's last commit and did not mention protecting it, though it made no changes that could have damaged it."
+      },
+      {
+        "name": "Report",
+        "score": 7,
+        "rationale": "The reply clearly states that nothing was updated or pushed, explains why with concrete evidence (only master, no main, no remote), and says what it needs to continue, though there was no actual update to describe."
+      }
+    ],
+    "overall": 4.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.332 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 547,
+      "cache_read_input_tokens": 83919,
+      "cache_creation_input_tokens": 19771,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "git-practices",
+  "mode": "full",
+  "bytes": 26649,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v0bd0bb21, 26649 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "HJBVTGXG-3560"
+  },
+  "fixture_name": "rebase-shared-branch",
+  "guidance_digests": {
+    "section": "bb342d9ff5075ed0a09f71cedf984b265d440127187a31706d392907c2110f6d",
+    "rest": "6100f7182718a1c392a543cc0966c361c1879c7a8041ec137c079f67fad04990",
+    "section_payload": "ec241be62acbd99c3add02726c1d09b69d24b071d02a54a3153a2c40d6179a56"
+  },
+  "fixture_digest": "2bddcfbe9c26d8a92e8c4f298b0834f79da505edd42544b72d792d69c8b77f29",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 26514,
+        "sha256": "29bff1f32221e2818996d9f91faea2a1c0a922df9c6b8a85cd4fbc4ff5beb8e0"
+      }
+    ]
+  },
+  "sandbox_probe": "passed",
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261125T143739Z-f8279f",
+    "session_id": "cse_01SphsQC7bMmF46fMm4EyREV",
+    "harness_commit": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
+    "cli_version": "2.1.332 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-25T14:38:29Z",
+    "ended_at": "2026-11-25T14:39:19Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-25T14:38:31.471Z",
+      "to_at": "2026-11-25T14:39:19.128Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.18,
+          "to": 0.18,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQC7bMmF46fMm4EyREV",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3477205,
+      "agent_usd": 0.1877527,
+      "judge_usd": 0.0507276,
+      "guard_usd": 0.10924020000000001,
+      "metered_usd": 0.3209207,
+      "last_agent_call_usd": 0.0947948,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "allowance_estimate": {
+      "table": "2026-11-20",
+      "points": 0.017893253575548673,
+      "low": 0.010421697331815213,
+      "high": 0.03276295391435489,
+      "fable": {
+        "points": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "roles_from_tokens": 6,
+      "legacy_roles": 0,
+      "legacy_usd": 0.0,
+      "unpriced_roles": 0,
+      "complete": true
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-25T14:38:29Z",
+      "ended_at": "2026-11-25T14:39:12Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-25T14:38:29Z",
+          "ended_at": "2026-11-25T14:38:31Z",
+          "duration_ms": 1934,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-25T14:38:38Z",
+          "ended_at": "2026-11-25T14:38:52Z",
+          "duration_ms": 13789,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-25T14:39:06Z",
+          "ended_at": "2026-11-25T14:39:12Z",
+          "duration_ms": 5826,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-25T14:38:31.471Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "guard",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1796058000,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.18,
+                  "resetsAt": 1796058000,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-25T14:38:43.963Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1796058000,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.18,
+                  "resetsAt": 1796058000,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-25T14:39:12.014Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1796058000,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.18,
+                  "resetsAt": 1796058000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 13789,
+        "num_turns": 3,
+        "cost_usd": 0.09295790000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 547,
+            "cache_read_input_tokens": 83919,
+            "cache_creation_input_tokens": 19771,
+            "cost_usd": 0.09295790000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 19771
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 5826,
+        "num_turns": 1,
+        "cost_usd": 0.0239278,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 388,
+            "cache_read_input_tokens": 1639,
+            "cache_creation_input_tokens": 1979,
+            "cost_usd": 0.0239278
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 1979
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1934,
+        "num_turns": 1,
+        "cost_usd": 0.0556721,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 10861,
+            "cache_creation_input_tokens": 13613,
+            "cost_usd": 0.0556721
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13613
+        },
+        "reasons": {}
+      },
+      "reasons": {}
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HcWXpf5JUE2bZQiQqxd9Pz",
+      "name": "Bash",
+      "input": "git status --short | head; git branch -a; git remote -v; git log --oneline -3",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HcWXpf5JUE2bZQiQqxd9Pz",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n* master\n9bd6be0 seed",
+      "output_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T1vVNFAgRLZLtS8aVpBeXG",
+      "name": "Bash",
+      "input": "git branch -a -v; git remote; git config --get-regexp '^remote|^branch'; git ls-remote origin 2>&1 | head",
+      "input_chars": 105,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T1vVNFAgRLZLtS8aVpBeXG",
+      "is_error": false,
+      "output": "* master 9bd6be0 seed\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.",
+      "output_chars": 202,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
