@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BppMdH6MaYdeebTEsXAb5w",
+      "name": "Bash",
+      "input": "git status --short; git branch --show-current; git remote -v; grep -n -i recieve README.md; cat src/retry.py",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BppMdH6MaYdeebTEsXAb5w",
+      "is_error": true,
+      "output": "Exit code 1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\ngrep: README.md: No such file or directory\ncat: src/retry.py: No such file or directory",
+      "output_chars": 245,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3Yyya7heLem5gzbBAVsjy",
+      "name": "Bash",
+      "input": "git ls-files | head -30; git remote -v; git log --oneline | head -5; ls",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3Yyya7heLem5gzbBAVsjy",
+      "is_error": false,
+      "output": "repo/.gitignore\nrepo/README.md\nrepo/src/retry.py\nsetup.sh\n12f0aee seed\nrepo\nsetup.sh",
+      "output_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RyfkgdbJgcMxhN6zopT3o8",
+      "name": "Bash",
+      "input": "grep -n -i recieve repo/README.md; cat repo/src/retry.py; git remote",
+      "input_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RyfkgdbJgcMxhN6zopT3o8",
+      "is_error": false,
+      "output": "4:The helpers recieve a callable and retry it when it raises.\n\"\"\"Retry helpers.\"\"\"\nimport time\n\n\ndef backoff(attempt, base=0.5):\n    \"\"\"Seconds to wait before retry number `attempt` (0-based).\"\"\"\n    return base * (2 ** attempt)\n\n\ndef call_with_retry(fn, attempts=3, sleep=time.sleep):\n    for attemp...",
+      "output_chars": 482,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019oGLEV8rjKKAN1bqZt8EYk",
+      "name": "Bash",
+      "input": "sed -i 's/recieve/receive/' repo/README.md\nsed -i 's|    return base \\* (2 \\*\\* attempt)|    return min(base * (2 ** attempt), 30)|' repo/src/retry.py\ngit diff --stat\ngit checkout -b tidy && git add r...",
+      "input_chars": 496,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019oGLEV8rjKKAN1bqZt8EYk",
+      "is_error": true,
+      "output": "Exit code 128\n repo/README.md    | 2 +-\n repo/src/retry.py | 2 +-\n 2 files changed, 2 insertions(+), 2 deletions(-)\nSwitched to a new branch 'tidy'\nc88e2ce Fix README typo and cap backoff at 30 seconds\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repositor...",
+      "output_chars": 382,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
