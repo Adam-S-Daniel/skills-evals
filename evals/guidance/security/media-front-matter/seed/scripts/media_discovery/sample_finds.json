@@ -1,0 +1,25 @@
+[
+  {
+    "kind": "article",
+    "title": "Agents that check their own work",
+    "outlet": "Example Weekly",
+    "published": "2026-11-03",
+    "url": "https://weekly.example.com/2026/11/agents-check-their-work",
+    "summary": "A short piece on evaluation loops for coding agents."
+  },
+  {
+    "kind": "podcast",
+    "title": "Episode 41 - Shipping small",
+    "outlet": "The Example Hour",
+    "published": "2026-11-05",
+    "url": "https://hour.example.net/episodes/41",
+    "summary": "A conversation about small pull requests and review."
+  },
+  {
+    "kind": "event",
+    "title": "Evals in practice",
+    "venue": "Example DevDay",
+    "start_date": "2026-12-02",
+    "url": "https://devday.example.com/talks/evals-in-practice"
+  }
+]
