@@ -10,8 +10,6 @@ export const WORSE_TOLERANCE = -0.05;    // and never more than 5 points worse o
 export const EPS = 1e-9;                 // float tolerance for the comparisons above
 export const WEEK_MS = 7 * 24 * 3600 * 1000;
 
-export const TIME_ZONE = 'America/New_York';
-
 export const pts = (x) => Math.round(Math.abs(x) * 100);
 export const ordinal = (n) => { const t = n % 100, u = n % 10;
   return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };

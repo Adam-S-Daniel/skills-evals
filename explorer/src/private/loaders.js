@@ -4,6 +4,7 @@
    by the rule the public document uses (evals/loop-activity.json,
    scripts/loop_activity.py). */
 import LOOP from '../../../evals/loop-activity.json' with { type: 'json' };
+import { ISSUE_REPOS } from '../core/display.js';
 
 const names = (ls) => (ls || []).map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean);
 const starts = (s, list) => typeof s === 'string' && list.some((p) => s.startsWith(p));
@@ -81,24 +82,25 @@ export function registerLoaders(dash) {
     },
   });
   dash.loader('open_issues', {
-    description: 'Open issues in skills-evals, then the same call for _agent-guidance, adam-agentskills and claude-memory-map, as one row per issue; only the loop\'s',
+    description: 'Open issues in each issue_repos repository (explorer/display.json), one row per issue; only the loop\'s',
     fn: async ({ answer, call, args }) => {
       const parse = (x) => {
         const a = unwrap(x, 'issues');
         if (!a || !Array.isArray(a.issues)) throw new Error('GitHub returned no issues list');
         return a.issues;
       };
-      const sets = [[args.repo, parse(answer)]];
-      for (const repo of ['_agent-guidance', 'adam-agentskills', 'claude-memory-map']) {
-        sets.push([repo, parse(await call('list_issues', { ...args, repo }))]);
-      }
+      // The dataset's own read (datasets.json, written by build.js from issue_repos) is the first repository.
       const rows = [];
-      for (const [repo, list] of sets) for (const i of list) if (isLoopIssue(i.title, i.labels)) rows.push({
-        repo, number: i.number, title: i.title,
-        labels: names(i.labels).join(', '),
-        created_at: i.created_at, updated_at: i.updated_at,
-        url: 'https://github.com/' + args.owner + '/' + repo + '/issues/' + i.number,
-      });
+      for (const full of ISSUE_REPOS) {
+        const [owner, repo] = full.split('/');
+        const list = parse(full === ISSUE_REPOS[0] ? answer : await call('list_issues', { ...args, owner, repo }));
+        for (const i of list) if (isLoopIssue(i.title, i.labels)) rows.push({
+          repo, number: i.number, title: i.title,
+          labels: names(i.labels).join(', '),
+          created_at: i.created_at, updated_at: i.updated_at,
+          url: 'https://github.com/' + full + '/issues/' + i.number,
+        });
+      }
       return rows;
     },
   });

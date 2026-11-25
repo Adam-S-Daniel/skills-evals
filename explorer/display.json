@@ -1,0 +1,9 @@
+{
+ "time_zone": "America/New_York",
+ "issue_repos": [
+  "Adam-S-Daniel/skills-evals",
+  "Adam-S-Daniel/_agent-guidance",
+  "Adam-S-Daniel/adam-agentskills",
+  "Adam-S-Daniel/claude-memory-map"
+ ]
+}
