@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-24T20:42:35Z",
-  "generated_at": "2026-11-24T20:42:44Z",
+  "as_of": "2026-11-25T19:58:55Z",
+  "generated_at": "2026-11-25T19:59:04Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -703,6 +703,15 @@
       "name": "pasted-config-is-a-stub",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "week": "2026-11-23"
+    },
+    {
+      "at": "2026-11-25T04:33:06Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "bump-branch-push",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-23"
     }
   ],
   "kinds": [
@@ -717,10 +726,10 @@
       "added_per_week": 2.0,
       "complete": true,
       "eligible_share": null,
-      "from": "2026-10-27T20:42:35Z",
+      "from": "2026-10-28T19:58:55Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-24T20:42:35Z",
+      "to": "2026-11-25T19:58:55Z",
       "weeks": 4.0
     },
     "guidance-section": {
@@ -728,10 +737,10 @@
       "added_per_week": 1.0,
       "complete": true,
       "eligible_share": 0.25,
-      "from": "2026-10-27T20:42:35Z",
+      "from": "2026-10-28T19:58:55Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-24T20:42:35Z",
+      "to": "2026-11-25T19:58:55Z",
       "weeks": 4.0
     },
     "skill": {
@@ -739,17 +748,17 @@
       "added_per_week": 1.25,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-27T20:42:35Z",
+      "from": "2026-10-28T19:58:55Z",
       "removed": 3,
       "removed_per_week": 0.75,
-      "to": "2026-11-24T20:42:35Z",
+      "to": "2026-11-25T19:58:55Z",
       "weeks": 4.0
     }
   },
   "schema": 1,
   "sources": [
     {
-      "current": 12,
+      "current": 13,
       "kind": "git-hook",
       "parser": "agent-checks",
       "private": false,
@@ -1026,6 +1035,14 @@
       "kind": "git-hook",
       "removed": 0,
       "week": "2026-11-16"
+    },
+    {
+      "added": 1,
+      "added_eligibility_unknown": 1,
+      "added_eligible": 0,
+      "kind": "git-hook",
+      "removed": 0,
+      "week": "2026-11-23"
     },
     {
       "added": 1,
