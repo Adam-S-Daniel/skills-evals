@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UxHvtgwyLokW5JKuC6DHHP",
+      "name": "Bash",
+      "input": "ls -a . .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UxHvtgwyLokW5JKuC6DHHP",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\n\n.github/workflows:\n.\n..\ndocs-site.yml\nnightly-sweep.yml\nte...",
+      "output_chars": 2165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KYMwy7cNFBbCj3XBAWjpST",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json; cat .gh/replay/ruleset-view-4410273.json | head -60",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KYMwy7cNFBbCj3XBAWjpST",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 1189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VGAPJJTXanRhXVwqTNcTLL",
+      "name": "Bash",
+      "input": "cd <path> && python3 - <<'EOF'\ndetect = '''      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # A required check cannot use on.paths (...",
+      "input_chars": 2603,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VGAPJJTXanRhXVwqTNcTLL",
+      "is_error": false,
+      "output": "name: Tests\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # A required check cannot use o...",
+      "output_chars": 3592,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014QmYFXHXM8DUNXCd1SdrWL",
+      "name": "Bash",
+      "input": "cd <path> && python3 - <<'EOF'\ns=open(\"AGENTS.md\").read()\ns=s.replace(\"| `tests.yml` | pull_request, push to main | all paths |\",\"| `tests.yml` | pull_request, push to main | `src/`, `test/`, `package...",
+      "input_chars": 698,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014QmYFXHXM8DUNXCd1SdrWL",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml | 36 ++++++++++++++++++++++++++++++++++--\n .github/workflows/tests.yml     | 36 ++++++++++++++++++++++++++++++++++--\n AGENTS.md                       |  4 ++--\n 3 files changed, 70 insertions(+), 6 deletions(-)\nok",
+      "output_chars": 246,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
