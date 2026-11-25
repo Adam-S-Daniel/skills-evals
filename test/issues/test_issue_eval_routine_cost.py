@@ -9,6 +9,7 @@ loop status estimate adds it, and the forecast takes its dollars as
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import sys
 import tempfile
@@ -47,12 +48,14 @@ def write_json(path: Path, doc) -> None:
     path.write_text(json.dumps(doc), encoding="utf-8")
 
 
-def fire(trigger, days_ago, usd, model="model-a", n=[0]):
-    n[0] += 1
+SESSIONS = itertools.count(1)
+
+
+def fire(trigger, days_ago, usd, model="model-a"):
     at = NOW - timedelta(days=days_ago)
     return {"trigger_id": trigger, "name": "x", "fired_at": iso(at),
             "finished_at": iso(at + timedelta(minutes=5)), "status": "success",
-            "session_id": f"cse_{n[0]}", "total_cost_usd": usd, "last_served_model": model}
+            "session_id": f"cse_{next(SESSIONS)}", "total_cost_usd": usd, "last_served_model": model}
 
 
 def spend_doc(routine=None, **extra):
