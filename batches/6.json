@@ -1,0 +1,149 @@
+{
+  "due_at": "2026-12-09T19:18:04Z",
+  "fit": {
+    "budget": 0.4063652729230769,
+    "floor": false,
+    "pair_costs": {
+      "claude-opus-5-5": 0.0014697504147144947,
+      "claude-sonnet-5-5": 0.0005670233712782549
+    },
+    "pairs_per_cell": 15.0,
+    "priced": true,
+    "total": 0.3230486889024487
+  },
+  "members": [
+    {
+      "cost": 0.030551606789891245,
+      "joined": 6,
+      "kind": "skill",
+      "subject": "cms-stuck-pr-triage"
+    },
+    {
+      "cost": 0.01753262100353622,
+      "joined": 6,
+      "kind": "skill",
+      "subject": "post-failure-comment"
+    },
+    {
+      "cost": 0.12220642715956498,
+      "joined": 6,
+      "kind": "guidance",
+      "subject": "turn-lessons-into-checks"
+    },
+    {
+      "cost": 0.09165482036967373,
+      "joined": 6,
+      "kind": "guidance",
+      "subject": "two-github-connectors"
+    },
+    {
+      "cost": 0.06110321357978249,
+      "joined": 6,
+      "kind": "guidance",
+      "subject": "dependency-updates"
+    }
+  ],
+  "multiplier": 3.0,
+  "number": 6,
+  "previous": {
+    "members": [
+      {
+        "kind": "skill",
+        "status": "decided",
+        "subject": "writing-adrs"
+      },
+      {
+        "kind": "skill",
+        "status": "decided",
+        "subject": "workflow-path-audit"
+      },
+      {
+        "kind": "guidance",
+        "status": "blocked",
+        "subject": "git-practices"
+      },
+      {
+        "kind": "guidance",
+        "status": "gone",
+        "subject": "finding-your-unknowns"
+      }
+    ],
+    "number": 5
+  },
+  "rate_basis": {
+    "guidance": {
+      "added": 4,
+      "rate": 1.0,
+      "since": "2026-10-28T19:18:04Z",
+      "source": "measured",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 3,
+      "rate": 0.75,
+      "since": "2026-10-28T19:18:04Z",
+      "source": "measured",
+      "weeks": 4.0
+    }
+  },
+  "rates": {
+    "guidance": 1.0,
+    "skill": 0.75
+  },
+  "schema_version": 1,
+  "sizes": {
+    "guidance": 3,
+    "skill": 2
+  },
+  "started_at": "2026-11-25T19:18:04Z",
+  "waiting": [
+    {
+      "cost": 0.06110321357978249,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "working-in-these-repos"
+    },
+    {
+      "cost": 0.15275803394945622,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "anything-you-name-gets-its-link"
+    },
+    {
+      "cost": 0.06110321357978249,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "two-setup-gaps"
+    },
+    {
+      "cost": 0.09165482036967373,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "watch-finished-is-not-ci-passed"
+    },
+    {
+      "cost": 0.06110321357978249,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "subagent-delegation"
+    },
+    {
+      "cost": 0.12220642715956498,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "automation-vs-branch-protection"
+    },
+    {
+      "cost": 0.12220642715956498,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "fleet-spans-two-owners"
+    },
+    {
+      "cost": 0.06110321357978249,
+      "kind": "guidance",
+      "reason": "size",
+      "subject": "github-404-means-not-authorized"
+    }
+  ]
+}
