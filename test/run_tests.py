@@ -5466,7 +5466,7 @@ class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
         cases = {
             "bare": ("pip install pyyaml", ["pyyaml"]),
             "one of several": (
-                "pip install pyyaml markdown-it-py==4.2.0", ["pyyaml"]),
+                "pip install pyyaml markdown-it-py==4.3.0", ["pyyaml"]),
             "pip3": ("pip3 install pyyaml", ["pyyaml"]),
             "python -m pip": ("python3 -m pip install pyyaml", ["pyyaml"]),
             "after other command": (
@@ -5478,7 +5478,7 @@ class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
                 "pip install --no-cache-dir pyyaml", ["pyyaml"]),
             "range is not exact": ("pip install 'pyyaml>=6'", ["pyyaml>=6"]),
             "all exact": (
-                "pip install pyyaml==6.0.3 markdown-it-py==4.2.0", []),
+                "pip install pyyaml==6.0.3 markdown-it-py==4.3.0", []),
             "requirements file": ("pip install -r requirements.txt", []),
             "commented out": ("# pip install pyyaml\necho hi", []),
             "not pip": ("echo pip install pyyaml", []),

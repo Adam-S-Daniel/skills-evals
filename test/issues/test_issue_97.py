@@ -3955,7 +3955,7 @@ class TestIssue97(unittest.TestCase):
         with mock.patch.dict(sys.modules, blocked, clear=True):
             with self.assertRaises(guidance.GuidanceError) as ctx:
                 guidance.h2_extents("# T\n\n## A\n\nbody\n")
-        self.assertIn("markdown-it-py==4.2.0", str(ctx.exception))
+        self.assertIn("markdown-it-py==4.3.0", str(ctx.exception))
 
     def test_the_delivery_fixture_declares_one_arm_per_mode(self):
         fixture = self._delivery_fixture()
@@ -4049,7 +4049,7 @@ class TestIssue97(unittest.TestCase):
     # Item 8 + the dispatch input — .github/workflows/eval.yml
     # ------------------------------------------------------------------
 
-    MARKDOWN_IT_PIN = "markdown-it-py==4.2.0"
+    MARKDOWN_IT_PIN = "markdown-it-py==4.3.0"
 
     def _workflow(self) -> dict:
         return yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))

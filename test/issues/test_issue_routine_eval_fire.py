@@ -450,7 +450,7 @@ class WorkflowShapeTests(unittest.TestCase):
         ids = [s.get("id") for s in self.steps]
         installs = [i for i, s in enumerate(self.steps)
                     if s.get("run") == ("python3 -m pip install pyyaml==6.0.3"
-                                        " markdown-it-py==4.2.0")]
+                                        " markdown-it-py==4.3.0")]
         self.assertEqual(len(installs), 1)
         self.assertLess(installs[0], ids.index("validate"))
         self.assertNotIn("env", self.steps[installs[0]])
