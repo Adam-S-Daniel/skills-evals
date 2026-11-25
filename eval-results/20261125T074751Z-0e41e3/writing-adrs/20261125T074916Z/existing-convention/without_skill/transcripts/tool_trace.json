@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K2m6TU2Z4TgJtruTHkEMzn",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls; cat docs/decisions/README.md; ls docs/decisions; cat scripts/retry.sh; cat CHANGELOG.md | head -20",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K2m6TU2Z4TgJtruTHkEMzn",
+      "is_error": false,
+      "output": "9a59275 initial commit\nAGENTS.md\nCHANGELOG.md\nREADME.md\ndocs\nscripts\n# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-ti...",
+      "output_chars": 2361,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011mWX9HFp1HwSL233Rpz2eH",
+      "name": "Bash",
+      "input": "cd <path> && cat 0003*.md",
+      "input_chars": 67,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011mWX9HFp1HwSL233Rpz2eH",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0167AocqAVYJVaXqCQhggHqD",
+      "name": "Bash",
+      "input": "cat > 0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 2026-03 outage (PR #41), a ...",
+      "input_chars": 1547,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0167AocqAVYJVaXqCQhggHqD",
+      "is_error": false,
+      "output": "|-----|-------|--------|\n| [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process memory | Accepted |\n| [0002](0002-poll-fulfillment-service-every-30s.md) | Poll the fulfillment service every 30 seconds | Superseded-by: 0003 |\n| [0003](0003-poll-fulfillment-service...",
+      "output_chars": 692,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
