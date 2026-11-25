@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-24T18:24:40Z",
+  "generated_at": "2026-11-25T17:39:38Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-10-05T00:00:00Z",
-      "to": "2026-11-24T18:24:40Z",
+      "to": "2026-11-25T17:39:38Z",
       "repos_scanned": 24
     }
   ],
@@ -4369,7 +4369,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 14,
+      "invocations": 23,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4381,7 +4381,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/acsi-kit",
       "surface": "ci",
-      "invocations": 10,
+      "invocations": 11,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4405,7 +4405,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 23,
+      "invocations": 43,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4417,7 +4417,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/ai-usage-dashboard",
       "surface": "ci",
-      "invocations": 8,
+      "invocations": 9,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4453,7 +4453,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 68,
+      "invocations": 72,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4477,7 +4477,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 4,
+      "invocations": 9,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4525,7 +4525,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 43,
+      "invocations": 51,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4561,7 +4561,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/jodidaniel.com",
       "surface": "ci",
-      "invocations": 12,
+      "invocations": 26,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4614,12 +4614,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 7,
-        "prs_merged": 9,
+        "prs_opened": 11,
+        "prs_merged": 11,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 8,
-        "ci_red_after": 4
+        "agent_prs_merged": 9,
+        "ci_red_after": 5
       }
     },
     {
@@ -4671,12 +4671,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 23,
-        "prs_merged": 17,
-        "prs_closed_unmerged": 6,
+        "prs_opened": 43,
+        "prs_merged": 32,
+        "prs_closed_unmerged": 9,
         "prs_reverted": 0,
         "agent_prs_merged": 0,
-        "ci_red_after": 1
+        "ci_red_after": 3
       }
     },
     {
@@ -4690,11 +4690,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 5,
-        "prs_merged": 5,
+        "prs_opened": 6,
+        "prs_merged": 6,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 4,
+        "agent_prs_merged": 5,
         "ci_red_after": 0
       }
     },
@@ -4747,11 +4747,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 32,
-        "prs_merged": 28,
+        "prs_opened": 34,
+        "prs_merged": 34,
         "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 26,
+        "agent_prs_merged": 31,
         "ci_red_after": 0
       }
     },
@@ -4771,7 +4771,7 @@
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 0,
-        "ci_red_after": 0
+        "ci_red_after": 1
       }
     },
     {
@@ -4785,8 +4785,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 4,
-        "prs_merged": 4,
+        "prs_opened": 6,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 0,
@@ -4861,12 +4861,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 22,
-        "prs_merged": 21,
+        "prs_opened": 29,
+        "prs_merged": 28,
         "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 19,
-        "ci_red_after": 2
+        "agent_prs_merged": 25,
+        "ci_red_after": 4
       }
     },
     {
@@ -4918,12 +4918,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 9,
-        "prs_merged": 6,
-        "prs_closed_unmerged": 4,
+        "prs_opened": 23,
+        "prs_merged": 16,
+        "prs_closed_unmerged": 8,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
-        "ci_red_after": 0
+        "agent_prs_merged": 3,
+        "ci_red_after": 1
       }
     },
     {
