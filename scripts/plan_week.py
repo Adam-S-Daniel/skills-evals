@@ -793,7 +793,7 @@ SCHEDULE_FILES_MALFORMED = "evals/unscheduled.yml or evals/scope-auto.yml is mal
 #: fired kept sections for nothing (2026-11-08: agent-contribution-markers,
 #: kept since 2026-11-07, about every 40 minutes, because the plan job
 #: installed PyYAML alone).
-GUIDANCE_PARSER_MISSING = ("--guidance needs markdown-it-py (pip install markdown-it-py==4.2.0): "
+GUIDANCE_PARSER_MISSING = ("--guidance needs markdown-it-py (pip install markdown-it-py==4.3.0): "
                            "without it no guidance cell can be read")
 
 

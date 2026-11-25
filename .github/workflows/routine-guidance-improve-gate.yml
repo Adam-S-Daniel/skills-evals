@@ -110,7 +110,7 @@ jobs:
       # The validator reads fixture.yaml files (the proposer's listing) and,
       # in the next job, the manifest: the gate workflows' pins.
       - name: Install the validator's dependencies
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
 
       - name: Resolve the branch to gate
         id: resolve
@@ -169,7 +169,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the validator's dependencies
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
 
       # The same validator, on the sha `validate` judged: this job stages its
       # own copy of the files instead of trusting an artifact, and fails if

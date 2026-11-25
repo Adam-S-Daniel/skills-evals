@@ -340,7 +340,7 @@ jobs:
       # markdown-it-py: plan_week.py guidance-headroom reads each guidance
       # section's digests with it, and refuses to run without it (2026-11-08).
       - name: Install PyYAML and markdown-it-py
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.3.0
 
       - name: Validate the dispatch inputs
         id: validate

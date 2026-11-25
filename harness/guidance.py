@@ -556,7 +556,7 @@ def _markdown_it():
         raise GuidanceError(
             "the guidance subject locates a section's extent with a real "
             "markdown parse and needs markdown-it-py: "
-            "`pip install markdown-it-py==4.2.0` (pinned exact — a floating "
+            "`pip install markdown-it-py==4.3.0` (pinned exact — a floating "
             f"parser version could silently change what a `section` arm "
             f"delivers). Import failed: {exc}") from exc
     return MarkdownIt()

@@ -33,7 +33,7 @@ GIT_PIN_URL="https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_PIN}
 
 PIP_PINS=(
   pyyaml==6.0.3
-  markdown-it-py==4.2.0
+  markdown-it-py==4.3.0
   tree-sitter==0.26.0
   tree-sitter-bash==0.25.1
   pytest==9.2.0
