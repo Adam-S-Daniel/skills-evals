@@ -38,11 +38,14 @@ output small: no README reads, no listings, no `add_repo` other than the first.
    `git clone --depth 1 https://github.com/Adam-S-Daniel/skills-evals <dir>`
    (or `git -C <dir> fetch origin main && git -C <dir> checkout --detach origin/main`
    if it exists).
-3. In ONE message, start three Agent calls with `subagent_type: "general-purpose"`,
-   `model: "haiku"` and `run_in_background: false`, so they run together and
-   the session takes one turn for all three. Each prompt is the worker brief
-   below with its steps: A = README steps 1 and 3, B = step 2, C = step 5
-   (with its fire cost ledger).
+3. In ONE message, start three Agent calls with `subagent_type: "general-purpose"`
+   and `run_in_background: false`, so they run together and the session takes
+   one turn for all three. Each prompt is the worker brief below with its steps:
+   A = README steps 1 and 3 and B = step 2, both `model: "haiku"`; C = step 5
+   (with its fire cost ledger), `model: "sonnet"`. Step 5 moved to Sonnet after
+   the 2026-11-25 Haiku worker left three trigger rows out of arg 1 (so the
+   build stopped and their fires went unledgered), under Adam's 2026-11-18 rule
+   that a Haiku step which skips work moves to Sonnet.
 4. Then one Agent call, `model: "sonnet"`, `run_in_background: false`, with
    the worker brief for README steps 0 (every attach and clone not yet done,
    including adam-agentskills-private's `persistent/eval-results` branch beside
