@@ -1,0 +1,8 @@
+{
+  "comment": "Route table for the public HTTP API gateway: which upstream serves each path prefix.",
+  "listen": ":8443",
+  "routes": [
+    {"prefix": "/v1/orders", "upstream": "orders.internal.example.com:9000"},
+    {"prefix": "/v1/catalog", "upstream": "catalog.internal.example.com:9000"}
+  ]
+}
