@@ -3338,6 +3338,18 @@
       "usd_per_week": { "type": "number", "minimum": 0 }
      }
     },
+    "eval_routine": {
+     "description": "What one eval runner routine fire costs in its own session, outside its trial summaries: the median of its fires in the fire ledger's last 14 days (dashboard/build.py eval_routine). scripts/allowance_guard.py charges it once per run priced from its own calls, falling back to per_run_overrun when it is missing or stale. Omitted when the refresh had no such fire.",
+     "type": "object",
+     "required": ["as_of", "points_per_fire", "fires"],
+     "additionalProperties": false,
+     "properties": {
+      "as_of": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+      "points_per_fire": { "type": "number", "minimum": 0 },
+      "usd_per_fire": { "type": "number", "minimum": 0 },
+      "fires": { "type": "integer", "minimum": 1 }
+     }
+    },
     "total": {
      "description": "Since the first week, over the decided verdicts (the spend_total shape; extra keys are refused by the ingest, not here).",
      "type": "object",

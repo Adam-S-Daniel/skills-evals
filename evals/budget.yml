@@ -54,7 +54,12 @@ per_run_cap: 0.01
 # that measured cost alone (Adam, 2026-11-25: "Count runs at their measured
 # cost"). Pending fires keep it. The routine session that ran the eval has a
 # cost no summary records: about $0.67 per fire (12 fires measured), which is
-# about 0.0003 at the rate below. It also covers each run's last call (agent
+# about 0.0003 at the rate below. Since 2026-11-25 a run priced from its own
+# calls is charged that session's measured cost instead, once per run: the
+# spend file's `eval_routine.points_per_fire` (the median eval runner fire in
+# the fire ledger's last 14 days; dashboard/build.py). This value is the named
+# fallback when that block is missing or stale, and the guard's message says
+# so (scripts/allowance_guard.py, "Eval routine session"). It also covers each run's last call (agent
 # or judge), which the meter delta never includes: 0.180 points at p95 over
 # 258 metered runs (Adam, 2026-11-01: "Use p95 now and in the future";
 # 0.311 at most). Was 0.5 points, then 0.2, then 0.18; 0.05 since
