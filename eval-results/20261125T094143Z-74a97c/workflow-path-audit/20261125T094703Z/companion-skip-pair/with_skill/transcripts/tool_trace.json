@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0148DnnJzGM1mUVAHqUyvumy",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0148DnnJzGM1mUVAHqUyvumy",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Q528DJTvkki421AbRwC8J",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; ls .github/workflows .github/rulesets 2>&1; ls AGENTS.md docs 2>&1 | head",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Q528DJTvkki421AbRwC8J",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\ndocs\nmk...",
+      "output_chars": 542,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0113mDmAEzpg73zSKCsW73Li",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml .github/rulesets/main.json package.json mkdocs.yml; do echo \"=== $f\"; cat $f; done; ls scripts bin src test .gh; git ls-files | head -50",
+      "input_chars": 169,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0113mDmAEzpg73zSKCsW73Li",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 4186,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QfFyytNh5gLXj5zXnBDG5E",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json; head -20 bin/gh; grep -n \"docs\\|mkdocs\" README.md | head; cat src/index.js | head -5",
+      "input_chars": 163,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QfFyytNh5gLXj5zXnBDG5E",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id\": 4410273\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id...",
+      "output_chars": 2298,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0141Pequvo9jruHczQr14ksh",
+      "name": "Bash",
+      "input": "git rm -q .github/workflows/tests-skip.yml && cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so this\n# workflow has no `...",
+      "input_chars": 1813,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0141Pequvo9jruHczQr14ksh",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
