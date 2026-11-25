@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013PEY1KfcabY1KSp51BSW3L",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013PEY1KfcabY1KSp51BSW3L",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019fkXbzPHjfx8uCdMnS13mn",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json; cat mkdocs.yml",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019fkXbzPHjfx8uCdMnS13mn",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 764,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V3Xhe3sW9vNJLNjeJ3NNVN",
+      "name": "Bash",
+      "input": "grep -rl required_status .gh .github; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json | head -60",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V3Xhe3sW9vNJLNjeJ3NNVN",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id\": 4410273\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id...",
+      "output_chars": 588,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0128gWjiJ73gGKp4w5oU9ASe",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\ndef detect(pattern):\n    return f'''      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # Required-check safe: the jo...",
+      "input_chars": 2721,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0128gWjiJ73gGKp4w5oU9ASe",
+      "is_error": false,
+      "output": "name: Tests\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # Required-check safe: the job ...",
+      "output_chars": 1590,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PgPC9TeNSoTTCjbNyEVT54",
+      "name": "Bash",
+      "input": "for f in tests docs-site; do python3 - $f <<'EOF'\nimport sys,re\np=f'.github/workflows/{sys.argv[1]}.yml'\ns=open(p).read()\ns=s.replace(\"          salient=false\\n\",\"          salient=false\\n          ch...",
+      "input_chars": 626,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PgPC9TeNSoTTCjbNyEVT54",
+      "is_error": false,
+      "output": ".github/workflows/docs-site.yml:26:          changed=$(git diff --name-only \"$BASE_SHA\" HEAD 2><path> || true)\n.github/workflows/docs-site.yml:30:          elif grep -qE '^(docs/|mkdocs\\.yml$|\\.github/workflows/docs-site\\.yml$)' <<<\\\"$changed\\\"; then\n.github/workflows/tests.yml:26:          changed=...",
+      "output_chars": 522,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LfVxq2zQcDRfZuv9bfzEA9",
+      "name": "Bash",
+      "input": "sed -i 's/<<<\\\\\"\\$changed\\\\\"<path>\"$changed\"/' .github/workflows/*.yml && grep -n '<<<' .github/workflows/*.yml && python3 -c \"import yaml;[yaml.safe_load(open(f'.github/workflows/{n}.yml')) for n in ...",
+      "input_chars": 358,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LfVxq2zQcDRfZuv9bfzEA9",
+      "is_error": false,
+      "output": ".github/workflows/docs-site.yml:30:          elif grep -qE '^(docs/|mkdocs\\.yml$|\\.github/workflows/docs-site\\.yml$)' <<<\"$changed\"; then\n.github/workflows/tests.yml:30:          elif grep -qE '^(src/|test/|package\\.json$|package-lock\\.json$|\\.github/workflows/tests\\.yml$)' <<<\"$changed\"; then\nsrc-m...",
+      "output_chars": 319,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
