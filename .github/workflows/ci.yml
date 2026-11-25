@@ -421,12 +421,6 @@ jobs:
         working-directory: skills-evals
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
-          # The owner's private denylist, for test_issue_privacy_denylist_scan.py's
-          # whole-tree scan, which fails in CI without it (a scan that checked
-          # nothing must not read green). It prints only `path:line: pattern #N`.
-          # A Dependabot run reads Dependabot secrets, so the same name must
-          # exist there too.
-          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
         # `auto` (one worker per CPU) for fleet consistency with
         # agentskills#179's own `-n auto`; ubuntu-latest has 4 vCPUs on a
         # public repo and 8 workers measured no faster than 4, so this
@@ -445,11 +439,43 @@ jobs:
   # instead: it passes only when every shard concluded `success`. `if:
   # always()` keeps it from being skipped when a shard fails, since a skipped
   # required check reads as passing.
+  #
+  # It also runs the private denylist scan (test/test_privacy_denylist_scan.py),
+  # here rather than in a shard so that it runs on EVERY pull request, outside
+  # the `salient` gate: a private detail can land in any path. It is cheap
+  # (standard library only) and prints only `path:line: pattern #N`. Its first
+  # step is ungated; test/issues/test_issue_privacy_scan_ci_step.py locks that.
   test:
     needs: suite
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # With no list the scan fails in CI, except on a Dependabot pull request,
+      # which gets no repository secrets: that warns and sets CI=false so only
+      # the private scan skips (the scanner's own tests still run). The same
+      # rule as acsi-kit's ci.yml "Kit tests and export check" step.
+      - name: Tracked files hold nothing from the private denylist
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIVACY_DENYLIST//[[:space:]]/}" ]; then
+            author=$(jq -r '.pull_request.user.login // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2>/dev/null) || author=""
+            if [ "$author" = "dependabot[bot]" ]; then
+              echo "::warning::the PRIVACY_DENYLIST secret is not available to a Dependabot run, so the private tree scan was skipped; the scanner's own tests still ran"
+              export CI=false
+            else
+              echo "::error::the PRIVACY_DENYLIST repository secret is unset or empty (a fork's pull request never gets it), so the private tree scan cannot run: set the secret (one regular expression per line), then re-run"
+              exit 1
+            fi
+          fi
+          python3 test/test_privacy_denylist_scan.py
+
       - name: Every suite shard passed
         env:
           SUITE_RESULT: ${{ needs.suite.result }}

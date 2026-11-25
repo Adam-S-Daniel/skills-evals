@@ -8,7 +8,8 @@ test scans the whole tree: every tracked file's path and text, case-
 insensitively, with no allowance and no excluded path.
 
 The patterns are never in this repository. They come from PRIVACY_DENYLIST
-(newline-separated regular expressions; ci.yml passes the repository secret)
+(newline-separated regular expressions; ci.yml's required `test` job passes
+the repository secret)
 or the file PRIVACY_DENYLIST_FILE names, parsed by the fleet checker's own
 loader, so the format is the fleet's: one pattern per line, `#` comments,
 matched case-insensitively. The checker's ~/.config default is not read: a
@@ -20,7 +21,12 @@ never repeats what it protects. With no denylist the scan FAILS in CI (a
 green scan that checked nothing is worse than a red one) and is skipped
 locally, where a contributor may not hold the list.
 
-Run: python3 -m pytest test/issues/test_issue_privacy_denylist_scan.py -q
+It is not part of the sharded suite: ci.yml's required `test` job runs it on
+every pull request, outside the salient-path gate, so a change to any path is
+scanned (test/issues/test_issue_privacy_scan_ci_step.py locks that step). It
+needs only the standard library.
+
+Run: python3 test/test_privacy_denylist_scan.py
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "test"))
 from prereqs import in_ci  # noqa: E402
 
@@ -91,7 +97,7 @@ class TreeHoldsNothingFromTheDenylist(unittest.TestCase):
         if patterns is None:
             if in_ci():
                 self.fail(f"no privacy denylist in CI: set {fleet.ENV_PATTERNS} from the "
-                          "repository secret (ci.yml's Run tests step passes it)")
+                          "repository secret (ci.yml's `test` job passes it)")
             raise unittest.SkipTest(f"no privacy denylist ({fleet.ENV_PATTERNS} or "
                                     f"{fleet.ENV_FILE}); the tree scan did not run")
         hits = denylist_hits(patterns, tracked_files(ROOT))
