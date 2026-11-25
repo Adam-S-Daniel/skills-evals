@@ -18,12 +18,20 @@ number, computed by their code, never recomputed here:
     reading (`--week-used`, `--week-at`, `--week-resets`, at most
     `LIVE_MAX_AGE` old) is minutes old, so the page shows both and says
     which the guard used.
-  * loop spend: approximate points (percent of the weekly allowance) the
-    loop has committed since the account's weekly reset: eval runs spent
-    and pending (the guard's `committed`), plus the loop's own scheduled
-    jobs (`loop_reserve`, spend/weekly.json `loop_jobs`), against the
-    configured cap. Project threads are development, not loop spend: no
-    figure here counts them.
+  * loop spend: points (percent of the weekly allowance) in two figures.
+    `estimated_points` is what the loop has used since the account's weekly
+    reset: each ingested eval run priced from its token counts with no
+    overrun (`allowance_guard.run_points`, what the pages show), matched
+    improve runs at their measured charge, and the loop's scheduled jobs
+    (`loop_reserve`, spend/weekly.json `loop_jobs`) for the share of the
+    week gone. `used_points` is what the guard books against the configured
+    cap: its `committed` (every run's `per_run_overrun` safety margin
+    included, never more than the account reading's `bound`, which holds
+    the whole account's use) plus the jobs' WHOLE week up front. The booked
+    figure is a guard's safe upper bound, not spend: on 2026-11-24 it read
+    17.6 while the whole account had used 13% (Adam: "Loop spend is shown
+    as higher than all usage"). Project threads are development, not loop
+    spend: no figure here counts them.
   * forecast: `forecast_catch_up.py`'s catch-up weeks and dates and keep-up
     per week, read from its output document, with the pace-hold replay
     behind the eval capacity (`pace_replay`: weeks replayed, their range,
@@ -278,6 +286,25 @@ def forecast_block(doc) -> dict | None:
     }
 
 
+def estimated_spend(tree: Path, limits: dict, now: datetime, since: datetime,
+                    state: dict) -> dict:
+    """What the loop has used since `since`, as fractions of the week:
+    `evals` (each ingested run's token-priced `run_points`, or the guard's
+    `run_cost` when it cannot be priced, never zero), `improve` (matched
+    improve fires at their measured charge), and `jobs` (the scheduled
+    jobs' weekly reserve times the share of the week gone)."""
+    legacy = limits.get(budget_file.LEGACY_RATE)
+    scale = budget_file.allowance_scale(limits)
+    evals = 0.0
+    for run_dir in guard.ingested_runs(tree, now, since):
+        found = guard.run_points(run_dir, legacy, scale)
+        evals += found["points"] / 100 if found else guard.run_cost(run_dir, limits)
+    gone = min(1.0, max(0.0, (now - since) / guard.WINDOW))
+    jobs = state.get("loop_reserve", 0.0) * gone
+    improve = state.get("improve_matched_cost", 0.0)
+    return {"evals": evals, "improve": improve, "jobs": jobs, "total": evals + improve + jobs}
+
+
 def status(tree: Path, limits: dict, now: datetime, state: dict | None,
            error: str | None = None, live: dict | None = None,
            forecast_doc=None, forecast_error: str | None = None) -> dict:
@@ -310,7 +337,12 @@ def status(tree: Path, limits: dict, now: datetime, state: dict | None,
                 {"used": state["account_used"], "at": found[0] if found else None,
                  "elapsed": state["week_elapsed"]}, limits, "guard")
         committed = state["committed"]
+        spend = estimated_spend(tree, limits, now, since, state)
         doc["loop"] = {
+            "estimated_points": points(spend["total"]),
+            "eval_estimated_points": points(spend["evals"]),
+            "improve_estimated_points": points(spend["improve"]),
+            "loop_jobs_so_far_points": points(spend["jobs"]),
             "eval_spent_points": points(state["spent"]),
             "eval_pending_points": points(state["pending"]),
             "eval_committed_points": points(committed),
