@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-25T09:02:26Z",
+  "fetched_at": "2026-11-25T09:07:59Z",
   "issues": [
    {
     "created_at": "2026-11-24T02:19:55Z",
@@ -483,6 +483,18 @@
    "jodidaniel/squarespacetemp"
   ],
   "runs": [
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-25T09:03:27Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 45581777558,
+    "state": "completed",
+    "title": "Monthly API-credit lane",
+    "updated_at": "2026-11-25T09:03:49Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45581777558",
+    "workflow": "Monthly API-credit lane"
+   },
    {
     "conclusion": "success",
     "created_at": "2026-11-25T09:01:52Z",
@@ -1514,18 +1526,6 @@
     "updated_at": "2026-11-25T08:06:50Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45573443503",
     "workflow": "Arm queued guidance improvements in the merge window"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-25T08:06:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 45573443558,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-25T08:06:46Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/45573443558",
-    "workflow": "Follow drafted-skill fixtures"
    },
    {
     "conclusion": "success",
@@ -4096,7 +4096,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-11T09:02:26Z"
+  "since": "2026-11-11T09:07:59Z"
  },
  "agent_made": {
   "items": [
@@ -44944,6 +44944,20 @@
     "without_pass_rate": 0.7619047619047619
    },
    {
+    "added_at": "2026-11-25T08:53:47Z",
+    "cost_points": 0,
+    "cost_usd": 0,
+    "origin_kind": "invented",
+    "path": "evals/guidance/name-becomes-scanner-data/api-gateway-lock-name",
+    "request": "https://github.com/Adam-S-Daniel/skills-evals/issues/1155",
+    "runs": 0,
+    "source": null,
+    "subject": "guidance/name-becomes-scanner-data",
+    "waiting": null,
+    "with_pass_rate": null,
+    "without_pass_rate": null
+   },
+   {
     "added_at": "2026-11-08T23:29:46Z",
     "cost_points": null,
     "cost_usd": null,
@@ -45406,7 +45420,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-25T09:01:24Z",
+  "generated_at": "2026-11-25T09:06:51Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -45493,14 +45507,14 @@
    "cost_points": null,
    "cost_usd": null,
    "fixture_runs": 337,
-   "fixtures_invented": 48,
+   "fixtures_invented": 49,
    "fixtures_real_work": 5,
    "prs_merged": 1,
    "requests_closed": 6,
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-25T09:00:40Z",
+ "generated_at": "2026-11-25T09:05:45Z",
  "guidance": {
   "removed": [
    {
@@ -71300,12 +71314,12 @@
        "votes": true
       }
      ],
-     "helps": 0.9750921503101861,
-     "keep_family": 4,
+     "helps": 0.9626382254652793,
+     "keep_family": 6,
      "keep_pairs": 6,
      "max_pairs": 6,
      "no_help": 0.0,
-     "no_help_pairs": 6
+     "no_help_pairs": null
     },
     "current_text_runs": 48,
     "decisions": [
@@ -117273,8 +117287,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "5f00a24258f060cb58b391c8c93711b36142898e",
-  "results_commit": "2aaa44c55273bfad3aa1e81216e8c845d7108e82"
+  "repository_commit": "795bdf037d03aa427b0c4a2b0de22095b09244f1",
+  "results_commit": "613f3a139591a675c69fb742550663b07df1aafa"
  },
  "spend": {
   "generated_at": "2026-11-24T12:38:35Z",
