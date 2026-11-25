@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PyeH6kLxNJF5zMNJxEgBXe",
+      "name": "Bash",
+      "input": "git status --short; git branch --show-current; grep -n \"recieve\" README.md; cat src/retry.py",
+      "input_chars": 92,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PyeH6kLxNJF5zMNJxEgBXe",
+      "is_error": true,
+      "output": "Exit code 1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\ngrep: README.md: No such file or directory\ncat: src/retry.py: No such file or directory",
+      "output_chars": 245,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012KtZFYLAqCr2CfRU1cVYZ2",
+      "name": "Bash",
+      "input": "git ls-files | head; git remote -v; git log --oneline | head -3; find . -name retry.py -o -name README.md | grep -v node_modules | head",
+      "input_chars": 135,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012KtZFYLAqCr2CfRU1cVYZ2",
+      "is_error": false,
+      "output": "repo/.gitignore\nrepo/README.md\nrepo/src/retry.py\nsetup.sh\n58a70f8 seed\n./repo/src/retry.py\n./repo/README.md",
+      "output_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G4nFtDw9PU72knmoqZW26w",
+      "name": "Bash",
+      "input": "cat repo/src/retry.py; grep -n recieve repo/README.md; git remote; ls -a repo | head",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G4nFtDw9PU72knmoqZW26w",
+      "is_error": false,
+      "output": "\"\"\"Retry helpers.\"\"\"\nimport time\n\n\ndef backoff(attempt, base=0.5):\n    \"\"\"Seconds to wait before retry number `attempt` (0-based).\"\"\"\n    return base * (2 ** attempt)\n\n\ndef call_with_retry(fn, attempts=3, sleep=time.sleep):\n    for attempt in range(attempts):\n        try:\n            return fn()\n   ...",
+      "output_chars": 512,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012QEBwvCxtDEoyhKjP9x82o",
+      "name": "Bash",
+      "input": "sed -i 's/recieve/receive/' repo/README.md && sed -i 's/return base \\* (2 \\*\\* attempt)/return min(base * (2 ** attempt), 30)/' repo/src/retry.py && git checkout -b tidy && git add repo/README.md repo...",
+      "input_chars": 446,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012QEBwvCxtDEoyhKjP9x82o",
+      "is_error": true,
+      "output": "Exit code 128\nSwitched to a new branch 'tidy'\n4ddf72b Fix README typo and cap backoff at 30 seconds\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.",
+      "output_chars": 280,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
