@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake Claude Code binary: resolvable on PATH, never launched by the fake wt.exe.
+echo "fake claude: $*"
+exit 0

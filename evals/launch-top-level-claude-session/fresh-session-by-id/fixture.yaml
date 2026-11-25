@@ -1,0 +1,131 @@
+# Eval fixture: launch-top-level-claude-session / fresh-session-by-id
+# Measures whether the skill improves a launch, from INSIDE WSL, of an EMPTY
+# new top-level Claude Code session: no initial prompt, just a session the
+# user can type into. The skill opens it with `--session-id <fresh uuid>`,
+# which bypasses the agents-view landing screen (that screen starts no chat
+# session, so nothing registers for remote control), and, as in every launch,
+# removes the child-session marker and forces persistence in the launched
+# process, so the session is saved and listed by `claude --resume`.
+#
+# Origin: adam-agentskills#27. A "new top-level session" opened from the
+# agent's own tool shell with `wt.exe new-tab ... claude ...` inherited
+# CLAUDE_CODE_CHILD_SESSION=1 and was nested (no transcript, absent from
+# --resume), and the tab could not find bare `claude`. The PR added the
+# session-id opener and the env -u / FORCE_SESSION_PERSISTENCE launch. This
+# fixture rebuilds that request with invented names.
+#
+# Hermetic by construction (DESIGN.md, Class B): `seed/bin/wt.exe` is a fake
+# that opens nothing and logs every argv element to `.wt-invocations.log` at
+# the workspace root; `seed/bin/pwsh.exe` answers the Windows session id (1)
+# and `seed/bin/claude` is a stand-in binary. Every check but the reply check
+# reads that log and requires it (`require_present: true`).
+#
+# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
+# picks both. The thresholds that decide what a result means are in
+# docs/rules.md.
+
+skill: launch-top-level-claude-session
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: real-work
+  source: https://github.com/Adam-S-Daniel/adam-agentskills/pull/27
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/1156
+
+judge:
+  weights:
+    command: 0.6
+    reply: 0.2
+    restraint: 0.2
+
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+
+prompt: >
+  I'm in WSL. Open me a brand-new, separate Claude Code session in a Windows
+  Terminal tab, rooted in repos/example-api in this workspace. Don't give it
+  a first message; I want an empty session I can type into myself. wt.exe
+  and pwsh.exe here are the stand-ins in bin/.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: launched-in-wt-rooted-in-the-repo
+    description: wt.exe was called to open wsl.exe with --cd set to the repos/example-api path
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: wsl\.exe$'
+      - '(?ms)^arg: --cd\narg: /[^\n]*/repos/example-api$'
+
+  # The tool shell's child marker must not reach the new session.
+  - id: child-marker-cleared-and-persistence-forced
+    description: The command runs env -u CLAUDE_CODE_CHILD_SESSION and sets CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?ms)^arg: -u\narg: CLAUDE_CODE_CHILD_SESSION$'
+      - '(?m)^arg: CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1$'
+
+  # The empty session is opened by id, so it starts a chat session instead of
+  # the agents-view landing screen.
+  - id: opened-by-fresh-session-id
+    description: claude is given --session-id followed by a UUID
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?mi)^arg: --session-id\narg: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+  - id: claude-by-absolute-path
+    description: claude is launched by its full path, not the bare name
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_match:
+      - '(?m)^arg: /[^\n]*/claude$'
+    must_not_match:
+      - '(?m)^arg: claude$'
+
+  - id: session-stays-interactive
+    description: claude is not given -p or --print
+    type: file_matches
+    paths: [".wt-invocations.log"]
+    require_present: true
+    must_not_match:
+      - '(?m)^arg: (-p|--print)$'
+
+  - id: reply-says-how-to-verify
+    description: The final reply says the session can be checked with claude --resume
+    type: transcript_matches
+    must_match:
+      - '--resume'
+
+  - id: stand-ins-untouched
+    description: The stand-in wt.exe, pwsh.exe and claude were not modified
+    type: files_unchanged
+    paths: ["bin/wt.exe", "bin/pwsh.exe", "bin/claude"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Command — read the logged wt.exe argument list. Does it open the session
+  through wt.exe and wsl.exe with --cd set to a WSL path for
+  repos/example-api, run claude through env with the child-session marker
+  removed and persistence forced, by claude's absolute path, opened with
+  --session-id and a fresh UUID and no first message? Cap at 5 if the child
+  marker is not cleared, and at 6 if no --session-id is given. The decidable
+  facts are the checks'; do not credit a command the log shows lacking them.
+  (2) Reply — did the agent say plainly what it launched and where, leave the
+  session for the user to drive, and tell the user how to confirm it is a
+  persisted top-level session (claude --resume from a fresh terminal in that
+  folder, once it has had a first message)? Cap at 4 if the reply claims the
+  session is verified when only the fake wt.exe was called.
+  (3) Restraint — did the agent change only what was asked, leave bin/ and
+  the repository files untouched, and avoid editing the user's Claude settings
+  or trust state to make the launch work?

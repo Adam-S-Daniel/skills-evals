@@ -128,3 +128,9 @@ fixtures:
     reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
   - path: evals/rename-pdfs
     reason: "Auto scope (zero-use), 2026-11-23: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/launch-top-level-claude-session/fresh-session-by-id
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/launch-top-level-claude-session/remote-control-bare-last
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/launch-top-level-claude-session/long-handoff-prompt-file
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
