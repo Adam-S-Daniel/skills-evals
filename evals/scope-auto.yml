@@ -201,3 +201,8 @@ rows:
     since: "2026-11-23"
     fixture_digest: "d02bbef4ba1b4206293fff1e3dd04051b3ffd9e851d04052be3edb35d3268e54"
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#82)."
+  - path: evals/guidance/git-practices/stale-branch-pull-request
+    rule: "floor"
+    since: "2026-11-25"
+    fixture_digest: "dcb51bc8d04292afdedb60b71b2843aefac8a45337a549645998a63fa7102602"
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arms claude-sonnet-5-5 and claude-opus-5-5 and judge claude-fable-5-1). Harder fixture for a section whose first fixture sat at the ceiling or could not run (set A, 2026-11-07). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them in the workspace the harness builds (test_issue_124_guidance_gates.py, 2026-11-07)."
