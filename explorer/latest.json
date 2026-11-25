@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-25T14:41:10Z",
+  "fetched_at": "2026-11-25T14:46:40Z",
   "issues": [
    {
     "created_at": "2026-11-24T02:19:55Z",
@@ -4214,7 +4214,7 @@
     "workflow": "Scheduled-run health audit"
    }
   ],
-  "since": "2026-11-11T14:41:10Z"
+  "since": "2026-11-11T14:46:40Z"
  },
  "agent_made": {
   "items": [
@@ -4999,7 +4999,7 @@
     "created": "2026-03-01T15:00:20Z",
     "id": "git-practices",
     "impact": {
-     "current_text_runs": 31,
+     "current_text_runs": 32,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -5930,8 +5930,8 @@
     },
     "cannot_discriminate": {
      "cost_unknown": 0,
-     "cost_usd": 7.408191800000001,
-     "runs": 60
+     "cost_usd": 7.967888600000001,
+     "runs": 66
     },
     "context_unknown": {
      "cost_unknown": 0,
@@ -5980,15 +5980,15 @@
     }
    },
    "cost_unknown": 3,
-   "cost_usd": 681.64308682,
-   "total": 2312
+   "cost_usd": 682.20278362,
+   "total": 2318
   },
   "guidance": {
    "by_reason": {
     "cannot_discriminate": {
      "cost_unknown": 0,
-     "cost_usd": 7.408191800000001,
-     "runs": 60
+     "cost_usd": 7.967888600000001,
+     "runs": 66
     },
     "context_unmatched": {
      "cost_unknown": 0,
@@ -6022,8 +6022,8 @@
     }
    },
    "cost_unknown": 0,
-   "cost_usd": 76.06227213,
-   "total": 763
+   "cost_usd": 76.62196893000001,
+   "total": 769
   },
   "skills": {
    "by_reason": {
@@ -7604,6 +7604,17 @@
   "latest": [
    {
     "checks": 2,
+    "fired_at": "2026-11-25T14:37:39Z",
+    "fixture": "guidance/git-practices/rebase-shared-branch",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261125T143739Z-f8279f",
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
+   {
+    "checks": 2,
     "fired_at": "2026-11-25T14:34:08Z",
     "fixture": "guidance/git-practices/one-change-per-commit",
     "model": "claude-sonnet-5-5",
@@ -7630,17 +7641,6 @@
     "fixture": "guidance/git-practices/amend-published-commit-message",
     "model": "claude-opus-5-5",
     "run_id": "20261125T141252Z-98113a",
-    "with_share": 0.0,
-    "with_skill": 0,
-    "without_share": 0.0,
-    "without_skill": 0
-   },
-   {
-    "checks": 2,
-    "fired_at": "2026-11-25T13:23:16Z",
-    "fixture": "guidance/git-practices/rebase-shared-branch",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261125T132316Z-9662bb",
     "with_share": 0.0,
     "with_skill": 0,
     "without_share": 0.0,
@@ -9722,6 +9722,28 @@
    "tied": 52
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.332",
+    "cost_usd": 0.1877527,
+    "fired_at": "2026-11-25T14:37:39Z",
+    "fixture": "guidance/git-practices/rebase-shared-branch",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143739Z-f8279f/guidance/git-practices/20261125T143829Z/report.md",
+    "run_id": "20261125T143739Z-f8279f",
+    "skill": "guidance/git-practices",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_judge": null,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
    {
     "account_week_after": null,
     "checks": 2,
@@ -45940,7 +45962,7 @@
     "origin_kind": "invented",
     "path": "evals/guidance/git-practices/rebase-shared-branch",
     "request": "https://github.com/Adam-S-Daniel/skills-evals/issues/849",
-    "runs": 2,
+    "runs": 3,
     "source": null,
     "subject": "guidance/git-practices",
     "waiting": null,
@@ -46466,7 +46488,7 @@
     "without_pass_rate": 0.9409722222222222
    }
   ],
-  "generated_at": "2026-11-25T14:40:09Z",
+  "generated_at": "2026-11-25T14:45:38Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -46552,7 +46574,7 @@
   "totals": {
    "cost_points": null,
    "cost_usd": null,
-   "fixture_runs": 356,
+   "fixture_runs": 357,
    "fixtures_invented": 49,
    "fixtures_real_work": 5,
    "prs_merged": 1,
@@ -46560,7 +46582,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-25T14:38:41Z",
+ "generated_at": "2026-11-25T14:44:33Z",
  "guidance": {
   "removed": [
    {
@@ -79739,7 +79761,7 @@
      "no_help": 0.0,
      "no_help_pairs": null
     },
-    "current_text_runs": 31,
+    "current_text_runs": 32,
     "decisions": [
      {
       "class": "insufficient",
@@ -79792,7 +79814,7 @@
       "to": "2026-11-25"
      },
      {
-      "class": "insufficient",
+      "class": "cannot-discriminate",
       "current": true,
       "decided": null,
       "fixture": "rebase-shared-branch",
@@ -79886,8 +79908,8 @@
      "by_reason": {
       "cannot_discriminate": {
        "cost_unknown": 0,
-       "cost_usd": 1.9367443,
-       "runs": 18
+       "cost_usd": 2.4964411,
+       "runs": 24
       },
       "context_unmatched": {
        "cost_unknown": 0,
@@ -79901,8 +79923,8 @@
       }
      },
      "cost_unknown": 0,
-     "cost_usd": 2.6209369,
-     "total": 30
+     "cost_usd": 3.1806337,
+     "total": 36
     },
     "heading": "Git practices",
     "id": "git-practices",
@@ -80033,23 +80055,46 @@
      {
       "class": "building",
       "cost_unknown": 0,
-      "cost_usd": 0.6001435,
+      "cost_usd": 0.2281994,
       "date": "2026-11-25",
       "model": "claude-sonnet-5-5",
       "reason": null,
-      "runs": 6
+      "runs": 2
      },
      {
       "class": "discarded",
       "cost_unknown": 0,
-      "cost_usd": 1.1977941,
+      "cost_usd": 1.7574909,
       "date": "2026-11-25",
       "model": "claude-sonnet-5-5",
       "reason": "cannot_discriminate",
-      "runs": 12
+      "runs": 18
      }
     ],
     "runs": [
+     {
+      "at": "2026-11-25T14:38:29Z",
+      "cli_version": "2.1.332",
+      "fixture": "rebase-shared-branch",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.09295790000000001,
+        "judge_mean": 4.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0947948,
+        "judge_mean": 4.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143739Z-f8279f/guidance/git-practices/20261125T143829Z/report.md"
+     },
      {
       "at": "2026-11-25T14:34:57Z",
       "cli_version": "2.1.332",
@@ -87176,7 +87221,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-25T14:34:57Z",
+ "newest_run": "2026-11-25T14:38:29Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 20,
@@ -119312,7 +119357,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-  "results_commit": "5c6eeb3038aec77280accc615ee625daa779e3ec"
+  "results_commit": "6b63cf91d8f7f11d05f246243a56dade04ceeb89"
  },
  "spend": {
   "generated_at": "2026-11-25T12:38:35Z",
