@@ -81,7 +81,7 @@ a project task's prompt (2026-11-18), so this line is the entry point.
 **Who runs what.** The main session only dispatches, as `tasks/refresh.md` "Run" says: it
 runs on Opus whatever the task page says, and each of its calls re-reads a context that starts
 near 100k tokens. Steps 1 and 3, step 2, and step 5 (with its fire cost ledger) run in three
-Haiku subagents at once; their tool output is large (every thread, the owner's new messages,
+subagents at once (Haiku for steps 1 to 3, Sonnet for step 5); their tool output is large (every thread, the owner's new messages,
 every session and every scheduled task). Each writes its result straight to the file or helper
 the step names (step 5 also writes arg 1 to `$REFRESH_WORK/arg1.json` and the run list for
 step 6 to `$REFRESH_WORK/runs.json`) and returns one line: its counts, or the `STOP:` text.
