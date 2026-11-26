@@ -1,5 +1,5 @@
 {
-  "as_of": "20261125T174643Z",
+  "as_of": "20261126T174442Z",
   "policy": {
     "guidance": {
       "judge_drop": 1.0,
@@ -9618,51 +9618,84 @@
     },
     {
       "boundary": {
-        "after": "20261109T185834Z",
-        "before": "20261109T211538Z"
+        "after": "20261109T211538Z",
+        "before": "20261109T232016Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "ee2bf84465faaf280509497acca8c6d038c114e0",
-          "skills_evals_commit_last": "dce6fced0f77cfa93232343e3de27c5e984cd1a2"
+          "skills_evals_commit_first": "93a382b24e874d4f3365f57545cdd3c8ffd81e48",
+          "skills_evals_commit_last": "0b2618afc7949b364457ac266c43016edc2ac28d"
         },
         "previous": {
           "skills_evals_commit_first": "41da41b1613dfb5e9268adc0a24785eac8dbb53d",
-          "skills_evals_commit_last": "41da41b1613dfb5e9268adc0a24785eac8dbb53d"
+          "skills_evals_commit_last": "ee2bf84465faaf280509497acca8c6d038c114e0"
         }
       },
       "fixture": "ci-watch-fleet-rule",
       "id": "finding-your-unknowns",
       "model": "claude-opus-5-5",
       "numbers": {
-        "counts": null,
-        "delta": null,
-        "judge": null,
-        "objective": null
+        "counts": {
+          "with": {
+            "current": {
+              "checks_passed": 9,
+              "checks_total": 9,
+              "judge_mean": 9.666666666666666,
+              "runs": 3,
+              "trials": 3
+            },
+            "previous": {
+              "checks_passed": 5,
+              "checks_total": 6,
+              "judge_mean": 9.0,
+              "runs": 2,
+              "trials": 2
+            }
+          },
+          "without": {
+            "current": {
+              "checks_passed": 9,
+              "checks_total": 9,
+              "judge_mean": 9.433333333333334,
+              "runs": 3,
+              "trials": 3
+            },
+            "previous": {
+              "checks_passed": 6,
+              "checks_total": 6,
+              "judge_mean": 9.65,
+              "runs": 2,
+              "trials": 2
+            }
+          }
+        },
+        "delta": {
+          "current": 0.0,
+          "previous": -0.16666666666666674
+        },
+        "judge": {
+          "change": 0.6666666666666661,
+          "current": 9.666666666666666,
+          "noise": 0.8653836657164778,
+          "previous": 9.0
+        },
+        "objective": {
+          "change": 0.16666666666666674,
+          "current": 1.0,
+          "noise": 0.13608276348795434,
+          "previous": 0.8333333333333333
+        }
       },
       "pair": "in_situ",
-      "reason": "fewer than 2 runs in a window (previous 1, current 3)",
+      "reason": "the objective mean rose by 0.17 (threshold 0.15, noise 0.14)",
       "subject": "guidance",
       "suspects": [
         "CLI version changed",
         "arm context changed"
       ],
-      "verdict": "insufficient",
+      "verdict": "improved",
       "windows": {
         "current": [
-          {
-            "arm_context_digest": "ac444b0ac308c0e9dfa6a088046300e56660ef0d26c29ccc5a1604cd3abcd525",
-            "cli_versions": [
-              "2.1.321 (Claude Code)"
-            ],
-            "path": "results/guidance/finding-your-unknowns/20261109T211538Z",
-            "report": {
-              "path": "results/guidance/finding-your-unknowns/20261109T211538Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261109T211538Z/report.md"
-            },
-            "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
-            "timestamp": "20261109T211538Z"
-          },
           {
             "arm_context_digest": "ac444b0ac308c0e9dfa6a088046300e56660ef0d26c29ccc5a1604cd3abcd525",
             "cli_versions": [
@@ -9688,6 +9721,19 @@
             },
             "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
             "timestamp": "20261125T152134Z"
+          },
+          {
+            "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
+            "cli_versions": [
+              "2.1.332 (Claude Code)"
+            ],
+            "path": "routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190034Z",
+            "report": {
+              "path": "routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190034Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190034Z/report.md"
+            },
+            "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
+            "timestamp": "20261125T190034Z"
           }
         ],
         "previous": [
@@ -9703,6 +9749,19 @@
             },
             "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
             "timestamp": "20261109T185834Z"
+          },
+          {
+            "arm_context_digest": "ac444b0ac308c0e9dfa6a088046300e56660ef0d26c29ccc5a1604cd3abcd525",
+            "cli_versions": [
+              "2.1.321 (Claude Code)"
+            ],
+            "path": "results/guidance/finding-your-unknowns/20261109T211538Z",
+            "report": {
+              "path": "results/guidance/finding-your-unknowns/20261109T211538Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261109T211538Z/report.md"
+            },
+            "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
+            "timestamp": "20261109T211538Z"
           }
         ]
       }
@@ -9799,13 +9858,13 @@
     },
     {
       "boundary": {
-        "after": "20261125T140635Z",
-        "before": "20261125T143117Z"
+        "after": "20261125T143117Z",
+        "before": "20261125T145524Z"
       },
       "commits": {
         "current": {
           "skills_evals_commit_first": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-          "skills_evals_commit_last": "dce6fced0f77cfa93232343e3de27c5e984cd1a2"
+          "skills_evals_commit_last": "0b2618afc7949b364457ac266c43016edc2ac28d"
         },
         "previous": {
           "skills_evals_commit_first": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
@@ -9821,7 +9880,7 @@
             "current": {
               "checks_passed": 9,
               "checks_total": 9,
-              "judge_mean": 9.3,
+              "judge_mean": 9.200000000000001,
               "runs": 3,
               "trials": 3
             },
@@ -9855,9 +9914,9 @@
           "previous": 0.0
         },
         "judge": {
-          "change": -0.2666666666666657,
-          "current": 9.3,
-          "noise": 0.16329931618554464,
+          "change": -0.36666666666666536,
+          "current": 9.200000000000001,
+          "noise": 0.2041241452319312,
           "previous": 9.566666666666666
         },
         "objective": {
@@ -9874,19 +9933,6 @@
       "verdict": "stable",
       "windows": {
         "current": [
-          {
-            "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
-            "cli_versions": [
-              "2.1.332 (Claude Code)"
-            ],
-            "path": "routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z",
-            "report": {
-              "path": "routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md"
-            },
-            "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
-            "timestamp": "20261125T143117Z"
-          },
           {
             "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
             "cli_versions": [
@@ -9912,22 +9958,22 @@
             },
             "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
             "timestamp": "20261125T152403Z"
-          }
-        ],
-        "previous": [
+          },
           {
             "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
             "cli_versions": [
               "2.1.332 (Claude Code)"
             ],
-            "path": "routine-results/20261125T131610Z-06c3b0/guidance/finding-your-unknowns/20261125T131657Z",
+            "path": "routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190256Z",
             "report": {
-              "path": "routine-results/20261125T131610Z-06c3b0/guidance/finding-your-unknowns/20261125T131657Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T131610Z-06c3b0/guidance/finding-your-unknowns/20261125T131657Z/report.md"
+              "path": "routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190256Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T185948Z-a358c0/guidance/finding-your-unknowns/20261125T190256Z/report.md"
             },
             "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
-            "timestamp": "20261125T131657Z"
-          },
+            "timestamp": "20261125T190256Z"
+          }
+        ],
+        "previous": [
           {
             "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
             "cli_versions": [
@@ -9953,6 +9999,19 @@
             },
             "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
             "timestamp": "20261125T140635Z"
+          },
+          {
+            "arm_context_digest": "6f806dd723bd2066ecb7d72917734cf2c09500caacab004f205415a53422c96f",
+            "cli_versions": [
+              "2.1.332 (Claude Code)"
+            ],
+            "path": "routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z",
+            "report": {
+              "path": "routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T143025Z-32434a/guidance/finding-your-unknowns/20261125T143117Z/report.md"
+            },
+            "tested_digest": "bb9135fe2a6f8141b7a03f49308fa8b6ee43d65f727780049a27a8b0796628e1",
+            "timestamp": "20261125T143117Z"
           }
         ]
       }
@@ -11600,7 +11659,7 @@
       "commits": {
         "current": {
           "skills_evals_commit_first": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-          "skills_evals_commit_last": "dce6fced0f77cfa93232343e3de27c5e984cd1a2"
+          "skills_evals_commit_last": "0b2618afc7949b364457ac266c43016edc2ac28d"
         },
         "previous": {
           "skills_evals_commit_first": null,
@@ -11617,7 +11676,7 @@
         "objective": null
       },
       "pair": "in_situ",
-      "reason": "fewer than 2 runs in a window (previous 0, current 2)",
+      "reason": "fewer than 2 runs in a window (previous 0, current 3)",
       "subject": "guidance",
       "suspects": [],
       "verdict": "insufficient",
@@ -11648,6 +11707,19 @@
             },
             "tested_digest": "bb342d9ff5075ed0a09f71cedf984b265d440127187a31706d392907c2110f6d",
             "timestamp": "20261125T141340Z"
+          },
+          {
+            "arm_context_digest": "6100f7182718a1c392a543cc0966c361c1879c7a8041ec137c079f67fad04990",
+            "cli_versions": [
+              "2.1.332 (Claude Code)"
+            ],
+            "path": "routine-results/20261125T190652Z-d7fa0b/guidance/git-practices/20261125T190738Z",
+            "report": {
+              "path": "routine-results/20261125T190652Z-d7fa0b/guidance/git-practices/20261125T190738Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T190652Z-d7fa0b/guidance/git-practices/20261125T190738Z/report.md"
+            },
+            "tested_digest": "bb342d9ff5075ed0a09f71cedf984b265d440127187a31706d392907c2110f6d",
+            "timestamp": "20261125T190738Z"
           }
         ],
         "previous": []
@@ -12522,7 +12594,7 @@
       "commits": {
         "current": {
           "skills_evals_commit_first": "dce6fced0f77cfa93232343e3de27c5e984cd1a2",
-          "skills_evals_commit_last": "dce6fced0f77cfa93232343e3de27c5e984cd1a2"
+          "skills_evals_commit_last": "0b2618afc7949b364457ac266c43016edc2ac28d"
         },
         "previous": {
           "skills_evals_commit_first": null,
@@ -12539,7 +12611,7 @@
         "objective": null
       },
       "pair": "in_situ",
-      "reason": "fewer than 2 runs in a window (previous 0, current 2)",
+      "reason": "fewer than 2 runs in a window (previous 0, current 3)",
       "subject": "guidance",
       "suspects": [],
       "verdict": "insufficient",
@@ -12570,6 +12642,19 @@
             },
             "tested_digest": "bb342d9ff5075ed0a09f71cedf984b265d440127187a31706d392907c2110f6d",
             "timestamp": "20261125T152458Z"
+          },
+          {
+            "arm_context_digest": "6100f7182718a1c392a543cc0966c361c1879c7a8041ec137c079f67fad04990",
+            "cli_versions": [
+              "2.1.332 (Claude Code)"
+            ],
+            "path": "routine-results/20261125T190322Z-bc2626/guidance/git-practices/20261125T190413Z",
+            "report": {
+              "path": "routine-results/20261125T190322Z-bc2626/guidance/git-practices/20261125T190413Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261125T190322Z-bc2626/guidance/git-practices/20261125T190413Z/report.md"
+            },
+            "tested_digest": "bb342d9ff5075ed0a09f71cedf984b265d440127187a31706d392907c2110f6d",
+            "timestamp": "20261125T190413Z"
           }
         ],
         "previous": []
@@ -22209,17 +22294,17 @@
     },
     {
       "boundary": {
-        "after": null,
-        "before": "20261109T193910Z"
+        "after": "20261109T193910Z",
+        "before": "20261109T214834Z"
       },
       "commits": {
         "current": {
-          "skills_evals_commit_first": "66e5f8026d43b066aa881677d98feea18feec101",
-          "skills_evals_commit_last": "323763cfd82e5b3a8225aa2eb68c62744e21539d"
+          "skills_evals_commit_first": "ee2bf84465faaf280509497acca8c6d038c114e0",
+          "skills_evals_commit_last": "3a3f6ceda87f11a0311599ebacd4c70de69c6c49"
         },
         "previous": {
-          "skills_evals_commit_first": null,
-          "skills_evals_commit_last": null
+          "skills_evals_commit_first": "66e5f8026d43b066aa881677d98feea18feec101",
+          "skills_evals_commit_last": "66e5f8026d43b066aa881677d98feea18feec101"
         }
       },
       "fixture": "bom-export",
@@ -22232,25 +22317,15 @@
         "objective": null
       },
       "pair": "in_situ",
-      "reason": "fewer than 2 runs in a window (previous 0, current 3)",
+      "reason": "fewer than 2 runs in a window (previous 1, current 3)",
       "subject": "guidance",
-      "suspects": [],
+      "suspects": [
+        "CLI version changed",
+        "arm context changed"
+      ],
       "verdict": "insufficient",
       "windows": {
         "current": [
-          {
-            "arm_context_digest": "79196b43558c61e8da92f92db776dc0a57d42cfd1505d8202db7a1e9c80949f2",
-            "cli_versions": [
-              "2.1.321 (Claude Code)"
-            ],
-            "path": "results/guidance/turn-lessons-into-checks/20261109T193910Z",
-            "report": {
-              "path": "results/guidance/turn-lessons-into-checks/20261109T193910Z/report.md",
-              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/turn-lessons-into-checks/20261109T193910Z/report.md"
-            },
-            "tested_digest": "70fce8092e7fddbb060f6f2123d44e114a1a072c4aa39522ba88013532040da1",
-            "timestamp": "20261109T193910Z"
-          },
           {
             "arm_context_digest": "79196b43558c61e8da92f92db776dc0a57d42cfd1505d8202db7a1e9c80949f2",
             "cli_versions": [
@@ -22276,9 +22351,36 @@
             },
             "tested_digest": "70fce8092e7fddbb060f6f2123d44e114a1a072c4aa39522ba88013532040da1",
             "timestamp": "20261109T235206Z"
+          },
+          {
+            "arm_context_digest": "c3e1943c72597900f0f80c951a0f1e2e085f44ebec3acafb13f0c19f46a45cba",
+            "cli_versions": [
+              "2.1.332 (Claude Code)"
+            ],
+            "path": "routine-results/20261126T045754Z-1e4822/guidance/turn-lessons-into-checks/20261126T045843Z",
+            "report": {
+              "path": "routine-results/20261126T045754Z-1e4822/guidance/turn-lessons-into-checks/20261126T045843Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261126T045754Z-1e4822/guidance/turn-lessons-into-checks/20261126T045843Z/report.md"
+            },
+            "tested_digest": "70fce8092e7fddbb060f6f2123d44e114a1a072c4aa39522ba88013532040da1",
+            "timestamp": "20261126T045843Z"
           }
         ],
-        "previous": []
+        "previous": [
+          {
+            "arm_context_digest": "79196b43558c61e8da92f92db776dc0a57d42cfd1505d8202db7a1e9c80949f2",
+            "cli_versions": [
+              "2.1.321 (Claude Code)"
+            ],
+            "path": "results/guidance/turn-lessons-into-checks/20261109T193910Z",
+            "report": {
+              "path": "results/guidance/turn-lessons-into-checks/20261109T193910Z/report.md",
+              "url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/turn-lessons-into-checks/20261109T193910Z/report.md"
+            },
+            "tested_digest": "70fce8092e7fddbb060f6f2123d44e114a1a072c4aa39522ba88013532040da1",
+            "timestamp": "20261109T193910Z"
+          }
+        ]
       }
     },
     {
