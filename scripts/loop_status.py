@@ -231,6 +231,8 @@ def _calculation(doc: dict, inputs: dict, scenario: dict, mid: float) -> dict:
         "weekly_cap_points": steps.get("weekly_cap_points"),
         "loop_jobs_points": inputs.get("loop_jobs_points_per_week"),
         "after_loop_jobs_points": steps.get("after_loop_jobs_points"),
+        "improve_points": steps.get("improve_points"),
+        "after_improve_points": steps.get("after_improve_points"),
         "capacity_points": _points(capacity, mid),
         "capacity_basis": steps.get("account_stop_basis"),
         "account_stop_points": steps.get("account_stop_points"),
@@ -291,6 +293,8 @@ def forecast_block(doc) -> dict | None:
         "capacity_points_per_week": capacity / mid if mid else None,
         "eval_cap_points_per_week": inputs.get("weekly_cap_points"),
         "loop_jobs_points_per_week": inputs.get("loop_jobs_points_per_week"),
+        "improve_points_per_week": (inputs.get("improve") or {}).get("points_per_week")
+        if isinstance(inputs.get("improve"), dict) else None,
         "non_eval_points_per_week": (inputs.get("assumptions") or {}).get("non_eval_points_per_week"),
         "pace_hold_modeled": bool((inputs.get("assumptions") or {}).get("pace_hold")),
         "pace_replay": replay,

@@ -501,6 +501,7 @@ class PaceHoldReplay(unittest.TestCase):
         self.assertEqual(replay["flat_points"], 0.0)
         self.assertEqual(doc["inputs"]["cap_steps"],
                          {"weekly_cap_points": 25.0, "after_loop_jobs_points": 25.0,
+                          "improve_points": None, "after_improve_points": 25.0,
                           "after_account_stop_points": 25.0, "account_stop_basis": "pace_replay",
                           "account_stop_points": 80.0})
         self.assertAlmostEqual(doc["inputs"]["weekly_cap_points"], 25.0)
@@ -567,6 +568,63 @@ class EvalRunPoints(unittest.TestCase):
             points, why = fc.routine_charge(tree, now, budget)
             self.assertAlmostEqual(points, 0.0304)
             self.assertIn("spend/weekly.json eval_routine", why)
+
+
+class ImproveRunsShareTheCap(unittest.TestCase):
+    """Improve runs are booked against the same weekly cap as evals
+    (allowance_guard.account adds their measured charge to `spent`), so the
+    evals' capacity is the cap less the loop jobs and the improve runs
+    (Adam, 2026-11-26: "eval runs 12.4, improve runs 4.9" against it)."""
+
+    NOW = fc.datetime(2026, 11, 26, 18, tzinfo=fc.timezone.utc)
+
+    def records(self, *stamps):
+        return [{"run_id": f"{s}-abcdef"} for s in stamps]
+
+    def measure(self, records, days, charges):
+        with mock.patch.object(fc.allowance_guard, "improve_records", return_value=records), \
+                mock.patch.object(fc.allowance_guard, "improve_charge", return_value=0.013), \
+                mock.patch.object(fc.allowance_guard, "record_charge",
+                                  side_effect=lambda r, limits, unit: charges[r["run_id"][:16]]):
+            return fc.improve_points_per_week(Path("."), {}, self.NOW, days)
+
+    def test_the_window_counts_its_runs_at_the_guards_charge(self):
+        recs = self.records("20261101T000000Z", "20261120T000000Z", "20261125T000000Z",
+                            "20261126T000000Z")
+        charges = {"20261101T000000Z": 0.5, "20261120T000000Z": 0.02,
+                   "20261125T000000Z": 0.013, "20261126T000000Z": None}
+        got = self.measure(recs, 14, charges)
+        self.assertEqual((got["runs"], got["unpriced"]), (2, 1))
+        self.assertAlmostEqual(got["points_per_week"], 3.3 * 7 / 14)
+
+    def test_a_window_older_than_the_records_is_not_diluted(self):
+        # Records start 2026-11-20: a 56-day window covers six days of them.
+        recs = self.records("20261120T180000Z", "20261125T000000Z")
+        charges = {"20261120T180000Z": 0.03, "20261125T000000Z": 0.03}
+        got = self.measure(recs, 56, charges)
+        self.assertAlmostEqual(got["days_covered"], 6.0)
+        self.assertAlmostEqual(got["points_per_week"], 6.0 * 7 / 6)
+        self.assertEqual(self.measure([], 28, {})["points_per_week"], 0.0)
+
+    def test_the_cap_steps_take_improve_runs_off_after_the_loop_jobs(self):
+        late = PaceHoldReplay("curve").curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
+        budget = {**Forecast.BUDGET, "stop_when_account_above": 0.8}
+        improve = {"points_per_week": 7.5, "runs": 3, "unpriced": 0, "days": 28,
+                   "days_covered": 24.0}
+        with mock.patch.object(fc.plan_week, "pairs_to_verdict", return_value=None), \
+                mock.patch.object(fc.plan_week, "_produces_item", return_value=True):
+            doc = fc.forecast(Forecast.GATES, Forecast.CELLS, budget, Forecast.BATCH, None,
+                              {"fire_overhead_usd": 0.0, "non_eval_points_per_week": 90.0},
+                              frozenset({"skipped-one"}),
+                              automatic={"loop_meter_points_per_week": 4.0},
+                              week_curves=[late], improve=improve)
+        steps = doc["inputs"]["cap_steps"]
+        self.assertEqual((steps["after_loop_jobs_points"], steps["improve_points"],
+                          steps["after_improve_points"]), (21.0, 7.5, 13.5))
+        # The early-week room (about 33 points) is more than the cap: the
+        # replay now stops at the cap less the improve runs.
+        self.assertAlmostEqual(steps["after_account_stop_points"], 13.5)
+        self.assertEqual(doc["inputs"]["improve"], improve)
 
 
 class RoutineSessionBackTest(unittest.TestCase):

@@ -72,6 +72,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import allowance_guard  # noqa: E402
 import allowance_points  # noqa: E402
+import budget as budget_file  # noqa: E402
 import plan_week  # noqa: E402
 import stakes  # noqa: E402
 
@@ -696,9 +697,12 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
              automatic: dict | None = None,
              measured_non_eval: dict | None = None,
              measured_rate: dict | None = None,
-             week_curves: list | None = None) -> dict:
+             week_curves: list | None = None,
+             improve: dict | None = None) -> dict:
     """The forecast document: backlog, keep-up and catch-up, each a
-    central figure with a low-high range, and every input with its source."""
+    central figure with a low-high range, and every input with its source.
+    `improve` is `improve_points_per_week`'s result: the guard books improve
+    runs against the same weekly cap as evals, so they come off it."""
     ctx = {"policy": gates.get("policy"), "guidance_policy": gates.get("guidance_policy")}
     prior_pairs = float(batch_policy["pairs_per_cell"])
     a = {k: assumptions.get(k, default) for k, (default, _) in ASSUMPTION_KEYS.items()}
@@ -778,6 +782,15 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
         if a["loop_jobs_in_cap"]:
             cap_points = max(0.0, cap_points - loop_points)
     cap_steps["after_loop_jobs_points"] = cap_points
+    # Improve runs share the cap too: allowance_guard.account adds each
+    # matched improve fire's measured charge to `spent`, the sum one more
+    # eval fire must fit under (Adam, 2026-11-26: "eval runs 12.4, improve
+    # runs 4.9" against the capacity).
+    improve_points = improve["points_per_week"] if improve else None
+    if improve_points is not None:
+        cap_points = max(0.0, cap_points - improve_points)
+    cap_steps["improve_points"] = improve_points
+    cap_steps["after_improve_points"] = cap_points
     # The account stop: evals halt once the whole meter passes it, so other
     # use leaves them at most the stop less that use.
     stop = budget.get("stop_when_account_above")
@@ -910,6 +923,7 @@ def forecast(gates: dict, cells: list, budget: dict, batch_policy: dict,
             "non_eval_points_breakdown": breakdown,
             "scheduled_tasks": tasks,
             "loop_jobs_points_per_week": loop_points,
+            "improve": improve,
             "measured_non_eval": measured_non_eval,
             "owner_squeeze": squeeze,
             "pace_replay": replay,
@@ -986,6 +1000,41 @@ def routine_charge(results_tree: Path, now: datetime, budget: dict) -> tuple[flo
         return float(routine["points_per_fire"]), f"spend/weekly.json eval_routine ({why})"
     return (float(budget["per_run_overrun"]) * 100,
             f"evals/budget.yml per_run_overrun, as a fallback: {why}")
+
+
+def improve_points_per_week(results_tree: Path, limits: dict, now: datetime,
+                            days: int) -> dict:
+    """Improve and guidance-improve runs' meter points a week over the basis
+    window: each cost record (allowance_guard.improve_records) started in the
+    `days` before `now`, at what the guard charges it
+    (allowance_guard.record_charge, the unit charge when it cannot be
+    measured), over the part of the window the records cover: they start
+    with the first record (cost records began 2026-11-02, #577), so a window
+    reaching further back is not diluted by weeks with none. `unpriced`
+    counts records with no charge."""
+    unit = allowance_guard.improve_charge(results_tree, limits)
+    since = now - timedelta(days=days)
+    starts = []
+    for record in allowance_guard.improve_records(results_tree):
+        try:
+            starts.append((datetime.strptime(record["run_id"][:16], "%Y%m%dT%H%M%SZ")
+                           .replace(tzinfo=timezone.utc), record))
+        except ValueError:
+            continue
+    covered = (now - max([since] + [min(t for t, _ in starts)] if starts else [since])) \
+        / timedelta(days=1)
+    points, runs, unpriced = 0.0, 0, 0
+    for started, record in starts:
+        if not since <= started <= now:
+            continue
+        charge = allowance_guard.record_charge(record, limits, unit)
+        if charge is None:
+            unpriced += 1
+            continue
+        points += charge * 100
+        runs += 1
+    return {"points_per_week": points * 7 / covered if covered > 0 else 0.0, "runs": runs,
+            "unpriced": unpriced, "days": days, "days_covered": covered}
 
 
 def eval_pace(runs: list, cap_points: float, now: datetime,
@@ -1119,11 +1168,14 @@ def main(argv: list | None = None) -> int:
             sources["eval_points_per_hour"] = (
                 f"routine-results: median over {measured_pace['weeks']} week(s) of the hours "
                 "from the reset until evals spent the cap")
+    improve = improve_points_per_week(
+        args.results_tree, budget_file.load_budget(args.evals_dir / "budget.yml"), now,
+        basis["days"])
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
                    automatic, measured,
                    measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"],
                                           budget.get("allowance_scale", 1), since),
-                   curves)
+                   curves, improve)
     if automatic is not None and "non_eval_points_per_week" not in assumptions:
         if assumptions.get("interactive_points_per_week") is not None:
             sources["non_eval_points_per_week"] = \
