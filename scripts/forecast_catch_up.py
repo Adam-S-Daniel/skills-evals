@@ -41,6 +41,12 @@ scripts/target_arrivals.py; a stale document or an incomplete kind is not
 used. The assumptions file and `--set` override it. Every value the run
 used is echoed in the output, with its source (`assumption_sources`).
 
+Every rate measured from past data is averaged over the basis window,
+`basis_window_days` in evals/forecast.yml unless `--basis-days` names
+another: the non-eval meter rate, the pace-hold replay's weeks, the measured
+$ per point, the eval pace and the arrival rates (Adam, 2026-11-26: Keep-up
+and eval capacity were too jumpy). `inputs.basis_window` records the window.
+
 `--automatic-spend` (scripts/automatic_spend.py) breaks the non-eval meter
 use down by category (`non_eval_points_breakdown`): each category's meter
 dollars at the mid $/point, plus `interactive_points_per_week` for people's
@@ -109,11 +115,12 @@ ASSUMPTION_KEYS = {
                                "as evals (Adam, 2026-11-15), so evals get the cap less them"),
     "eval_points_per_hour": (None, "meter points an hour evals spend from the weekly reset until "
                                    "the cap; when set, evals run first in the week and the account "
-                                   "stop binds only on other use that accrues meanwhile"),
+                                   "stop binds only on other use that accrues meanwhile; default: "
+                                   "the median over the basis window's weeks that reached the cap"),
     "pace_hold": (True, "allowance_guard.py's pace hold (2026-11-20): no loop fire while the "
                         "account is ahead of its pace line, so evals no longer run first in the "
                         "week. With --meter-history, the eval points are the pace hold replayed "
-                        "over recent whole weeks of other use (`pace_replay`): evals fill the "
+                        "over the basis window's whole weeks of other use (`pace_replay`): evals fill the "
                         "gap whenever other use runs under the line, early in the week or after "
                         "a quiet night, even in a week whose total passes the stop. Without it, "
                         "the account stop less other use; 0 models the guard before it"),
@@ -134,25 +141,118 @@ ARRIVAL_KEYS = {
 }
 #: An arrivals document older than this at --as-of is not used.
 ARRIVALS_MAX_AGE = timedelta(days=8)
+#: The file that holds the basis window (`load_basis`).
+FORECAST_CONFIG = "forecast.yml"
+#: The shortest basis window: one allowance week.
+BASIS_MIN_DAYS = 7
+#: The longest, and the most choices: the dashboard accepts no more
+#: (ai-usage-dashboard index.html, `BASIS` and its `by_window` check).
+BASIS_MAX_DAYS = 999
+BASIS_MAX_CHOICES = 8
 
 
-def arrival_assumptions(doc, now: datetime) -> dict:
+class BasisError(ValueError):
+    """evals/forecast.yml is missing, unreadable or does not hold a valid
+    basis window."""
+
+
+def basis_days_ok(value) -> bool:
+    return type(value) is int and BASIS_MIN_DAYS <= value <= BASIS_MAX_DAYS
+
+
+def load_basis(evals_dir: Path) -> dict:
+    """{"days": default basis window, "choices": [windows loop_status shows]}
+    from evals/forecast.yml. Raises BasisError, naming the file and the key,
+    when either is missing or not whole days of at least BASIS_MIN_DAYS, or
+    when the default is not among the choices: the forecast never guesses
+    a window."""
+    path = Path(evals_dir) / FORECAST_CONFIG
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise BasisError(f"{path}: cannot read the basis window ({type(exc).__name__})") from exc
+    if not isinstance(doc, dict):
+        raise BasisError(f"{path}: not a mapping; it needs basis_window_days and "
+                         "basis_window_choices")
+    for key in ("basis_window_days", "basis_window_choices"):
+        if key not in doc:
+            raise BasisError(f"{path}: {key} is missing")
+    days, choices = doc["basis_window_days"], doc["basis_window_choices"]
+    span = f"{BASIS_MIN_DAYS} to {BASIS_MAX_DAYS}"
+    if not basis_days_ok(days):
+        raise BasisError(f"{path}: basis_window_days must be a whole number of days, {span}")
+    if not isinstance(choices, list) or not 0 < len(choices) <= BASIS_MAX_CHOICES \
+            or not all(basis_days_ok(c) for c in choices) or len(set(choices)) != len(choices):
+        raise BasisError(f"{path}: basis_window_choices must be a list of at most "
+                         f"{BASIS_MAX_CHOICES} distinct whole numbers of days, each {span}")
+    if days not in choices:
+        raise BasisError(f"{path}: basis_window_days {days} is not one of basis_window_choices")
+    return {"days": days, "choices": sorted(choices)}
+
+
+def _when(text) -> datetime | None:
+    try:
+        t = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo is not None else None
+
+
+def windowed_rates(doc: dict, kind: str, days: int) -> dict | None:
+    """{added_per_week, eligible_share} for `kind` over the `days` before the
+    arrivals document's as_of, recounted from its items as
+    scripts/target_arrivals.py counts its own `rate_weeks` (cut to start no
+    earlier than the newest baseline among the kind's sources). None when
+    the kind is not complete, the items or a source baseline cannot be read,
+    or the cut window is under a week."""
+    rate = doc["rates"].get(kind)
+    end = _when(doc.get("as_of"))
+    items, sources = doc.get("items"), doc.get("sources")
+    if not (isinstance(rate, dict) and rate.get("complete") is True and end
+            and isinstance(items, list) and isinstance(sources, list)):
+        return None
+    start = end - timedelta(days=days)
+    for source in sources:
+        if isinstance(source, dict) and source.get("kind") == kind:
+            since = _when(source.get("since"))
+            if since is None:
+                return None
+            start = max(start, since)
+    weeks = (end - start) / timedelta(weeks=1)
+    if weeks < 1:
+        return None
+    added = []
+    for item in items:
+        at = _when(item.get("at")) if isinstance(item, dict) else None
+        if at is None:
+            return None
+        if item.get("kind") == kind and item.get("event") == "added" and start <= at < end:
+            added.append(item)
+    known = [i["eligible"] for i in added if isinstance(i.get("eligible"), bool)]
+    return {"added_per_week": len(added) / weeks,
+            "eligible_share": sum(known) / len(known) if known else None}
+
+
+def arrival_assumptions(doc, now: datetime, days: int | None = None) -> dict:
     """{assumption key: value} from an arrivals document: each rate of a
     kind whose sources were all read (`complete`) and that is a number. {}
     for a missing, malformed or stale document (older than ARRIVALS_MAX_AGE
-    at `now`, or dated after it): unknown, so the run falls back."""
+    at `now`, or dated after it): unknown, so the run falls back. With
+    `days`, each rate is recounted over that basis window (`windowed_rates`)
+    instead of the document's own `rate_weeks`."""
     if not isinstance(doc, dict) or doc.get("schema") != 1 or not isinstance(doc.get("rates"), dict):
         return {}
-    try:
-        as_of = datetime.fromisoformat(str(doc.get("as_of")).replace("Z", "+00:00"))
-    except ValueError:
-        return {}
-    if as_of.tzinfo is None or not timedelta(0) <= now - as_of <= ARRIVALS_MAX_AGE:
+    as_of = _when(doc.get("as_of"))
+    if as_of is None or not timedelta(0) <= now - as_of <= ARRIVALS_MAX_AGE:
         return {}
     out = {}
     for key, (kind, field) in ARRIVAL_KEYS.items():
         rate = doc["rates"].get(kind)
-        if isinstance(rate, dict) and rate.get("complete") is True and _number(rate.get(field)):
+        if days is not None:
+            rate = windowed_rates(doc, kind, days)
+        elif not (isinstance(rate, dict) and rate.get("complete") is True):
+            rate = None
+        if rate is not None and _number(rate.get(field)):
             out[key] = float(rate[field])
     return out
 
@@ -354,9 +454,6 @@ def recheck_usd_per_week(gates: dict, costs: dict, overhead: float,
 
 #: A Monday 17:00 UTC weekly reset of the account allowance (evals/budget.yml).
 RESET_ANCHOR = datetime(2026, 10, 26, 17, tzinfo=timezone.utc)
-#: The pace-hold replay (`pace_hold_room`) uses at most this many of the
-#: newest whole allowance weeks of meter history.
-PACE_REPLAY_WEEKS = 4
 #: A week is whole when its readings start and end within this of its bounds.
 PACE_REPLAY_EDGE = timedelta(hours=6)
 #: The replay's time step: the owner's collector reads the meter every 5 minutes.
@@ -365,17 +462,21 @@ WEEK = timedelta(days=7)
 
 
 def non_eval_week_curves(readings: list, eval_runs: list, end: datetime,
-                         weeks: int = PACE_REPLAY_WEEKS) -> list:
-    """Other use through each of the newest whole allowance weeks before
-    `end`: the meter (`seven_day` readings, linear between them) less the
+                         weeks: int) -> list:
+    """Other use through each of the newest `weeks` allowance weeks ended
+    before `end` (the basis window's days over 7, so `weeks` back and no
+    further, even when some are left out): the meter (`seven_day` readings, linear between them) less the
     eval points spent so far that week, never falling, every
     `PACE_REPLAY_STEP`. A week with a manual reset
     (allowance_guard.MANUAL_RESETS) or readings that miss either edge by more
     than `PACE_REPLAY_EDGE` is left out. Each item is {"week_start", "total",
     "curve": [(hours since the reset, points), ...]}, oldest first."""
     out = []
-    start = RESET_ANCHOR + WEEK * math.floor((end - RESET_ANCHOR) / WEEK)
-    while start >= RESET_ANCHOR and len(out) < weeks:
+    current = RESET_ANCHOR + WEEK * math.floor((end - RESET_ANCHOR) / WEEK)
+    for back in range(weeks, 0, -1):
+        start = current - WEEK * back
+        if start < RESET_ANCHOR:
+            continue
         stop = start + WEEK
         span = sorted((t, p) for t, p in readings if start <= t < stop)
         manual = any(start < r < stop for r in allowance_guard.MANUAL_RESETS)
@@ -400,8 +501,7 @@ def non_eval_week_curves(readings: list, eval_runs: list, end: datetime,
                 curve.append(((t - start).total_seconds() / 3600, level))
                 t += PACE_REPLAY_STEP
             out.append({"week_start": start.isoformat(), "total": level, "curve": curve})
-        start -= WEEK
-    return out[::-1]
+    return out
 
 
 def pace_hold_room(curves: list, other: float, stop_points: float, cap: float) -> dict | None:
@@ -412,7 +512,8 @@ def pace_hold_room(curves: list, other: float, stop_points: float, cap: float) -
     point (the meter truncates, so its top can be a point above use) and less
     other use and what evals already spent, never more than `cap` in the
     week. A week with under one point of other use is left out.
-    The central figure is the median week; low and high the least and most.
+    The central figure is the mean week, so one week's change moves it by a
+    share, not a jump between middle weeks; low and high the least and most.
     None without a week to replay."""
     weeks = []
     for week in curves:
@@ -436,12 +537,21 @@ def pace_hold_room(curves: list, other: float, stop_points: float, cap: float) -
     if not weeks:
         return None
     points = sorted(w["eval_points"] for w in weeks)
-    return {"points": statistics.median(points), "low": points[0], "high": points[-1],
+    return {"points": statistics.fmean(points), "low": points[0], "high": points[-1],
             "other_points_per_week": other, "weeks": weeks}
 
 
 
-def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1) -> dict | None:
+def run_start(run_dir: Path) -> datetime | None:
+    """A routine run's start, from its id (YYYYMMDDTHHMMSSZ-...)."""
+    try:
+        return datetime.strptime(run_dir.name[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1,
+                           since: datetime | None = None) -> dict | None:
     """Eval dollars per allowance point measured on the ingested runs under
     `results_tree`: each routine run's trial `usage.measured` blocks priced
     from token counts by type (`allowance_points.estimate_blocks`, as
@@ -450,10 +560,15 @@ def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1) -> dict | N
     dollars over the estimate's points; `low` is over its high points and
     `high` over its low points (more points per dollar means fewer dollars per
     point). `scale` is the budget's `allowance_scale`: points are of the plan's
-    own week. None when no run is priced wholly from tokens."""
+    own week. With `since` (the basis window's start) only runs started then
+    or later count. None when no run is priced wholly from tokens."""
     usd = points = low = high = 0.0
     runs = 0
     for run_dir in allowance_guard.all_runs(results_tree):
+        if since is not None:
+            started = run_start(run_dir)
+            if started is None or started < since:
+                continue
         blocks = []
         for path in allowance_guard._summary_paths(run_dir):
             summary = allowance_guard._load_summary(path)
@@ -481,17 +596,39 @@ def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1) -> dict | N
             "usd": usd, "points": points, "points_low": low, "points_high": high}
 
 
-def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
-                          min_days: float = 2.0) -> dict | None:
-    """Measured non-eval meter points a week over the account's current
-    allowance week (from the newest Monday reset before `end`; the week
-    before it when fewer than `min_days` have passed), from the `seven_day`
-    meter readings (adam-agentskills-private
-    persistent/usage-events:spend/meter-history.csv).
+def with_resets(span: list) -> list:
+    """`span` (sorted meter readings) with a zero reading at each reset that
+    falls strictly between two readings, a weekly one (RESET_ANCHOR plus
+    whole weeks) or a manual one (allowance_guard.MANUAL_RESETS): the meter
+    restarts from 0 there, so the use up to the first reading after it
+    counts as a rise, even when that reading is above the last one before
+    the reset (a collector gap across it). A fall with no reset between is a
+    misread, and the rise skips it."""
+    out = [span[0]]
+    for (t0, _), (t1, p1) in zip(span, span[1:]):
+        weekly = RESET_ANCHOR + WEEK * math.floor((t1 - RESET_ANCHOR) / WEEK)
+        resets = [r for r in (weekly, *allowance_guard.MANUAL_RESETS) if t0 < r < t1]
+        if resets:
+            out.append((max(resets), 0.0))
+        out.append((t1, p1))
+    return out
 
-    A whole week, not a recent stretch: use comes in bursts, and a quiet
-    early week and a busy weekend average out only over the week (Adam,
-    2026-11-15: 94% with 86% of the week gone and no manual reset). Eval
+
+def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
+                          days: int) -> dict | None:
+    """Measured non-eval meter points a week over the basis window, the
+    `days` before `end`, from the `seven_day` meter readings
+    (adam-agentskills-private
+    persistent/usage-events:spend/meter-history.csv): the window's rise over
+    the days its readings cover, times seven.
+
+    Whole weeks, not a recent stretch: use comes in bursts, and a quiet
+    early week and a busy weekend average out only over whole weeks (Adam,
+    2026-11-15: 94% with 86% of the week gone and no manual reset). The
+    current allowance week alone, extrapolated, swung with each night's use
+    (Adam, 2026-11-26: "too jumpy"); over the window one new reading moves
+    the rate by its own share of the window. A weekly reset or a manual
+    one is a fall, which the rise skips. Eval
     points (routine-results/*/cost_estimate.json) come off the rise, but
     never more than the meter rose while evals ran (first run to an hour
     after the last), since their calibration can overstate them. The rise
@@ -500,15 +637,13 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
     (`meter_rise_points_low`/`_high`, and `points_per_week_low`/`_high`
     with the eval points taken off as they are): each run of readings that
     never falls is one `allowance_points.delta_range`, and the runs add. None
-    when fewer than two readings fall in the span."""
-    start = RESET_ANCHOR + timedelta(days=7) * math.floor(
-        (end - RESET_ANCHOR) / timedelta(days=7))
-    if (end - start) < timedelta(days=min_days):
-        start -= timedelta(days=7)
-        end = start + timedelta(days=7)
+    when fewer than two readings fall in the window."""
+    start = end - timedelta(days=days)
     span = sorted((t, p) for t, p in readings if start <= t <= end)
     if len(span) < 2:
         return None
+    count = len(span)
+    span = with_resets(span)
 
     def rise(lo, hi):
         # From the last reading at or before lo to the first at or after hi.
@@ -533,6 +668,8 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
     while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1))[0] if runs else 0.0
     evals = min(calibrated, while_running)
     covered = (span[-1][0] - span[0][0]).total_seconds() / 86400
+    if covered <= 0:
+        return None
     return {"points_per_week": max(0.0, total - evals) * 7 / covered,
             "points_per_week_low": max(0.0, total_low - evals) * 7 / covered,
             "points_per_week_high": max(0.0, total_high - evals) * 7 / covered,
@@ -540,7 +677,7 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
             "meter_rise_points_high": total_high, "eval_points": evals,
             "eval_points_calibrated": calibrated, "eval_rise_while_running": while_running,
             "from": span[0][0].isoformat(), "to": span[-1][0].isoformat(),
-            "readings": len(span)}
+            "days_covered": covered, "readings": count}
 
 
 def weeks_to_clear(backlog: float, capacity: float, keep_up: float) -> float:
@@ -811,10 +948,8 @@ def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1) -> l
     Nov 16)."""
     out = []
     for run_dir in allowance_guard.all_runs(results_tree):
-        try:
-            when = datetime.strptime(run_dir.name[:16], "%Y%m%dT%H%M%SZ") \
-                .replace(tzinfo=timezone.utc)
-        except ValueError:
+        when = run_start(run_dir)
+        if when is None:
             continue
         if legacy_usd_per_point is not None:
             found = allowance_guard.run_points(run_dir, legacy_usd_per_point, scale)
@@ -833,12 +968,16 @@ def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1) -> l
     return out
 
 
-def eval_pace(runs: list, cap_points: float, now: datetime) -> dict | None:
+def eval_pace(runs: list, cap_points: float, now: datetime,
+              since: datetime | None = None) -> dict | None:
     """Meter points an hour evals spent from each weekly reset until they
-    had spent `cap_points`, over the weeks before `now` that reached it; the
+    had spent `cap_points`, over the weeks before `now` that reached it,
+    from the first reset at or after `since` (the basis window's start); the
     median. None when no week did."""
     paces = []
     start = RESET_ANCHOR
+    if since is not None and since > start:
+        start += WEEK * math.ceil((since - start) / WEEK)
     while start < now:
         total = 0.0
         for t, points in sorted(runs):
@@ -875,11 +1014,25 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--meter-history", type=Path, default=None,
                    help="meter readings CSV (ts_utc, meter_name, percent; adam-agentskills-private "
                         "persistent/usage-events:spend/meter-history.csv): measures the non-eval "
-                        "total over the allowance week, less eval runs' points from --results-tree")
+                        "total over the basis window, less eval runs' points from --results-tree")
+    p.add_argument("--basis-days", type=int, default=None,
+                   help="days of past data each measured rate is averaged over (the basis "
+                        f"window); default: basis_window_days in evals/{FORECAST_CONFIG}")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override one assumption (a number, or text for start); repeatable")
     p.add_argument("--out-json", type=Path, required=True)
     args = p.parse_args(argv)
+    if args.basis_days is not None:
+        if not basis_days_ok(args.basis_days):
+            p.error(f"--basis-days {args.basis_days}: the basis window is whole days, "
+                    f"{BASIS_MIN_DAYS} to {BASIS_MAX_DAYS}")
+        basis = {"days": args.basis_days, "source": "--basis-days"}
+    else:
+        try:
+            basis = {"days": load_basis(args.evals_dir)["days"],
+                     "source": f"evals/{FORECAST_CONFIG} basis_window_days"}
+        except BasisError as exc:
+            p.error(str(exc))
     skipped = plan_week.guidance_skipped(args.guidance)
     if skipped is None:
         p.error(f"--guidance {args.guidance}: cannot read {plan_week.BATCH_GUIDANCE_HISTORY} "
@@ -888,6 +1041,7 @@ def main(argv: list | None = None) -> int:
     gates = json.loads(args.gates.read_text(encoding="utf-8"))
     now = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
     now = (now if now.tzinfo else now.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    since = now - timedelta(days=basis["days"])
     cells, _, _ = plan_week.eval_cells_and_outages(
         args.evals_dir, gates, [], now, plan_week.routine_git_version(args.results_tree))
     budget = yaml.safe_load((args.evals_dir / "budget.yml").read_text(encoding="utf-8"))
@@ -917,7 +1071,7 @@ def main(argv: list | None = None) -> int:
         if args.arrivals:
             p.error(f"--arrivals {args.arrivals}: not a readable JSON file")
         arrivals_doc = None
-    from_arrivals = arrival_assumptions(arrivals_doc, now)
+    from_arrivals = arrival_assumptions(arrivals_doc, now, basis["days"])
     assumptions, sources = merge_assumptions(assumptions, from_arrivals)
     fire_overhead(args.results_tree, now, assumptions, sources)
     table = stakes.load(args.evals_dir / "stakes.yml", args.evals_dir)
@@ -931,13 +1085,13 @@ def main(argv: list | None = None) -> int:
         readings = [(_iso(r["ts_utc"]), float(r["percent"]))
                     for r in csv.DictReader(args.meter_history.open(encoding="utf-8"))
                     if r.get("meter_name") == "seven_day"]
-        measured = meter_non_eval_points(readings, runs, now)
+        measured = meter_non_eval_points(readings, runs, now, basis["days"])
         if measured is None:
-            p.error("--meter-history: fewer than two seven_day readings in the allowance week")
-        curves = non_eval_week_curves(readings, runs, now)
+            p.error(f"--meter-history: fewer than two seven_day readings in the "
+                    f"{basis['days']}-day basis window")
+        curves = non_eval_week_curves(readings, runs, now, basis["days"] // 7)
     if "eval_points_per_hour" not in assumptions:
-        measured_pace = eval_pace(runs,
-                                  budget["weekly_cap"] * 100, now)
+        measured_pace = eval_pace(runs, budget["weekly_cap"] * 100, now, since)
         if measured_pace:
             assumptions["eval_points_per_hour"] = measured_pace["points_per_hour"]
             sources["eval_points_per_hour"] = (
@@ -946,7 +1100,7 @@ def main(argv: list | None = None) -> int:
     doc = forecast(gates, cells, budget, batch_policy, batch, assumptions, skipped, table,
                    automatic, measured,
                    measured_usd_per_point(args.results_tree, budget["legacy_usd_per_point"],
-                                       budget.get("allowance_scale", 1)),
+                                          budget.get("allowance_scale", 1), since),
                    curves)
     if automatic is not None and "non_eval_points_per_week" not in assumptions:
         if assumptions.get("interactive_points_per_week") is not None:
@@ -958,6 +1112,12 @@ def main(argv: list | None = None) -> int:
             sources["interactive_points_per_week"] = \
                 "--meter-history measured total less --automatic-spend categories"
     doc["inputs"]["assumption_sources"] = sources
+    # The window every measured rate above was averaged over, and how much of
+    # it the meter history covers (it can be younger than the window).
+    doc["inputs"]["basis_window"] = {
+        **basis, "from": since.isoformat(), "to": now.isoformat(),
+        "meter_days_covered": measured["days_covered"] if measured else None,
+        "replay_weeks": len((doc["inputs"].get("pace_replay") or {}).get("weeks") or [])}
     # Why an arrival rate fell back, so a reader can tell a default from data.
     doc["inputs"]["arrivals_status"] = (
         "missing" if arrivals_doc is None
@@ -971,7 +1131,7 @@ def main(argv: list | None = None) -> int:
     print(f"open subjects {len(doc['subjects'])}, backlog ${doc['backlog_usd']['central']:.0f} "
           f"(${doc['backlog_usd']['low']:.0f}-${doc['backlog_usd']['high']:.0f}), keep-up "
           f"${doc['keep_up_usd_per_week']:.0f}/wk, capacity ${s['capacity_usd']:.0f}/wk, "
-          f"catch-up {s['weeks_central']:.1f} wk")
+          f"catch-up {s['weeks_central']:.1f} wk (basis {basis['days']} days)")
     for task in doc["inputs"]["scheduled_tasks"] or []:
         points = task["points_per_week"]
         print(f"  scheduled task {task['task']}: "

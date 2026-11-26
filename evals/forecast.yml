@@ -1,0 +1,34 @@
+# The catch-up forecast's basis window (scripts/forecast_catch_up.py): how
+# many days of past data each measured rate is averaged over. Read only
+# here; forecast_catch_up.py and loop_status.py fail when a key is missing.
+#
+# Adam, 2026-11-26: "Keep-up and eval capacity are too jumpy... consider
+# allowing choosing duration of basis." Before this, the non-eval meter rate
+# was the current allowance week so far, extrapolated to seven days, so the
+# eval capacity moved 4.8 -> 20.3 -> 1.3 points between 2026-11-25 16:00 and
+# 2026-11-26 13:00 UTC as one night's use arrived.
+#
+# Over the window the forecast takes:
+#   * the non-eval meter rate: every meter rise in the window, less eval
+#     runs' points, over the days the readings cover;
+#   * the pace-hold replay: the newest basis_window_days / 7 whole
+#     allowance weeks, their mean as the central figure;
+#   * the measured $ per point: the ingested runs started in the window;
+#   * the eval pace: the weeks whose reset falls in the window;
+#   * the arrival rates: arrivals/targets.json's items in the window.
+#
+# Not windowed here: the eval runner's per-fire overhead and the loop jobs'
+# weekly points come measured in spend/weekly.json (dashboard/build.py, the
+# fire ledger's last 14 days), and people's own use is the windowed meter
+# total less those loop jobs.
+#
+# 28 days: four whole allowance weeks, so a burst day weighs a 28th and a
+# 5-minute meter reading about 1/8000 of the rate; still short enough that a
+# lasting change in use shows within a month. The replay used four whole
+# weeks before too, and evals/target-sources.yml counts arrivals over four.
+basis_window_days: 28
+
+# The windows loop_status.py precomputes for the dashboard's selector; the
+# default must be one of them. At most 8, each a whole number of days from 7
+# (one allowance week) to 999.
+basis_window_choices: [14, 28, 56]

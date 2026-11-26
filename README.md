@@ -211,7 +211,8 @@ scripts/
   local_eval_guard.py      # the credential rules local_eval.py and its launch-time guard launcher share
   build_rules.py           # writes docs/rules.md and docs/rules.json from the policy YAMLs
   check_rule_restatements.py  # fails on a rule value restated elsewhere that disagrees
-  forecast_catch_up.py     # eval catch-up time and weekly keep-up cost, from the planner's own per-cell projection
+  forecast_catch_up.py     # eval catch-up time and weekly keep-up cost, from the planner's own per-cell projection;
+                           # measured rates averaged over the basis window in evals/forecast.yml
   automatic_spend.py       # scheduled and event-fired jobs (tasks, workflows, workstation tasks) -> meter spend by category (evals/automatic-spend.yml)
 docs/
   rules.md, rules.json     # the keep, remove, pause and re-check rules, generated from the policy YAMLs
