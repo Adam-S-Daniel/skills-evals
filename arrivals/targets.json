@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-25T19:58:55Z",
-  "generated_at": "2026-11-25T19:59:04Z",
+  "as_of": "2026-11-26T19:42:43Z",
+  "generated_at": "2026-11-26T19:42:55Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -712,6 +712,15 @@
       "name": "bump-branch-push",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "week": "2026-11-23"
+    },
+    {
+      "at": "2026-11-25T22:18:09Z",
+      "eligible": null,
+      "event": "added",
+      "kind": "git-hook",
+      "name": "privacy",
+      "repo": "Adam-S-Daniel/_agent-guidance",
+      "week": "2026-11-23"
     }
   ],
   "kinds": [
@@ -726,10 +735,10 @@
       "added_per_week": 2.0,
       "complete": true,
       "eligible_share": null,
-      "from": "2026-10-28T19:58:55Z",
+      "from": "2026-10-29T19:42:43Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-25T19:58:55Z",
+      "to": "2026-11-26T19:42:43Z",
       "weeks": 4.0
     },
     "guidance-section": {
@@ -737,28 +746,28 @@
       "added_per_week": 1.0,
       "complete": true,
       "eligible_share": 0.25,
-      "from": "2026-10-28T19:58:55Z",
+      "from": "2026-10-29T19:42:43Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-25T19:58:55Z",
+      "to": "2026-11-26T19:42:43Z",
       "weeks": 4.0
     },
     "skill": {
-      "added": 5,
-      "added_per_week": 1.25,
+      "added": 3,
+      "added_per_week": 0.75,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-28T19:58:55Z",
+      "from": "2026-10-29T19:42:43Z",
       "removed": 3,
       "removed_per_week": 0.75,
-      "to": "2026-11-25T19:58:55Z",
+      "to": "2026-11-26T19:42:43Z",
       "weeks": 4.0
     }
   },
   "schema": 1,
   "sources": [
     {
-      "current": 13,
+      "current": 14,
       "kind": "git-hook",
       "parser": "agent-checks",
       "private": false,
@@ -1037,8 +1046,8 @@
       "week": "2026-11-16"
     },
     {
-      "added": 1,
-      "added_eligibility_unknown": 1,
+      "added": 2,
+      "added_eligibility_unknown": 2,
       "added_eligible": 0,
       "kind": "git-hook",
       "removed": 0,
