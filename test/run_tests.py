@@ -5146,7 +5146,8 @@ class CiShardTests(unittest.TestCase):
                          "a skipped required check reads as passing")
 
     def test_required_test_job_passes_only_on_success(self):
-        [step] = self._doc()["jobs"]["test"]["steps"]
+        [step] = [s for s in self._doc()["jobs"]["test"]["steps"]
+                  if s.get("name") == "Every suite shard passed"]
         self.assertEqual(step["env"]["SUITE_RESULT"], "${{ needs.suite.result }}")
         for result, want in (("success", 0), ("failure", 1), ("cancelled", 1),
                              ("skipped", 1), ("", 1)):
