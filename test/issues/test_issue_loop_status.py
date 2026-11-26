@@ -163,8 +163,10 @@ class ForecastTests(unittest.TestCase):
         doc["backlog_pairs"] = {"central": 24}
         doc["keep_up_items"] = {"new skills": 35.0, "new git hooks": 0.0, "re-checks": 35.0}
         doc["inputs"]["cap_steps"] = {"weekly_cap_points": 25.0, "after_loop_jobs_points": 16.0,
-                                      "after_account_stop_points": 16.0,
+                                      "improve_points": 3.0, "after_improve_points": 13.0,
+                                      "after_account_stop_points": 13.0,
                                       "account_stop_basis": "pace_replay"}
+        doc["inputs"]["improve"] = {"points_per_week": 3.0, "runs": 2}
         doc["inputs"]["assumptions"]["start"] = "2026-11-23T17:00:00Z"
         c = loop_status.forecast_block(doc)["calculation"]
         self.assertEqual([r["subject"] for r in c["subjects"]], ["b", "a"])  # largest first
@@ -175,6 +177,9 @@ class ForecastTests(unittest.TestCase):
                           c["after_loop_jobs_points"], c["capacity_basis"]),
                          (25.0, 9.0, 16.0, "pace_replay"))
         self.assertAlmostEqual(c["capacity_points"], 20.0)
+        self.assertEqual((c["improve_points"], c["after_improve_points"]), (3.0, 13.0))
+        self.assertEqual(loop_status.forecast_block(doc)["improve_points_per_week"], 3.0)
+        self.assertIsNone(loop_status.forecast_block(FORECAST)["improve_points_per_week"])
         self.assertEqual([i["item"] for i in c["keep_up_items"]], ["new skills", "re-checks"])
         self.assertAlmostEqual(c["keep_up_points"], 10.0)
         self.assertAlmostEqual(c["room_points"], 10.0)
