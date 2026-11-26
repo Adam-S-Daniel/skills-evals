@@ -234,7 +234,12 @@ catch-up forecast ([`scripts/forecast_catch_up.py`](../scripts/forecast_catch_up
 `pace_hold_room`) replays the hold over the newest whole weeks of meter
 history, other use scaled to the assumed weekly total, instead of taking the
 stop less a flat weekly average (2026-11-23: about 6 points a week at 82 to
-90 points of other use, where the flat figure said 0).
+90 points of other use, where the flat figure said 0). Every rate it
+measures from past data (other use, the replayed weeks, dollars per point,
+arrivals) is averaged over one basis window, `basis_window_days` in
+[`evals/forecast.yml`](../evals/forecast.yml) (28 days; `--basis-days`
+overrides it): the current allowance week alone, extrapolated, moved the eval
+capacity from 4.8 to 20.3 to 1.3 points within a day (2026-11-26).
 
 ### The weekly allowance guard
 

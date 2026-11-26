@@ -364,21 +364,34 @@ class MeterNonEval(unittest.TestCase):
         h = lambda x: reset + self._td(hours=x)  # noqa: E731
         readings = [(h(0), 1.0), (h(57), 39.0), (h(58), 30.0), (h(59), 39.0), (self.END, 94.0)]
         runs = [(h(1), 20.0), (h(55), 30.0), (reset - self._td(hours=2), 99.0)]
-        m = fc.meter_non_eval_points(readings, runs, self.END)
+        m = fc.meter_non_eval_points(readings, runs, self.END, 7)
         self.assertEqual((m["meter_rise_points"], m["eval_points_calibrated"], m["eval_points"]),
                          (102.0, 50.0, 38.0))
         days = (self.END - reset).total_seconds() / 86400
         self.assertAlmostEqual(m["points_per_week"], 64.0 * 7 / days)
 
-    def test_a_young_week_measures_the_week_before(self):
+    def test_the_window_spans_a_weekly_reset_and_skips_its_fall(self):
+        # 70 points the week before the reset, the fall to 0, then 2: a young
+        # allowance week no longer stands alone for the whole rate.
         reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
         readings = [(reset - self._td(days=7), 0.0), (reset - self._td(hours=1), 70.0),
                     (reset + self._td(hours=5), 2.0)]
-        m = fc.meter_non_eval_points(readings, [], reset + self._td(days=1))
-        self.assertAlmostEqual(m["points_per_week"], 70.0 * 7 / (7 - 1 / 24))
+        m = fc.meter_non_eval_points(readings, [], reset + self._td(days=1), 28)
+        self.assertEqual(m["meter_rise_points"], 72.0)
+        self.assertAlmostEqual(m["days_covered"], 7 + 5 / 24)
+        self.assertAlmostEqual(m["points_per_week"], 72.0 * 7 / (7 + 5 / 24))
+
+    def test_readings_before_the_window_are_left_out(self):
+        reset = self._dt(2026, 11, 9, 17, tzinfo=self._tz.utc)
+        readings = [(reset - self._td(days=7), 0.0), (reset - self._td(hours=1), 70.0),
+                    (reset + self._td(hours=5), 2.0), (reset + self._td(days=1), 9.0)]
+        m = fc.meter_non_eval_points(readings, [], reset + self._td(days=1), 7)
+        # 0 -> 70 starts before the window; inside, the reset's 0 -> 2 -> 9.
+        self.assertEqual(m["meter_rise_points"], 9.0)
+        self.assertEqual(m["readings"], 3)
 
     def test_too_few_readings(self):
-        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END))
+        self.assertIsNone(fc.meter_non_eval_points([(self.at(1), 3.0)], [], self.END, 28))
 
     def test_measured_total_less_automatic_is_interactive(self):
         automatic = {"categories": [{"label": "Dashboard", "meter_usd_per_week": 20 / 0.15}]}
@@ -431,18 +444,21 @@ class PaceHoldReplay(unittest.TestCase):
         self.assertLess(heavy, light)
         self.assertEqual(fc.pace_hold_room([], 80.0, 80.0, 25.0), None)
 
-    def test_median_week_with_its_range(self):
+    def test_mean_week_with_its_range(self):
+        # The mean, not the median: a week changing moves the figure by its
+        # share instead of a jump between middle weeks (2026-11-26).
         late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
         steady = self.curve(lambda t: 90.0 * t / 168 + 1.0)
         room = fc.pace_hold_room([late, steady, late], 90.0, 80.0, 25.0)
-        self.assertEqual((room["points"], room["low"], room["high"]), (25.0, 0.0, 25.0))
+        self.assertAlmostEqual(room["points"], 50.0 / 3)
+        self.assertEqual((room["low"], room["high"]), (0.0, 25.0))
 
     def test_curves_take_off_evals_never_fall_and_skip_partial_weeks(self):
         readings = [(self.h(0), 0.0), (self.h(24), 10.0), (self.h(48), 9.0),
                     (self.h(167), 60.0)]
         runs = [(self.h(0), 4.0), (self.h(-1), 50.0)]
         now = self.START + fc.timedelta(days=7, hours=1)
-        curves = fc.non_eval_week_curves(readings, runs, now)
+        curves = fc.non_eval_week_curves(readings, runs, now, 4)
         self.assertEqual(len(curves), 1)
         levels = [p for _, p in curves[0]["curve"]]
         self.assertEqual(levels, sorted(levels))
@@ -452,13 +468,26 @@ class PaceHoldReplay(unittest.TestCase):
         self.assertEqual(curves[0]["total"], levels[-1])
         # A week whose readings stop a day short is not whole.
         short = [r for r in readings if r[0] < self.h(140)]
-        self.assertEqual(fc.non_eval_week_curves(short, runs, now), [])
+        self.assertEqual(fc.non_eval_week_curves(short, runs, now, 4), [])
 
     def test_a_manual_reset_week_is_left_out(self):
         readings = [(self.h(0), 0.0), (self.h(167), 60.0)]
         with mock.patch.object(fc.allowance_guard, "MANUAL_RESETS", (self.h(30),)):
-            self.assertEqual(fc.non_eval_week_curves(readings, [], self.h(169)), [])
-        self.assertEqual(len(fc.non_eval_week_curves(readings, [], self.h(169))), 1)
+            self.assertEqual(fc.non_eval_week_curves(readings, [], self.h(169), 4), [])
+        self.assertEqual(len(fc.non_eval_week_curves(readings, [], self.h(169), 4)), 1)
+
+    def test_only_the_basis_windows_weeks_are_replayed(self):
+        # Two whole weeks of readings; a one-week window replays the newer
+        # only, and looks no further back when that week is left out.
+        readings = [(self.h(0), 0.0), (self.h(167), 60.0), (self.h(168), 0.0),
+                    (self.h(335), 30.0)]
+        now = self.h(337)
+        self.assertEqual([c["week_start"] for c in fc.non_eval_week_curves(readings, [], now, 2)],
+                         [self.h(0).isoformat(), self.h(168).isoformat()])
+        self.assertEqual([c["week_start"] for c in fc.non_eval_week_curves(readings, [], now, 1)],
+                         [self.h(168).isoformat()])
+        with mock.patch.object(fc.allowance_guard, "MANUAL_RESETS", (self.h(200),)):
+            self.assertEqual(fc.non_eval_week_curves(readings, [], now, 1), [])
 
     def test_forecast_replays_the_hold_and_keeps_the_flat_figure(self):
         late = self.curve(lambda t: 0.0 if t < 72 else 90.0 * (t - 72) / 96)
@@ -616,7 +645,7 @@ class MeterRange(unittest.TestCase):
         # 10 -> 30 -> 50 never falls (one run, 40 points read, truly 39 to 41);
         # the drop to 20 starts a second run, 20 -> 25 (4 to 6 points).
         readings = [(h(0), 10.0), (h(20), 30.0), (h(40), 50.0), (h(41), 20.0), (self.END, 25.0)]
-        m = fc.meter_non_eval_points(readings, [], self.END)
+        m = fc.meter_non_eval_points(readings, [], self.END, 7)
         self.assertEqual(m["meter_rise_points"], 45.0)
         self.assertAlmostEqual(m["meter_rise_points_low"], 39.0 + 4.0)
         self.assertAlmostEqual(m["meter_rise_points_high"], 41.0 + 6.0)
@@ -689,3 +718,187 @@ class MeasuredRate(unittest.TestCase):
         self.assertEqual(doc["inputs"]["points_per_usd_source"],
                          "evals/budget.yml legacy_usd_per_point")
 
+
+
+class BasisWindow(unittest.TestCase):
+    """Every measured rate is averaged over a basis window set once in
+    evals/forecast.yml (Adam, 2026-11-26: Keep-up and eval capacity were too
+    jumpy; "consider allowing choosing duration of basis")."""
+
+    # Mid-week (four days after a Monday reset), with 35 days of readings
+    # that start after the 2026-11-04 manual reset.
+    END = fc.RESET_ANCHOR + fc.timedelta(days=53)
+
+    def config(self, text):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        if text is not None:
+            (Path(tmp.name) / "forecast.yml").write_text(text, encoding="utf-8")
+        return Path(tmp.name)
+
+    def test_the_default_window_is_one_of_the_choices_in_evals_forecast_yml(self):
+        basis = fc.load_basis(ROOT / "evals")
+        self.assertIn(basis["days"], basis["choices"])
+        self.assertEqual(basis["choices"], sorted(basis["choices"]))
+        self.assertTrue(all(fc.basis_days_ok(d) for d in basis["choices"]))
+
+    def test_a_missing_or_bad_setting_fails_and_says_which(self):
+        cases = {None: "cannot read the basis window",
+                 "basis_window_choices: [14, 28]\n": "basis_window_days is missing",
+                 "basis_window_days: 28\n": "basis_window_choices is missing",
+                 "basis_window_days: 3\nbasis_window_choices: [3]\n": "at least 7",
+                 "basis_window_days: 28.5\nbasis_window_choices: [14]\n": "whole number",
+                 "basis_window_days: 28\nbasis_window_choices: [14, 56]\n": "not one of",
+                 "basis_window_days: 28\nbasis_window_choices: [28, 28]\n": "distinct",
+                 "- 28\n": "not a mapping"}
+        for text, said in cases.items():
+            with self.subTest(text=text), self.assertRaises(fc.BasisError) as raised:
+                fc.load_basis(self.config(text))
+            self.assertIn(said, str(raised.exception))
+            self.assertIn("forecast.yml", str(raised.exception))
+
+    def test_main_fails_descriptively_without_the_setting(self):
+        evals = self.config("basis_window_choices: [28]\n")
+        with mock.patch("sys.stderr") as err, self.assertRaises(SystemExit) as raised:
+            fc.main(["--gates", "g", "--results-tree", ".", "--as-of", "2026-11-23T00:00:00Z",
+                     "--guidance", ".", "--evals-dir", str(evals), "--out-json", "o"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("basis_window_days is missing",
+                      "".join(str(c.args[0]) for c in err.write.call_args_list))
+
+    def test_the_flag_must_be_whole_days_of_at_least_a_week(self):
+        with mock.patch("sys.stderr") as err, self.assertRaises(SystemExit) as raised:
+            fc.main(["--gates", "g", "--results-tree", ".", "--as-of", "2026-11-23T00:00:00Z",
+                     "--guidance", ".", "--basis-days", "3", "--out-json", "o"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--basis-days 3", "".join(str(c.args[0]) for c in err.write.call_args_list))
+
+    # --- the meter: steady use with a daily burst, read every 5 minutes ----
+
+    def readings(self, end, burst_at=None, burst=0.0):
+        """Whole-percent `seven_day` readings every 5 minutes for 35 days to
+        `end`: 6 points between 18:00 and 22:00 UTC each day, 0.1 an hour
+        otherwise (about 59 a week), restarting from 0 at each weekly reset;
+        `burst` more points in the hour after `burst_at`."""
+        out, used, t = [], 0.0, end - fc.timedelta(days=35)
+        step = fc.timedelta(minutes=5)
+        while t <= end:
+            hour = t.hour
+            used += (1.5 if 18 <= hour < 22 else 0.1) / 12
+            if burst_at is not None and burst_at <= t < burst_at + fc.timedelta(hours=1):
+                used += burst / 12
+            if (t - fc.RESET_ANCHOR) % fc.WEEK < step:
+                used = 0.0
+            out.append((t, float(math.floor(used + 0.5))))
+            t += step
+        return out
+
+    def figures(self, readings, end, days):
+        other = fc.meter_non_eval_points(readings, [], end, days)["points_per_week"]
+        curves = fc.non_eval_week_curves(readings, [], end, days // 7)
+        return other, fc.pace_hold_room(curves, other, 80.0, 25.0)["points"]
+
+    def test_one_new_reading_moves_neither_rate_nor_capacity_by_more_than_its_share(self):
+        before = self.readings(self.END)
+        later = self.END + fc.timedelta(minutes=5)
+        after = before + [(later, before[-1][1] + 1.0)]  # one reading, a point higher
+        other0, cap0 = self.figures(before, self.END, 28)
+        other1, cap1 = self.figures(after, later, 28)
+        self.assertGreater(other0, 50)
+        self.assertGreater(cap0, 1)
+        # A point over 28 days is 0.25 a week; the window's edge moves a few
+        # minutes' use. The partial-week rate this replaced moved by up to
+        # 7 / days-gone points a week per point (2026-11-26).
+        self.assertLess(abs(other1 - other0), 0.3)
+        self.assertLess(abs(other1 - other0) / other0, 0.006)
+        self.assertLess(abs(cap1 - cap0) / cap0, 0.03)
+
+    def test_a_burst_late_in_a_young_week_moves_the_rate_by_its_share(self):
+        # 40 points in one night, 2 days into the allowance week: the old
+        # current-week rate took 40 * 7 / 2 = 140 a week of it.
+        end = fc.RESET_ANCHOR + fc.timedelta(days=49, hours=2 * 24)
+        quiet = self.readings(end)
+        loud = self.readings(end, burst_at=end - fc.timedelta(hours=3), burst=40.0)
+        jump = self.figures(loud, end, 28)[0] - self.figures(quiet, end, 28)[0]
+        self.assertAlmostEqual(jump, 40.0 * 7 / 28, delta=0.6)
+
+    def test_the_window_is_honored(self):
+        # A burst 20 days back counts in a 28-day window, not a 14-day one.
+        burst_at = self.END - fc.timedelta(days=20)
+        loud = self.readings(self.END, burst_at=burst_at, burst=60.0)
+        quiet = self.readings(self.END)
+        for days, share in ((28, 60.0 * 7 / 28), (14, 0.0)):
+            with self.subTest(days=days):
+                jump = (fc.meter_non_eval_points(loud, [], self.END, days)["points_per_week"]
+                        - fc.meter_non_eval_points(quiet, [], self.END, days)["points_per_week"])
+                self.assertAlmostEqual(jump, share, delta=0.6)
+        self.assertEqual(len(fc.non_eval_week_curves(quiet, [], self.END, 28 // 7)), 4)
+        self.assertEqual(len(fc.non_eval_week_curves(quiet, [], self.END, 14 // 7)), 2)
+
+    def test_a_fall_without_a_reset_is_a_misread_not_a_restart(self):
+        t = fc.RESET_ANCHOR + fc.timedelta(days=15)
+        span = [(t, 10.0), (t + fc.timedelta(hours=1), 8.0), (t + fc.timedelta(hours=2), 11.0)]
+        self.assertEqual(fc.with_resets(span), span)
+        reset = fc.RESET_ANCHOR + fc.timedelta(days=21)
+        across = [(reset - fc.timedelta(minutes=5), 70.0), (reset + fc.timedelta(minutes=5), 1.0)]
+        self.assertEqual(fc.with_resets(across), [across[0], (reset, 0.0), across[1]])
+
+    # --- the other windowed rates ------------------------------------------
+
+    def test_measured_rate_counts_only_runs_in_the_window(self):
+        root = MeasuredRate.tree(self, {"20261030T100000Z-aaaaaa": _trial_blocks(2.0),
+                                          "20261120T110000Z-bbbbbb": _trial_blocks(3.0)})
+        since = fc.datetime(2026, 11, 1, tzinfo=fc.timezone.utc)
+        self.assertEqual(fc.measured_usd_per_point(root, 1 / 0.15)["runs"], 2)
+        self.assertEqual(fc.measured_usd_per_point(root, 1 / 0.15, since=since)["usd"], 3.0)
+        self.assertIsNone(fc.measured_usd_per_point(
+            root, 1 / 0.15, since=fc.datetime(2026, 11, 25, tzinfo=fc.timezone.utc)))
+
+    def test_eval_pace_starts_at_the_windows_first_reset(self):
+        reset = fc.RESET_ANCHOR
+        runs = [(reset + fc.timedelta(hours=h), 5.0) for h in (1, 5, 10, 15, 20)]
+        runs += [(reset + fc.timedelta(days=7, hours=h), 12.5) for h in (1, 2)]
+        now = reset + fc.timedelta(days=14)
+        self.assertEqual(fc.eval_pace(runs, 25.0, now)["weeks"], 2)
+        got = fc.eval_pace(runs, 25.0, now, since=reset + fc.timedelta(days=1))
+        self.assertEqual(got, {"points_per_hour": 12.5, "weeks": 1})
+
+    def arrivals(self):
+        def item(days_ago, kind="skill", eligible=True):
+            at = fc.datetime(2026, 11, 15, 10, tzinfo=fc.timezone.utc) - fc.timedelta(days=days_ago)
+            return {"kind": kind, "event": "added", "eligible": eligible,
+                    "at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        rate = {"complete": True, "added_per_week": 9.0, "eligible_share": 0.9}
+        return {"schema": 1, "as_of": "2026-11-15T10:00:00Z",
+                "rates": {"git-hook": dict(rate), "skill": dict(rate),
+                          "guidance-section": dict(rate)},
+                "sources": [{"kind": "skill", "since": "2026-01-01T00:00:00Z"},
+                            {"kind": "guidance-section", "since": "2026-11-05T10:00:00Z"},
+                            {"kind": "git-hook", "since": "2026-01-01T00:00:00Z"}],
+                "items": [item(3), item(10, eligible=False), item(20), item(40),
+                          item(2, "guidance-section"), item(15, "guidance-section")]}
+
+    def test_arrival_rates_are_recounted_over_the_window(self):
+        now = Arrivals.NOW
+        got28 = fc.arrival_assumptions(self.arrivals(), now, 28)
+        got14 = fc.arrival_assumptions(self.arrivals(), now, 14)
+        self.assertAlmostEqual(got28["new_skills_per_week"], 3 / 4)
+        self.assertAlmostEqual(got28["first_use_share"], 2 / 3)
+        self.assertAlmostEqual(got14["new_skills_per_week"], 2 / 2)
+        self.assertAlmostEqual(got14["first_use_share"], 1 / 2)
+        # Sections are tracked only for 10 days: the window is cut to them.
+        self.assertAlmostEqual(got28["new_sections_per_week"], 1 / (10 / 7))
+        self.assertEqual(got28["new_hooks_per_week"], 0.0)
+        # Without a window, the document's own rates as before.
+        self.assertEqual(fc.arrival_assumptions(self.arrivals(), now)["new_skills_per_week"], 9.0)
+
+    def test_an_unreadable_or_incomplete_kind_is_unknown_over_a_window(self):
+        doc = self.arrivals()
+        doc["rates"]["skill"]["complete"] = False
+        self.assertNotIn("new_skills_per_week", fc.arrival_assumptions(doc, Arrivals.NOW, 28))
+        doc = self.arrivals()
+        doc["sources"][1]["since"] = "2026-11-12T10:00:00Z"  # under a week of sections
+        self.assertNotIn("new_sections_per_week", fc.arrival_assumptions(doc, Arrivals.NOW, 28))
+        doc = self.arrivals()
+        del doc["items"]
+        self.assertEqual(fc.arrival_assumptions(doc, Arrivals.NOW, 28), {})
