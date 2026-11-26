@@ -974,6 +974,20 @@ def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1,
     return out
 
 
+def routine_charge(results_tree: Path, now: datetime, budget: dict) -> tuple[float, str]:
+    """(meter points, source) of one eval run's routine session, as the guard
+    charges it (allowance_guard.account): spend/weekly.json
+    eval_routine.points_per_fire, else budget.yml per_run_overrun (a fraction
+    of the allowance, so times 100). Today's figure prices every run in the
+    basis window, as the loop spend panel prices this week's: the ledger
+    keeps no per-week history of it."""
+    routine, why = allowance_guard.eval_routine(results_tree, now)
+    if routine:
+        return float(routine["points_per_fire"]), f"spend/weekly.json eval_routine ({why})"
+    return (float(budget["per_run_overrun"]) * 100,
+            f"evals/budget.yml per_run_overrun, as a fallback: {why}")
+
+
 def eval_pace(runs: list, cap_points: float, now: datetime,
               since: datetime | None = None) -> dict | None:
     """Meter points an hour evals spent from each weekly reset until they
@@ -1085,14 +1099,8 @@ def main(argv: list | None = None) -> int:
         if args.automatic_spend else None
     measured = None
     curves = None
-    # Each run's routine session, as the guard and loop_status charge it:
-    # spend/weekly.json eval_routine.points_per_fire, else per_run_overrun.
-    routine, routine_why = allowance_guard.eval_routine(args.results_tree, now)
-    routine_points = float(routine["points_per_fire"]) if routine \
-        else float(budget["per_run_overrun"]) * 100
-    sources["eval_routine_points_per_run"] = (
-        f"spend/weekly.json eval_routine ({routine_why})" if routine
-        else f"evals/budget.yml per_run_overrun, as a fallback: {routine_why}")
+    routine_points, sources["eval_routine_points_per_run"] = routine_charge(
+        args.results_tree, now, budget)
     runs = eval_run_points(args.results_tree, budget["legacy_usd_per_point"],
                            budget.get("allowance_scale", 1), routine_points)
     if args.meter_history:

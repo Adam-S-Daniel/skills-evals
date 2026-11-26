@@ -552,6 +552,22 @@ class EvalRunPoints(unittest.TestCase):
                 self.assertAlmostEqual(fc.eval_run_points(tree, 12.35, 1, 0.03)[0][1], 1.13)
             self.assertAlmostEqual(fc.eval_run_points(tree, None, 1, 0.03)[0][1], 3.0)
 
+    def test_the_session_charge_is_the_guards(self):
+        now = fc.datetime(2026, 11, 26, 13, tzinfo=fc.timezone.utc)
+        budget = {"per_run_overrun": 0.0005}
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d)
+            points, why = fc.routine_charge(tree, now, budget)
+            self.assertAlmostEqual(points, 0.05)  # 0.0005 of the allowance
+            self.assertIn("per_run_overrun, as a fallback", why)
+            (tree / "spend").mkdir()
+            (tree / "spend" / "weekly.json").write_text(json.dumps({"eval_routine": {
+                "as_of": "2026-11-26T12:38:49Z", "points_per_fire": 0.0304, "fires": 7,
+                "usd_per_fire": 0.376}}), encoding="utf-8")
+            points, why = fc.routine_charge(tree, now, budget)
+            self.assertAlmostEqual(points, 0.0304)
+            self.assertIn("spend/weekly.json eval_routine", why)
+
 
 class RoutineSessionBackTest(unittest.TestCase):
     """The week of 2026-11-23, the first whole week under the pace hold:
@@ -562,7 +578,9 @@ class RoutineSessionBackTest(unittest.TestCase):
     sessions' 5.7 points for early-week other use, and replayed the hold to
     3.6 points a week. This week is rebuilt from those figures (the meter
     history itself is private): the replay must find the evals' room again
-    when each run carries its session, and must not when it does not."""
+    when each run carries its session, and must not when it does not. It
+    documents why the session matters; EvalRunPoints holds the code that
+    adds it."""
 
     START = fc.RESET_ANCHOR + fc.timedelta(days=28)  # 2026-11-23 17:00 UTC
     CALLS, SESSION, RUNS = 6.75 / 187, 0.0304, 187
