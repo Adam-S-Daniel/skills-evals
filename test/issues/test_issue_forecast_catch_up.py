@@ -541,6 +541,72 @@ class EvalRunPoints(unittest.TestCase):
                                    return_value={"points": 1.1, "usd": 1.0, "from_tokens": False}):
                 self.assertAlmostEqual(fc.eval_run_points(tree, 12.35)[0][1], 3.0)
 
+    def test_a_token_priced_run_carries_its_routine_session(self):
+        # The guard and the loop spend charge each run its routine session
+        # (spend/weekly.json eval_routine.points_per_fire); a run charged by
+        # its calibrated meter estimate already holds it.
+        with tempfile.TemporaryDirectory() as d:
+            tree = self.tree(Path(d))
+            with mock.patch.object(fc.allowance_guard, "run_points",
+                                   return_value={"points": 1.1, "usd": 1.0, "from_tokens": True}):
+                self.assertAlmostEqual(fc.eval_run_points(tree, 12.35, 1, 0.03)[0][1], 1.13)
+            self.assertAlmostEqual(fc.eval_run_points(tree, None, 1, 0.03)[0][1], 3.0)
+
+
+class RoutineSessionBackTest(unittest.TestCase):
+    """The week of 2026-11-23, the first whole week under the pace hold:
+    187 eval runs had used 12.4 points by Thursday, 6.7 from their calls and
+    5.7 from their routine sessions, nearly all before Wednesday noon while
+    other use stayed under the pace line; then 35 points of other use in 12
+    hours closed the gap. The forecast subtracted only the calls, took the
+    sessions' 5.7 points for early-week other use, and replayed the hold to
+    3.6 points a week. This week is rebuilt from those figures (the meter
+    history itself is private): the replay must find the evals' room again
+    when each run carries its session, and must not when it does not."""
+
+    START = fc.RESET_ANCHOR + fc.timedelta(days=28)  # 2026-11-23 17:00 UTC
+    CALLS, SESSION, RUNS = 6.75 / 187, 0.0304, 187
+
+    def other(self, hours):
+        # 8 points by hour 48, 35 more by hour 60, then half a point an hour
+        # (about 97 in the week, near the 28-day rate of other use).
+        if hours <= 48:
+            return 8.0 * hours / 48
+        if hours <= 60:
+            return 8.0 + 35.0 * (hours - 48) / 12
+        return 43.0 + 0.5 * (hours - 60)
+
+    def week(self):
+        """(readings every 5 minutes, runs as the forecast reads them with
+        and without the session): one run every 15 minutes for the first 47
+        hours, evals and other use both on the meter."""
+        runs = [self.START + fc.timedelta(minutes=15 * k) for k in range(self.RUNS)]
+        readings = []
+        for step in range(168 * 12):
+            t = self.START + fc.timedelta(minutes=5 * step)
+            evals = sum(self.CALLS + self.SESSION for r in runs if r <= t)
+            readings.append((t, self.other(step / 12) + evals))
+        return (readings, [(t, self.CALLS + self.SESSION) for t in runs],
+                [(t, self.CALLS) for t in runs])
+
+    def test_with_the_session_the_replay_matches_the_week_and_without_it_does_not(self):
+        readings, with_session, calls_only = self.week()
+        actual = sum(p for _, p in with_session)
+        self.assertAlmostEqual(actual, 6.75 + 187 * 0.0304, places=6)
+        end = self.START + fc.WEEK + fc.timedelta(hours=1)
+        got = {}
+        for name, runs in (("with", with_session), ("calls only", calls_only)):
+            curve = fc.non_eval_week_curves(readings, runs, end, 1)[0]
+            got[name] = (curve["total"], fc.pace_hold_room([curve], curve["total"], 80.0, 20.8))
+        other, room = got["with"]
+        self.assertAlmostEqual(other, self.other(167 + 11 / 12), delta=0.01)
+        # Other use alone left the early week under the line: the replay
+        # gives evals at least what they really spent there.
+        self.assertGreaterEqual(room["points"], actual)
+        other_calls, room_calls = got["calls only"]
+        self.assertAlmostEqual(other_calls - other, 187 * 0.0304, delta=0.01)
+        self.assertLess(room_calls["points"], room["points"] - 3)
+
 
 class OpenSubjectsSkipWhatTheRulesDoNotTest(unittest.TestCase):
     """Open subjects are only those a fire can still move (Adam, 2026-11-23)."""

@@ -938,14 +938,20 @@ def _iso(text: str) -> datetime:
     return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
 
 
-def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1) -> list:
+def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1,
+                    routine_points: float = 0.0) -> list:
     """(start time, meter points) of each routine eval run, from its run id
     (YYYYMMDDTHHMMSSZ-...): what the guard charges it
-    (allowance_guard.run_points, priced from token counts by type) when
-    every role was priced from tokens, else its cost_estimate.json `points`,
-    calibrated on meter deltas before 2026-11-20 and about three times the
-    token estimate (2026-11-23: 14.2 against 5.1 points for the week of
-    Nov 16)."""
+    (allowance_guard.run_points, priced from token counts by type, plus
+    `routine_points`, its routine session's charge, which no trial summary
+    records) when every role was priced from tokens, else its
+    cost_estimate.json `points`, calibrated on meter deltas before 2026-11-20
+    and about three times the token estimate (2026-11-23: 14.2 against 5.1
+    points for the week of Nov 16).
+
+    Without the routine session the forecast took that use for other use:
+    5.7 of the 12.4 eval points in the week of 2026-11-23, most of it early
+    in the week, where the pace-hold replay finds the evals' room."""
     out = []
     for run_dir in allowance_guard.all_runs(results_tree):
         when = run_start(run_dir)
@@ -954,7 +960,7 @@ def eval_run_points(results_tree: Path, legacy_usd_per_point=None, scale=1) -> l
         if legacy_usd_per_point is not None:
             found = allowance_guard.run_points(run_dir, legacy_usd_per_point, scale)
             if found and found["from_tokens"]:
-                out.append((when, float(found["points"])))
+                out.append((when, float(found["points"]) + routine_points))
                 continue
         try:
             points = json.loads((run_dir / "cost_estimate.json").read_text(
@@ -1079,8 +1085,16 @@ def main(argv: list | None = None) -> int:
         if args.automatic_spend else None
     measured = None
     curves = None
+    # Each run's routine session, as the guard and loop_status charge it:
+    # spend/weekly.json eval_routine.points_per_fire, else per_run_overrun.
+    routine, routine_why = allowance_guard.eval_routine(args.results_tree, now)
+    routine_points = float(routine["points_per_fire"]) if routine \
+        else float(budget["per_run_overrun"]) * 100
+    sources["eval_routine_points_per_run"] = (
+        f"spend/weekly.json eval_routine ({routine_why})" if routine
+        else f"evals/budget.yml per_run_overrun, as a fallback: {routine_why}")
     runs = eval_run_points(args.results_tree, budget["legacy_usd_per_point"],
-                           budget.get("allowance_scale", 1))
+                           budget.get("allowance_scale", 1), routine_points)
     if args.meter_history:
         readings = [(_iso(r["ts_utc"]), float(r["percent"]))
                     for r in csv.DictReader(args.meter_history.open(encoding="utf-8"))
