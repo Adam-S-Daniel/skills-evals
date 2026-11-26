@@ -9,7 +9,15 @@ const vm = require('vm');
 const TOOL = path.resolve(__dirname, '..');
 const REPO = path.resolve(TOOL, '..');
 const PAGE = path.join(TOOL, 'index.html');
-const html = fs.readFileSync(PAGE, 'utf8');
+/* The page under test is built here from explorer/test/display.test.json (zone
+   America/New_York, an invented repo list), not read from tool/index.html, so
+   no test depends on the zone or repos the checkout committed; explorer's own
+   suite checks that the committed page matches a build of the committed file. */
+const DISPLAY_TEST = path.join(REPO, 'explorer', 'test', 'display.test.json');
+const DATA_REPO = JSON.parse(fs.readFileSync(DISPLAY_TEST, 'utf8')).issue_repos[0];
+const html = require('child_process').execFileSync(process.execPath, ['--input-type=module', '-e',
+  "const { buildPublicPage } = await import(process.argv[1]); process.stdout.write(await buildPublicPage(process.argv[2]));",
+  require('url').pathToFileURL(path.join(REPO, 'explorer', 'build.js')).href, DISPLAY_TEST], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 function loadPage() {
   const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)].map((m) => m[1]);
@@ -883,11 +891,11 @@ test('a section without a gloss shows a fallback, never a blank card', () => {
 test('?data accepts only localhost, 127.0.0.1 and this repo on raw.githubusercontent.com', () => {
   ok(P.allowedDataUrl('http://localhost:8000/test/fixture.json'), 'localhost');
   ok(P.allowedDataUrl('http://127.0.0.1:8000/x.json'), '127.0.0.1');
-  ok(P.allowedDataUrl('https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json'), 'repo');
+  ok(P.allowedDataUrl('https://raw.githubusercontent.com/' + DATA_REPO + '/persistent/eval-results/explorer/latest.json'), 'repo');
   for (const bad of ['https://evil.example.com/x.json', 'http://localhost.evil.example.com/x', 'http://localhost@evil.example.com/x',
     'http://127.0.0.1.example.com/x', 'https://localhost/x', 'javascript:alert(1)', 'data:application/json,{}',
-    'https://raw.githubusercontent.com/Adam-S-Daniel/other/main/x.json', 'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals-x/main/x',
-    'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/../other/x', 'http://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/x']) {
+    'https://raw.githubusercontent.com/' + DATA_REPO.split('/')[0] + '/other/main/x.json', 'https://raw.githubusercontent.com/' + DATA_REPO + '-x/main/x',
+    'https://raw.githubusercontent.com/' + DATA_REPO + '/../other/x', 'http://raw.githubusercontent.com/' + DATA_REPO + '/x']) {
     eq(P.allowedDataUrl(bad), null, bad);
   }
   eq(P.dataUrlFromSearch('').url, P.DEFAULT_DATA_URL);

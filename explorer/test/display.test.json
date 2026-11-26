@@ -1,0 +1,8 @@
+{
+ "time_zone": "America/New_York",
+ "issue_repos": [
+  "example-owner/data-repo",
+  "example-owner/tests-a",
+  "example-owner/tests-b"
+ ]
+}
