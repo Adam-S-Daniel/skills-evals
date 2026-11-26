@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
-    "context_declared": 74,
-    "context_missing": 106,
+    "context_declared": 77,
+    "context_missing": 107,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 180
+    "total": 184
   },
-  "generated_at": "2026-11-25T16:01:29Z",
+  "generated_at": "2026-11-26T15:45:20Z",
   "include_private_names": false,
   "paused_removed": [
     {
@@ -125,7 +125,7 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "launch-top-level-claude-session",
@@ -134,7 +134,7 @@
         {
           "bundle": "adam-coding-local",
           "fixtures": 0,
-          "reason": "rechecked 2026-11-05, holds on criterion 1 only: one recorded local use since 2026-09-14 (week of 2026-09-21). Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows",
+          "reason": "rechecked 2026-11-25, holds on criterion 1 only: the 2026-11-25 local census (3002 sessions from 2026-10-05) counts no use, and the skill is in the local-only adam-coding-local plugin, so no cloud session loads it; its last recorded use is the week of 2026-09-21. Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows",
           "registry": "adam-agentskills",
           "skill": "migrate-claude-memory",
           "status": "skipped"
@@ -182,7 +182,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "rechecked 2026-11-05, holds on criterion 1 only: no recorded local use since 2026-09-14. Its surface (PowerShell 7 and poppler over a folder of PDFs) can be faked in a container, so reopen it if it is used",
+          "reason": "rechecked 2026-11-25, holds on criterion 1 only: no recorded local use since 2026-09-14 (the 2026-11-25 local census, 3002 sessions from 2026-10-05, still counts none), and it is in the local-only adam-non-coding-local plugin. Its surface (PowerShell 7 and poppler over a folder of PDFs) can be faked in a container, so reopen it if it is used",
           "registry": "adam-agentskills",
           "skill": "compare-pdfpairs",
           "status": "skipped"
@@ -198,7 +198,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "rechecked 2026-11-06, holds on criterion 1 only: no recorded local use since 2026-09-14. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used",
+          "reason": "rechecked 2026-11-25, holds on criterion 1 only: no recorded local use since 2026-09-14 (the 2026-11-25 local census, 3002 sessions from 2026-10-05, still counts none), and it is in the local-only adam-non-coding-local plugin. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used",
           "registry": "adam-agentskills",
           "skill": "ocr-pdfs",
           "status": "skipped"

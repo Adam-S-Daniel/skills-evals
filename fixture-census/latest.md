@@ -23,16 +23,16 @@
 | adam-coding-anywhere | skills-doctor | covered | 5 |  |
 | adam-coding-anywhere | vendor-release-impact-issues | covered | 5 |  |
 | adam-coding-anywhere | workflow-path-audit | covered | 6 |  |
-| adam-coding-local | launch-top-level-claude-session | covered | 1 |  |
-| adam-coding-local | migrate-claude-memory | skipped | 0 | rechecked 2026-11-05, holds on criterion 1 only: one recorded local use since 2026-09-14 (week of 2026-09-21). Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows |
+| adam-coding-local | launch-top-level-claude-session | covered | 4 |  |
+| adam-coding-local | migrate-claude-memory | skipped | 0 | rechecked 2026-11-25, holds on criterion 1 only: the 2026-11-25 local census (3002 sessions from 2026-10-05) counts no use, and the skill is in the local-only adam-coding-local plugin, so no cloud session loads it; its last recorded use is the week of 2026-09-21. Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows |
 | adam-coding-local | sync-cc-settings-between-wsl-and-windows | skipped | 0 | rechecked 2026-11-18, holds: fails criterion 1 (no recorded local use since 2026-09-14; the 2026-11-18 local census, from 2026-09-28, still counts none) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply) |
 | adam-coding-local | tool-powershell | covered | 8 |  |
 | adam-coding-local | windows-elevation-from-wsl | covered | 1 |  |
 | adam-non-coding-local | add-from-address | skipped | 0 | rechecked 2026-11-06, holds: fails criterion 3 (it dispatches a workflow in the fastmail-actions repository that edits a real Fastmail account&#x27;s sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded local use since 2026-09-14) |
 | adam-non-coding-local | add-received-from-addresses | skipped | 0 | rechecked 2026-11-10, holds: fails criterion 3 (it still dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02) |
-| adam-non-coding-local | compare-pdfpairs | skipped | 0 | rechecked 2026-11-05, holds on criterion 1 only: no recorded local use since 2026-09-14. Its surface (PowerShell 7 and poppler over a folder of PDFs) can be faked in a container, so reopen it if it is used |
+| adam-non-coding-local | compare-pdfpairs | skipped | 0 | rechecked 2026-11-25, holds on criterion 1 only: no recorded local use since 2026-09-14 (the 2026-11-25 local census, 3002 sessions from 2026-10-05, still counts none), and it is in the local-only adam-non-coding-local plugin. Its surface (PowerShell 7 and poppler over a folder of PDFs) can be faked in a container, so reopen it if it is used |
 | adam-non-coding-local | fastmail | skipped | 0 | rechecked 2026-11-06, holds: fails criterion 3 (credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own) and criterion 1 (one recorded local use since 2026-09-14, in the week of 2026-09-14) |
-| adam-non-coding-local | ocr-pdfs | skipped | 0 | rechecked 2026-11-06, holds on criterion 1 only: no recorded local use since 2026-09-14. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used |
+| adam-non-coding-local | ocr-pdfs | skipped | 0 | rechecked 2026-11-25, holds on criterion 1 only: no recorded local use since 2026-09-14 (the 2026-11-25 local census, 3002 sessions from 2026-10-05, still counts none), and it is in the local-only adam-non-coding-local plugin. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used |
 | adam-non-coding-local | pdf-ocr-audit | covered | 1 |  |
 | adam-non-coding-local | rename-pdfs | covered | 1 |  |
 
@@ -75,6 +75,6 @@ Fixtures whose skill is gone from its registry, kept by the eval scope pass. Not
 
 ## Fixture metadata readiness
 
-- Fixtures: 180; draft: 11.
-- Context declared: 74; missing: 106; guidance unproven: 0.
+- Fixtures: 184; draft: 11.
+- Context declared: 77; missing: 107; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
