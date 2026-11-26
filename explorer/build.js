@@ -70,7 +70,7 @@ const artifactAdapter = {
 };
 
 /* The bundle of one entry, as a string. Exported for test/run.js. */
-export async function bundle(entry, opts) {
+export async function bundle(entry, opts, displayFile) {
   const o = opts || {};
   const flag = (name, dflt) => (typeof o[name] === 'boolean' ? o[name] : dflt);
   const priv = entry === 'private.js';
@@ -79,7 +79,7 @@ export async function bundle(entry, opts) {
     // which the console stores as one ArtifactData document of at most 262,144
     // bytes once JSON-serialized. Identifier names stay in the public pages.
     minifySyntax: flag('minifySyntax', true), minifyWhitespace: flag('minifyWhitespace', true), minifyIdentifiers: flag('minifyIdentifiers', priv)
-  });
+  }, displayFile);
   return res.outputFiles[0].text;
 }
 
@@ -145,9 +145,10 @@ function fill(templatePath, js, vars, opts) {
   return head + js.replace(/\n$/, '') + parts[1];
 }
 
-export async function buildPublicPage() {
+/* `displayFile` (tests only) builds the page for another display config than the committed one. */
+export async function buildPublicPage(displayFile) {
   const { DEFAULT_DATA_URL } = await import('./src/adapters/web.js');
-  return fill(TEMPLATE, await bundle('public.js'), { DATA_URL: DEFAULT_DATA_URL });
+  return fill(TEMPLATE, await bundle('public.js', undefined, displayFile), { DATA_URL: DEFAULT_DATA_URL });
 }
 
 /* The console stores the private page as a JSON string, where every double
