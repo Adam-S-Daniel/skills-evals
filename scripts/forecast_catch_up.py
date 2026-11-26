@@ -145,6 +145,10 @@ ARRIVALS_MAX_AGE = timedelta(days=8)
 FORECAST_CONFIG = "forecast.yml"
 #: The shortest basis window: one allowance week.
 BASIS_MIN_DAYS = 7
+#: The longest, and the most choices: the dashboard accepts no more
+#: (ai-usage-dashboard index.html, `BASIS` and its `by_window` check).
+BASIS_MAX_DAYS = 999
+BASIS_MAX_CHOICES = 8
 
 
 class BasisError(ValueError):
@@ -153,7 +157,7 @@ class BasisError(ValueError):
 
 
 def basis_days_ok(value) -> bool:
-    return type(value) is int and value >= BASIS_MIN_DAYS
+    return type(value) is int and BASIS_MIN_DAYS <= value <= BASIS_MAX_DAYS
 
 
 def load_basis(evals_dir: Path) -> dict:
@@ -174,13 +178,13 @@ def load_basis(evals_dir: Path) -> dict:
         if key not in doc:
             raise BasisError(f"{path}: {key} is missing")
     days, choices = doc["basis_window_days"], doc["basis_window_choices"]
+    span = f"{BASIS_MIN_DAYS} to {BASIS_MAX_DAYS}"
     if not basis_days_ok(days):
-        raise BasisError(f"{path}: basis_window_days must be a whole number of days, "
-                         f"at least {BASIS_MIN_DAYS}")
-    if not isinstance(choices, list) or not choices \
+        raise BasisError(f"{path}: basis_window_days must be a whole number of days, {span}")
+    if not isinstance(choices, list) or not 0 < len(choices) <= BASIS_MAX_CHOICES \
             or not all(basis_days_ok(c) for c in choices) or len(set(choices)) != len(choices):
-        raise BasisError(f"{path}: basis_window_choices must be a list of distinct whole "
-                         f"numbers of days, each at least {BASIS_MIN_DAYS}")
+        raise BasisError(f"{path}: basis_window_choices must be a list of at most "
+                         f"{BASIS_MAX_CHOICES} distinct whole numbers of days, each {span}")
     if days not in choices:
         raise BasisError(f"{path}: basis_window_days {days} is not one of basis_window_choices")
     return {"days": days, "choices": sorted(choices)}
@@ -593,18 +597,19 @@ def measured_usd_per_point(results_tree: Path, legacy_rate, scale=1,
 
 
 def with_resets(span: list) -> list:
-    """`span` (sorted meter readings) with a zero reading at each reset the
-    meter fell across, a weekly one (RESET_ANCHOR plus whole weeks) or a
-    manual one (allowance_guard.MANUAL_RESETS): the meter restarts from 0
-    there, so the use up to the first reading after it counts as a rise. A
-    fall with no reset between is a misread, and the rise skips it."""
+    """`span` (sorted meter readings) with a zero reading at each reset that
+    falls strictly between two readings, a weekly one (RESET_ANCHOR plus
+    whole weeks) or a manual one (allowance_guard.MANUAL_RESETS): the meter
+    restarts from 0 there, so the use up to the first reading after it
+    counts as a rise, even when that reading is above the last one before
+    the reset (a collector gap across it). A fall with no reset between is a
+    misread, and the rise skips it."""
     out = [span[0]]
-    for (t0, p0), (t1, p1) in zip(span, span[1:]):
-        if p1 < p0:
-            weekly = RESET_ANCHOR + WEEK * math.floor((t1 - RESET_ANCHOR) / WEEK)
-            resets = [r for r in (weekly, *allowance_guard.MANUAL_RESETS) if t0 < r <= t1]
-            if resets and max(resets) < t1:
-                out.append((max(resets), 0.0))
+    for (t0, _), (t1, p1) in zip(span, span[1:]):
+        weekly = RESET_ANCHOR + WEEK * math.floor((t1 - RESET_ANCHOR) / WEEK)
+        resets = [r for r in (weekly, *allowance_guard.MANUAL_RESETS) if t0 < r < t1]
+        if resets:
+            out.append((max(resets), 0.0))
         out.append((t1, p1))
     return out
 
@@ -663,6 +668,8 @@ def meter_non_eval_points(readings: list, eval_runs: list, end: datetime,
     while_running = rise(runs[0][0], runs[-1][0] + timedelta(hours=1))[0] if runs else 0.0
     evals = min(calibrated, while_running)
     covered = (span[-1][0] - span[0][0]).total_seconds() / 86400
+    if covered <= 0:
+        return None
     return {"points_per_week": max(0.0, total - evals) * 7 / covered,
             "points_per_week_low": max(0.0, total_low - evals) * 7 / covered,
             "points_per_week_high": max(0.0, total_high - evals) * 7 / covered,
@@ -1018,7 +1025,7 @@ def main(argv: list | None = None) -> int:
     if args.basis_days is not None:
         if not basis_days_ok(args.basis_days):
             p.error(f"--basis-days {args.basis_days}: the basis window is whole days, "
-                    f"at least {BASIS_MIN_DAYS}")
+                    f"{BASIS_MIN_DAYS} to {BASIS_MAX_DAYS}")
         basis = {"days": args.basis_days, "source": "--basis-days"}
     else:
         try:

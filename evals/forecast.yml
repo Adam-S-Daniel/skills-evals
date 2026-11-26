@@ -17,13 +17,18 @@
 #   * the eval pace: the weeks whose reset falls in the window;
 #   * the arrival rates: arrivals/targets.json's items in the window.
 #
+# Not windowed here: the eval runner's per-fire overhead and the loop jobs'
+# weekly points come measured in spend/weekly.json (dashboard/build.py, the
+# fire ledger's last 14 days), and people's own use is the windowed meter
+# total less those loop jobs.
+#
 # 28 days: four whole allowance weeks, so a burst day weighs a 28th and a
 # 5-minute meter reading about 1/8000 of the rate; still short enough that a
-# lasting change in use shows within a month. The same four weeks the replay
-# and evals/target-sources.yml rate_weeks used before.
+# lasting change in use shows within a month. The replay used four whole
+# weeks before too, and evals/target-sources.yml counts arrivals over four.
 basis_window_days: 28
 
 # The windows loop_status.py precomputes for the dashboard's selector; the
-# default must be one of them. Each is a whole number of days, at least 7
-# (one allowance week).
+# default must be one of them. At most 8, each a whole number of days from 7
+# (one allowance week) to 999.
 basis_window_choices: [14, 28, 56]

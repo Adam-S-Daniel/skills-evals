@@ -746,7 +746,10 @@ class BasisWindow(unittest.TestCase):
         cases = {None: "cannot read the basis window",
                  "basis_window_choices: [14, 28]\n": "basis_window_days is missing",
                  "basis_window_days: 28\n": "basis_window_choices is missing",
-                 "basis_window_days: 3\nbasis_window_choices: [3]\n": "at least 7",
+                 "basis_window_days: 3\nbasis_window_choices: [3]\n": "7 to 999",
+                 "basis_window_days: 28\nbasis_window_choices: [28, 1000]\n": "7 to 999",
+                 "basis_window_days: 28\nbasis_window_choices: [7, 8, 9, 10, 11, 12, 13, 28, 56]\n":
+                     "at most 8",
                  "basis_window_days: 28.5\nbasis_window_choices: [14]\n": "whole number",
                  "basis_window_days: 28\nbasis_window_choices: [14, 56]\n": "not one of",
                  "basis_window_days: 28\nbasis_window_choices: [28, 28]\n": "distinct",
@@ -842,6 +845,16 @@ class BasisWindow(unittest.TestCase):
         reset = fc.RESET_ANCHOR + fc.timedelta(days=21)
         across = [(reset - fc.timedelta(minutes=5), 70.0), (reset + fc.timedelta(minutes=5), 1.0)]
         self.assertEqual(fc.with_resets(across), [across[0], (reset, 0.0), across[1]])
+        # A collector gap across the reset: 3 before, 5 after is 5 of new use.
+        gap = [(reset - fc.timedelta(hours=2), 3.0), (reset + fc.timedelta(hours=2), 5.0)]
+        self.assertEqual(fc.meter_non_eval_points(gap, [], gap[-1][0], 7)["meter_rise_points"], 5.0)
+        # A reading exactly at the reset is already the restart.
+        on = [(reset - fc.timedelta(minutes=5), 70.0), (reset, 0.0), (reset + fc.timedelta(hours=1), 2.0)]
+        self.assertEqual(fc.with_resets(on), on)
+
+    def test_readings_at_one_instant_cover_no_time(self):
+        t = fc.RESET_ANCHOR + fc.timedelta(days=15)
+        self.assertIsNone(fc.meter_non_eval_points([(t, 1.0), (t, 2.0)], [], t, 7))
 
     # --- the other windowed rates ------------------------------------------
 
