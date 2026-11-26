@@ -6,7 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
 import vm from 'node:vm';
-import { bundle, bundleResult, buildPublicPage, buildPrivatePage, buildArtifactPage, singleQuoted } from '../build.js';
+import os from 'node:os';
+import { bundle, bundleResult, bundleModule, loadDisplay, applyIssueRepos, buildDatasets, buildPublicPage, buildPrivatePage, buildArtifactPage, singleQuoted } from '../build.js';
+import { validateDisplay } from '../display-check.js';
+import { registerLoaders } from '../src/private/loaders.js';
 import { readDashboard, dashboardSource, DATASET_ID } from '../src/adapters/dashboard.js';
 import { DEFAULT_DATA_URL, DATA_URL_PREFIX, allowedDataUrl } from '../src/adapters/web.js';
 import * as artifactAdapter from '../src/adapters/artifact.js';
@@ -557,12 +560,12 @@ await test('the data URL is built from the one DATA_REPO value', () => {
   eq(allowedDataUrl(DEFAULT_DATA_URL), DEFAULT_DATA_URL);
   eq(allowedDataUrl('https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals-x/main/x'), null);
 });
-await test('no source file but config.js names the owner/repo', () => {
+await test('no source file names the data owner/repo: config.js derives it from display.json', () => {
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
   const files = walk(path.join(EXPLORER, 'src')).concat(walk(path.join(EXPLORER, 'template')));
   ok(files.length > 10, 'found the source files');
   const naming = files.filter((f) => fs.readFileSync(f, 'utf8').includes(DATA_REPO)).map((f) => path.relative(EXPLORER, f));
-  eq(naming.join(','), path.join('src', 'config.js'));
+  eq(naming.join(','), '');
 });
 
 // --- the public bundle -------------------------------------------------------------
@@ -1393,7 +1396,7 @@ function etViolations(source, utcKeys) {
 await test('E10: only core/format.js formats a date or time, and only one string says UTC', () => {
   const bad = [];
   for (const [file, src] of sourceFiles()) {
-    if (file === 'core/format.js') continue;
+    if (file === 'core/format.js' || file === 'core/zone.js') continue;
     for (const f of etViolations(src, file === 'core/strings.js' ? ['utcNote', 'utcNoteSpend'] : null)) bad.push(file + ':' + f);
   }
   eq(bad.join('\n'), '', 'format dates with core/format.js (fmtDay, fmtDateTime, fmtDayKey, fmtWeekStart, fmtResetLabel)');
@@ -2081,6 +2084,227 @@ await test('the public home page draws what the site freshness check waits for',
   const hits = findAll(page, (n) => n.attrs && parts.some((p) => (!p.tag || n.tag === p.tag)
     && String(n.attrs.class || '').split(/\s+/).includes(p.cls)));
   ok(hits.length > 0, 'the Summary page draws nothing DRAWN (' + m[1] + ') matches');
+});
+
+
+// ---- Display settings: the time zone and the issue repos come from explorer/display.json, never from code ----
+const DISPLAY_OK = { time_zone: 'Europe/Berlin', issue_repos: ['o/first', 'o/second'] };
+const throwsWith = (fn, ...needles) => {
+  let msg = null;
+  try { fn(); } catch (e) { msg = String(e.message); }
+  ok(msg !== null, 'it must throw');
+  for (const n of needles) ok(msg.includes(n), JSON.stringify(n) + ' missing from: ' + msg);
+};
+await test('display.json: the committed file validates, and a good one yields the zone and the repos', () => {
+  const d = loadDisplay();
+  ok(typeof d.timeZone === 'string' && d.issueRepos.length > 0, 'the committed display.json is complete');
+  eq(JSON.stringify(validateDisplay(DISPLAY_OK, 'f.json')), JSON.stringify({ timeZone: 'Europe/Berlin', issueRepos: ['o/first', 'o/second'] }));
+});
+await test('display.json: a missing or invalid time zone fails naming the file, the key and what to set', () => {
+  throwsWith(() => validateDisplay({ issue_repos: ['o/r'] }, 'cfg/display.json'), 'cfg/display.json', '"time_zone"', 'missing', 'IANA');
+  throwsWith(() => validateDisplay({ time_zone: '', issue_repos: ['o/r'] }, 'cfg/display.json'), '"time_zone"', 'missing');
+  throwsWith(() => validateDisplay({ time_zone: 'Mars/Olympus', issue_repos: ['o/r'] }, 'cfg/display.json'), '"time_zone"', 'Mars/Olympus', 'not an IANA time zone');
+  throwsWith(() => validateDisplay({ time_zone: 5, issue_repos: ['o/r'] }, 'cfg/display.json'), '"time_zone"');
+});
+await test('display.json: a missing, empty or malformed repo list fails naming the file, the key and what to set', () => {
+  throwsWith(() => validateDisplay({ time_zone: 'Europe/Berlin' }, 'cfg/display.json'), 'cfg/display.json', '"issue_repos"', 'missing or empty', 'owner/repo');
+  throwsWith(() => validateDisplay({ time_zone: 'Europe/Berlin', issue_repos: [] }, 'cfg/display.json'), '"issue_repos"', 'missing or empty');
+  throwsWith(() => validateDisplay({ time_zone: 'Europe/Berlin', issue_repos: ['just-a-name'] }, 'cfg/display.json'), '"issue_repos"', '"just-a-name"', '"owner/repo"');
+  throwsWith(() => validateDisplay({ time_zone: 'Europe/Berlin', issue_repos: ['a/b', 'a/b'] }, 'cfg/display.json'), '"issue_repos"', 'twice');
+  throwsWith(() => validateDisplay([], 'cfg/display.json'), 'cfg/display.json', '"time_zone"', '"issue_repos"');
+});
+const TMP_DIRS = [];
+process.on('exit', () => { for (const d of TMP_DIRS) fs.rmSync(d, { recursive: true, force: true }); });
+const tmpDisplay = (obj) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'display-'));
+  TMP_DIRS.push(dir);
+  const file = path.join(dir, 'display.json');
+  fs.writeFileSync(file, typeof obj === 'string' ? obj : JSON.stringify(obj));
+  return file;
+};
+await test('the build fails with a descriptive message when the config is absent, unreadable as JSON, or missing a key', async () => {
+  const MIN = { minifySyntax: true, minifyWhitespace: true, minifyIdentifiers: false };
+  const fails = async (file, ...needles) => {
+    let msg = null;
+    try { await bundleResult('public.js', MIN, file); } catch (e) { msg = String(e.message); }
+    ok(msg !== null, 'the bundle must not build');
+    for (const n of needles) ok(msg.includes(n), JSON.stringify(n) + ' missing from: ' + msg);
+  };
+  await fails(path.join(os.tmpdir(), 'display-absent-' + process.pid, 'display.json'), 'is missing', '"time_zone"', '"issue_repos"');
+  await fails(tmpDisplay('{ not json'), 'not valid JSON');
+  await fails(tmpDisplay({ issue_repos: ['o/r'] }), '"time_zone"', 'IANA');
+  await fails(tmpDisplay({ time_zone: 'Nowhere/City', issue_repos: ['o/r'] }), '"time_zone"', 'Nowhere/City');
+  await fails(tmpDisplay({ time_zone: 'Europe/Berlin' }), '"issue_repos"', 'missing or empty');
+  await fails(tmpDisplay({ time_zone: 'Europe/Berlin', issue_repos: [] }), '"issue_repos"');
+});
+await test('the build reads the zone from the config: a Tokyo build names Tokyo and no New York, and only the private page carries the repos', async () => {
+  const file = tmpDisplay({ time_zone: 'Asia/Tokyo', issue_repos: ['zed/alpha', 'zed/beta'] });
+  const MIN = { minifySyntax: true, minifyWhitespace: true, minifyIdentifiers: false };
+  const pub = (await bundleResult('public.js', MIN, file)).outputFiles[0].text;
+  const priv = (await bundleResult('private.js', MIN, file)).outputFiles[0].text;
+  ok(pub.includes('Asia/Tokyo') && !pub.includes('America/New_York'), 'the public bundle has the configured zone only');
+  ok(pub.includes('zed/alpha') && !pub.includes('zed/beta'), 'the public bundle names the data repo and no other');
+  ok(priv.includes('zed/alpha') && priv.includes('zed/beta') && !priv.includes('claude-memory-map'), 'the private bundle lists the configured repos');
+});
+async function zoneModules(zone) {
+  const file = tmpDisplay({ time_zone: zone, issue_repos: ['o/r'] });
+  const load = async (rel, name) => vm.runInNewContext(await bundleModule(path.join(EXPLORER, 'src', rel), name, file) + ';' + name, {});
+  return { format: await load('core/format.js', 'F'), zone: await load('core/zone.js', 'Z') };
+}
+await test('formatting in Europe/Berlin: day keys and labels follow the zone across both daylight saving changes', async () => {
+  const { format: F, zone: Z } = await zoneModules('Europe/Berlin');
+  const at = (iso) => Date.parse(iso);
+  eq(Z.ZONE_ABBR, 'Germany Time');
+  eq(F.etDayKey(at('2026-03-28T22:59:00Z')), '2026-03-28', 'one hour before midnight CET');
+  eq(F.etDayKey(at('2026-03-28T23:00:00Z')), '2026-03-29', 'midnight CET, the day daylight saving starts');
+  eq(F.etDayKey(at('2026-03-29T21:59:00Z')), '2026-03-29', 'the day is 23 hours long: 23:59 CEST');
+  eq(F.etDayKey(at('2026-03-29T22:00:00Z')), '2026-03-30');
+  eq(F.etDayKey(at('2026-10-24T21:59:00Z')), '2026-10-24', 'CEST, before the day it ends');
+  eq(F.etDayKey(at('2026-10-24T22:00:00Z')), '2026-10-25');
+  eq(F.etDayKey(at('2026-10-25T22:59:00Z')), '2026-10-25', 'the day is 25 hours long: 23:59 CET');
+  eq(F.etDayKey(at('2026-10-25T23:00:00Z')), '2026-10-26');
+  eq(F.fmtDateTime(at('2026-01-15T12:00:00Z')), 'Jan 15, 2026, 1:00 PM Germany Time', 'winter, +1');
+  eq(F.fmtDateTime(at('2026-07-15T12:00:00Z')), 'Jul 15, 2026, 2:00 PM Germany Time', 'summer, +2');
+  eq(F.fmtTime(at('2026-03-29T00:30:00Z')), '1:30 AM');
+  eq(F.fmtTime(at('2026-03-29T01:30:00Z')), '3:30 AM', 'the hour from 02:00 to 03:00 does not exist');
+  eq(F.fmtResetLabel(at('2026-11-09T17:00:00Z')), 'Monday 6:00 PM Germany Time');
+  const day = F.utcClockToEt(23, 30, at('2026-01-15T00:00:00Z'));
+  eq(day.text, '12:30 AM Germany Time');
+  eq(day.shift, 1, 'the zone is already on the next date');
+  eq(F.utcClockToEt(1, 0, at('2026-07-15T00:00:00Z')).shift, 0);
+  const m = F.utcMomentToEt('Mar', 29, 0, 30, at('2026-06-01T00:00:00Z'));
+  eq(m.clock, '1:30 AM Germany Time');
+  eq(m.date, 'Mar 29');
+  eq(Z.utcDayStartWords(), '1 AM Germany Time (2 AM during daylight saving time)');
+  eq(Z.spendWeekStartWords(), 'Monday at 6 PM Germany Time (7 PM during daylight saving time)');
+});
+await test('formatting in Asia/Tokyo and America/Sao_Paulo: no daylight saving, an offset ahead of UTC, and a half-hour offset', async () => {
+  const at = (iso) => Date.parse(iso);
+  const { format: F, zone: Z } = await zoneModules('Asia/Tokyo');
+  eq(F.etDayKey(at('2026-06-30T14:59:00Z')), '2026-06-30');
+  eq(F.etDayKey(at('2026-06-30T15:00:00Z')), '2026-07-01');
+  eq(F.fmtDateTime(at('2026-01-15T12:00:00Z')), 'Jan 15, 2026, 9:00 PM Japan Time');
+  eq(F.fmtDateTime(at('2026-07-15T12:00:00Z')), 'Jul 15, 2026, 9:00 PM Japan Time', 'the same offset in summer');
+  eq(Z.utcDayStartWords(), '9 AM Japan Time', 'no daylight saving sentence');
+  eq(Z.spendWeekStartWords(), 'Tuesday at 2 AM Japan Time');
+  const kolkata = await zoneModules('Asia/Kolkata');
+  eq(kolkata.zone.utcDayStartWords(), '5:30 AM India Time');
+  const ny = await zoneModules('America/New_York');
+  eq(ny.zone.ZONE_ABBR, 'ET');
+  eq(ny.zone.utcDayStartWords(), '7 PM ET the evening before (8 PM during daylight saving time)');
+  eq(ny.zone.spendWeekStartWords(), 'Monday at noon ET (1 PM during daylight saving time)');
+  const sydney = await zoneModules('Australia/Sydney');
+  eq(sydney.zone.utcDayStartWords(), '10 AM Sydney Time (11 AM during daylight saving time)', 'the southern summer is the daylight season');
+});
+await test('the in-text converter reads UTC times in the data and shows them in the configured zone', async () => {
+  const file = tmpDisplay({ time_zone: 'Europe/Berlin', issue_repos: ['o/r'] });
+  const code = await bundleModule(path.join(EXPLORER, 'src', 'private', 'views.js'), 'V', file);
+  const V = vm.runInNewContext(code + ';V', { document: {}, window: {} });
+  const winter = Date.parse('2026-01-15T00:00:00Z');
+  eq(V.etSchedule('Daily 06:53 UTC, GitHub Actions (1:53 AM ET)', winter), 'Daily 7:53 AM Germany Time, GitHub Actions', 'the data\'s own "ET" is not trusted: the page computes the time');
+  eq(V.etSchedule('Mondays 23:30 UTC', winter), 'Tuesdays 12:30 AM Germany Time', 'the weekday moves forward when the zone is ahead');
+  eq(V.etSchedule('Mondays 17:00 UTC', Date.parse('2026-07-15T00:00:00Z')), 'Mondays 7:00 PM Germany Time');
+});
+await test('datasets.json: the queries and sentences that name repos are written from issue_repos', () => {
+  const cur = JSON.parse(fs.readFileSync(DATASETS, 'utf8'));
+  const out = applyIssueRepos(JSON.parse(JSON.stringify(cur)), ['zed/alpha', 'zed/beta', 'zed/gamma']);
+  eq(out.merged_prs.source.args.query, 'is:merged repo:zed/alpha repo:zed/beta repo:zed/gamma');
+  eq(out.open_prs.source.args.query, 'is:open repo:zed/alpha repo:zed/beta repo:zed/gamma');
+  eq(out.budget.request.args.repo + out.eval_ingests.source.args.repo + out.eval_ingests.source.args.owner, 'alphaalphazed', 'the data repo is the first entry');
+  eq(out.open_issues.source.args.owner, 'zed');
+  eq(out.open_issues.source.args.repo, 'alpha');
+  ok(out.open_issues.description.includes('in alpha, beta and gamma (title and label rule'), out.open_issues.description);
+  ok(out.open_prs.description.includes('in alpha, beta and gamma (head branch rule'), out.open_prs.description);
+  ok(out.merged_prs.description.includes('in the same three repos'), out.merged_prs.description);
+  eq(buildDatasets(loadDisplay()), fs.readFileSync(DATASETS, 'utf8'), 'the committed file is what the build writes');
+  const one = applyIssueRepos(JSON.parse(JSON.stringify(cur)), ['zed/alpha']);
+  ok(one.open_issues.description.includes('in alpha (title and label rule'), one.open_issues.description);
+  throwsWith(() => applyIssueRepos({}, ['zed/alpha']), 'has no dataset');
+});
+await test('the open_issues loader reads each configured repo once and builds its links from the config', async () => {
+  const d = loadDisplay();
+  let loader;
+  registerLoaders({ loader: (id, def) => { if (id === 'open_issues') loader = def; } });
+  const calls = [];
+  const answerFor = (repo) => ({ issues: [{ number: 7, title: 'Eval: ' + repo, labels: [], created_at: 'c', updated_at: 'u' }, { number: 8, title: 'unrelated', labels: [] }] });
+  const call = async (tool, args) => { calls.push(args.owner + '/' + args.repo); return JSON.stringify(answerFor(args.repo)); };
+  const first = d.issueRepos[0].split('/');
+  const rows = await loader.fn({ answer: JSON.stringify(answerFor(first[1])), call, args: { owner: first[0], repo: first[1], state: 'OPEN' } });
+  eq(calls.join(','), d.issueRepos.slice(1).join(','), 'one call per other configured repo, none for the first');
+  for (const r of rows) ok(r.url === 'https://github.com/' + d.issueRepos.find((x) => x.endsWith('/' + r.repo)) + '/issues/' + r.number, r.url);
+  ok(new Set(rows.map((r) => r.repo)).size <= d.issueRepos.length);
+});
+await test('a local aside with noon or midnight instead of AM/PM is read as data and shown as the computed time, in both seasons', () => {
+  const winter = Date.parse('2026-01-15T00:00:00Z'), summer = Date.parse('2026-07-15T00:00:00Z');
+  eq(etSchedule('Mondays 17:00 UTC (noon ET)', winter), 'Mondays 12:00 PM ET');
+  eq(etSchedule('Mondays 17:00 UTC (noon ET)', summer), 'Mondays 1:00 PM ET', 'the data\'s noon is winter time; the page computes July');
+  eq(etSchedule('Daily 05:00 UTC (midnight ET), GitHub Actions', winter), 'Daily 12:00 AM ET, GitHub Actions');
+  eq(etSchedule('Daily 04:00 UTC (midnight ET)', summer), 'Daily 12:00 AM ET');
+});
+await test('display.json: a zone must look like an IANA name, and a repo name cannot be dots', () => {
+  for (const z of ['est', '+05:00', 'Europe', 'europe berlin']) throwsWith(() => validateDisplay({ time_zone: z, issue_repos: ['o/r'] }, 'f.json'), '"time_zone"', 'IANA');
+  for (const z of ['UTC', 'Asia/Tokyo', 'America/Argentina/Buenos_Aires']) validateDisplay({ time_zone: z, issue_repos: ['o/r'] }, 'f.json');
+  throwsWith(() => validateDisplay({ time_zone: 'UTC', issue_repos: ['o/..'] }, 'f.json'), '"issue_repos"', '"o/.."');
+});
+await test('the zone words for a zone whose offset crosses zero name the day for each season', async () => {
+  const azo = (await zoneModules('Atlantic/Azores')).zone;
+  eq(azo.utcDayStartWords(), '11 PM ' + azo.ZONE_ABBR + ' the evening before (12 AM during daylight saving time)');
+});
+await test('a browser without the shortGeneric zone label still loads: the label falls back to the short name', async () => {
+  const file = tmpDisplay({ time_zone: 'America/New_York', issue_repos: ['o/r'] });
+  const code = await bundleModule(path.join(EXPLORER, 'src', 'core', 'zone.js'), 'Z', file);
+  const Real = Intl;
+  function Limited(loc, o) {
+    if (o && o.timeZoneName === 'shortGeneric') throw new RangeError('Value ' + o.timeZoneName + ' out of range for Intl.DateTimeFormat options property timeZoneName');
+    return new Real.DateTimeFormat(loc, o);
+  }
+  const Z = vm.runInNewContext(code + ';Z', { Intl: { DateTimeFormat: Limited } });
+  eq(Z.ZONE_ABBR, 'EST', 'the short name of the winter probe');
+  eq(Z.utcDayStartWords(), '7 PM EST the evening before (8 PM during daylight saving time)');
+});
+/* The AST scan: src holds no zone and no repo of anyone's. */
+function stringLiteralsOf(file) {
+  const out = [];
+  const ast = acorn.parse(fs.readFileSync(file, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
+  (function walk(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'Literal' && typeof n.value === 'string') out.push([n.loc ? n.loc.start.line : 0, n.value]);
+    if (n.type === 'TemplateElement') out.push([0, n.value.cooked]);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === 'type') continue;
+      if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v);
+    }
+  })(ast);
+  return out;
+}
+function srcJsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? srcJsFiles(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+}
+const IANA_SHAPE = /^(Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)\/[A-Za-z_+\-0-9\/]+$/;
+await test('explorer/src names no IANA time zone and no repository from display.json (it is read from the config)', () => {
+  const d = loadDisplay();
+  const names = d.issueRepos.slice(1).map((r) => r.split('/')[1]);
+  const bad = [];
+  for (const file of srcJsFiles(path.join(EXPLORER, 'src'))) {
+    const rel = path.relative(EXPLORER, file);
+    for (const [line, text] of stringLiteralsOf(file)) {
+      const t = text.trim();
+      if (IANA_SHAPE.test(t)) bad.push(rel + ':' + line + ' time zone ' + JSON.stringify(t));
+      {
+        for (const r of d.issueRepos) if (text.includes(r)) bad.push(rel + ':' + line + ' repo ' + r);
+        for (const n of names) if (new RegExp('(^|[^A-Za-z0-9_.-])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9_.-])').test(text)) bad.push(rel + ':' + line + ' repo name ' + n);
+      }
+    }
+  }
+  eq(bad.join('\n'), '', 'read the zone and the repos from display.json (src/core/display.js)');
+});
+await test('the zone guard fails on the shapes it exists for', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-'));
+  TMP_DIRS.push(dir);
+  const f = path.join(dir, 'x.js');
+  fs.writeFileSync(f, "const a = 'America/New_York'; const b = `Europe/Berlin`; const c = 'not a zone/at all'; const d = 'UTC';");
+  const lits = stringLiteralsOf(f).map((x) => x[1]).filter((t) => IANA_SHAPE.test(t.trim()));
+  eq(lits.join(','), 'America/New_York,Europe/Berlin');
 });
 
 for (const f of failures) console.log('FAIL ' + f);

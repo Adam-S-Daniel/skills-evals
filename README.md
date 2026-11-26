@@ -708,6 +708,13 @@ in its lockfile) writes `tool/index.html`; CI fails when the two drift. The same
 build writes `explorer/dist/artifact/index.html`, this page for a claude.ai
 artifact that reads `latest.json` beside it (see
 [`dashboard/README.md`](dashboard/README.md), "One app, three builds").
+The pages name no time zone and no repository in code: [`explorer/display.json`](explorer/display.json)
+sets `time_zone` (an IANA name such as `Europe/Berlin`; every date, clock time
+and "ET"-style label is computed from it, and the build fails naming the key
+when it is missing or not a zone) and `issue_repos` (`["owner/repo", ...]`, the
+repositories whose issues and pull requests the private dashboard lists, the
+first being the one holding the data; the build also writes them into
+`dashboard/page/datasets.json`).
 adamdaniel.ai iframes it once, at `/tools/evals/` (Adam, 2026-11-02: one
 Improvement Loop Explorer, not two pages). The
 skills view is the default; an on-page toggle switches to the guidance view

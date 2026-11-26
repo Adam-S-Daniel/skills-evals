@@ -98,7 +98,9 @@ read; only in replies to the user.
   only.
 
 - **`tool/index.html` is built from `explorer/src`**: edit there, run
-  `npm run build` in `explorer/`, commit both; CI fails on drift.
+  `npm run build` in `explorer/`, commit both; CI fails on drift. The pages' time zone and issue repos come
+  from `explorer/display.json` (`time_zone`, `issue_repos`), never from code;
+  the build also writes `dashboard/page/datasets.json` from it.
 
 - **A new `evals/<skill>/` directory needs a line in `README.md`'s layout
   block** in the same commit. `test_every_eval_directory_is_named_in_the_readmes_layout`

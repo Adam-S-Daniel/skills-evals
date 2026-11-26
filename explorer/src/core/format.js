@@ -1,6 +1,6 @@
-/* Pure helpers: cleaning, links, model names and US Eastern dates. */
+/* Pure helpers: cleaning, links, model names and dates in the display zone (explorer/display.json). */
 import { STRINGS } from './strings.js';
-import { TIME_ZONE } from './rules.js';
+import { ZONE_ABBR, fmt as inZone } from './zone.js';
 
 export const UNSAFE = /\S*(?:@|\/home\/|\/Users\/|\/root\/|\/tmp\/|cse_|session_|[A-Za-z]:\\)\S*/g;
 
@@ -41,35 +41,33 @@ export function parseTime(s) {
 
 export function fmtDay(ms, refMs) {
   if (!isFinite(ms)) return STRINGS.unknown;
-  const opts = { timeZone: TIME_ZONE, month: 'short', day: 'numeric' };
-  const year = (t) => new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, year: 'numeric' }).format(new Date(t));
+  const opts = { month: 'short', day: 'numeric' };
+  const year = (t) => inZone(t, { year: 'numeric' });
   if (isFinite(refMs) && year(ms) !== year(refMs)) opts.year = 'numeric';
-  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
+  return inZone(ms, opts);
 }
 
 export function fmtDateTime(ms) {
   if (!isFinite(ms)) return STRINGS.unknown;
-  const s = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-  }).format(new Date(ms));
-  return s + ' ' + STRINGS.et;
+  return inZone(ms, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ' + ZONE_ABBR;
 }
 
-/* The US Eastern calendar day of a moment, as a 'YYYY-MM-DD' key. */
+/* The calendar day in the display zone of a moment, as a 'YYYY-MM-DD' key. */
+const ISO_DAY = { year: 'numeric', month: '2-digit', day: '2-digit' };
 export function etDayKey(ms) {
   if (!isFinite(ms)) return null;
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  const parts = inZone(ms, ISO_DAY, null, 'en-CA');
   return /^\d{4}-\d{2}-\d{2}$/.test(parts) ? parts : null;
 }
 
 /* A clock time alone, '7:39 PM', for a list already grouped by day. */
 export function fmtTime(ms) {
   if (!isFinite(ms)) return STRINGS.unknown;
-  return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+  return inZone(ms, { hour: 'numeric', minute: '2-digit' });
 }
 
 /* The only place this page reads or writes a calendar field of a date. A view
-   never calls toISOString, getUTC* or Intl.DateTimeFormat itself: the ET guard
+   never calls toISOString, getUTC* or Intl.DateTimeFormat itself: the date guard
    in test/run.js fails the build if it does. A day or week key is the
    'YYYY-MM-DD' the data buckets by (a UTC day, or the UTC Monday of a week). */
 const DAY_MS = 86400000;
@@ -77,7 +75,7 @@ export const dayKeyMs = (key) => (typeof key === 'string' && /^\d{4}-\d{2}-\d{2}
 export const isDayKey = (key) => isFinite(dayKeyMs(key));
 
 /* A calendar day the data names without a time ('2026-11-10'), shown as that
-   day in US Eastern: read at noon, so no zone moves it to another date. */
+   day in the display zone: read at noon, so no zone moves it to another date. */
 export function fmtCalendarDay(key, refMs) {
   return isDayKey(key) ? fmtDay(dayKeyMs(key) + 12 * 3600 * 1000, refMs) : STRINGS.unknown;
 }
@@ -106,37 +104,32 @@ export function fmtDayKey(key, refMs) {
 /* "Mon Nov 9" for the row of a week, "week of Mon Nov 9" inside a sentence. */
 export function fmtWeekStart(key, refMs) {
   if (!isDayKey(key)) return STRINGS.unknown;
-  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(new Date(dayKeyMs(key)));
+  const wd = inZone(dayKeyMs(key), { weekday: 'short' }, 'UTC');
   return wd + ' ' + fmtUtcDay(dayKeyMs(key), refMs);
 }
 export const fmtWeekOf = (key, refMs) => STRINGS.weekOf(fmtWeekStart(key, refMs));
 
-/* "Monday noon ET": the weekday and clock time of an instant in US Eastern. */
+/* "Monday noon ET": the weekday and clock time of an instant in the display zone. */
 export function fmtResetLabel(ms) {
   if (!isFinite(ms)) return STRINGS.unknown;
-  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o)).format(new Date(ms));
+  const f = (o) => inZone(ms, o);
   const clock = f({ hour: 'numeric', minute: '2-digit', hour12: false });
-  return f({ weekday: 'long' }) + ' ' + (clock === '12:00' ? 'noon' : f({ hour: 'numeric', minute: '2-digit' })) + ' ' + STRINGS.et;
+  return f({ weekday: 'long' }) + ' ' + (clock === '12:00' ? 'noon' : f({ hour: 'numeric', minute: '2-digit' })) + ' ' + ZONE_ABBR;
 }
 
-/* "06:53" on the UTC clock as an Eastern clock time ("1:53 AM ET"), using the
-   offset in force on the reference day (daylight saving moves it). */
-export function fmtClockUtcToEt(hour, minute, refMs) {
-  return utcClockToEt(hour, minute, refMs).text;
-}
-/* The same, with `shift`: -1 when the Eastern time falls on the day before the
-   UTC one (02:00 UTC is 9:00 PM ET the evening before), else 0. */
+/* "06:53" on the UTC clock as a display-zone clock time ("1:53 AM ET"), using the
+   offset in force on the reference day (daylight saving moves it), with `shift`: -1 when the zone's time falls on the day before the
+   UTC one (02:00 UTC is 9:00 PM ET the evening before), 1 when on the day
+   after it, else 0. */
 export function utcClockToEt(hour, minute, refMs) {
   const base = isFinite(refMs) ? new Date(refMs) : new Date(0);
   const at = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute)));
-  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o));
-  const etDay = f({ day: 'numeric' }).format(at);
-  const utcDay = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: 'numeric' }).format(at);
-  return { text: f({ hour: 'numeric', minute: '2-digit' }).format(at) + ' ' + STRINGS.et, shift: etDay === utcDay ? 0 : -1 };
+  const key = (zone) => inZone(at, ISO_DAY, zone, 'en-CA');
+  const local = key(), utc = key('UTC');
+  return { text: inZone(at, { hour: 'numeric', minute: '2-digit' }) + ' ' + ZONE_ABBR, shift: local === utc ? 0 : local < utc ? -1 : 1 };
 }
-
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/* "Oct 30 at 16:57 UTC" as the moment it names, in US Eastern: the date and the
+/* "Oct 30 at 16:57 UTC" as the moment it names, in the display zone: the date and the
    clock, each in the offset in force then (daylight saving moves it). The year is
    the reference's, or the one before when that day is still ahead of the reference.
    Null when the month is not one. */
@@ -144,20 +137,21 @@ export function utcMomentToEt(mon, day, hour, minute, refMs) {
   const idx = MONTH_ABBR.indexOf(String(mon).charAt(0).toUpperCase() + String(mon).slice(1, 3).toLowerCase());
   if (idx < 0) return null;
   const year = isFinite(refMs) ? new Date(refMs).getUTCFullYear() : 2001;
-  let at = Date.UTC(year, idx, Number(day), Number(hour), Number(minute));
-  if (isFinite(refMs) && at > refMs) at = Date.UTC(year - 1, idx, Number(day), Number(hour), Number(minute));
-  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o)).format(new Date(at));
-  return { date: f({ month: 'short', day: 'numeric' }), clock: f({ hour: 'numeric', minute: '2-digit' }) + ' ' + STRINGS.et,
+  const on = (y) => Date.UTC(y, idx, Number(day), Number(hour), Number(minute));
+  let at = on(year);
+  if (isFinite(refMs) && at > refMs) at = on(year - 1);
+  const f = (o) => inZone(at, o);
+  return { date: f({ month: 'short', day: 'numeric' }), clock: f({ hour: 'numeric', minute: '2-digit' }) + ' ' + ZONE_ABBR,
     named: MONTH_ABBR[idx] + ' ' + Number(day) };
 }
 
 /* A UTC calendar day (a census window edge, which is a UTC Monday), shown
-   as that day rather than shifted into Eastern time. */
+   as that day rather than shifted into the display zone. */
 export function fmtUtcDay(ms, refMs) {
   if (!isFinite(ms)) return STRINGS.unknown;
-  const opts = { timeZone: 'UTC', month: 'short', day: 'numeric' };
+  const opts = { month: 'short', day: 'numeric' };
   if (isFinite(refMs) && new Date(ms).getUTCFullYear() !== new Date(refMs).getUTCFullYear()) opts.year = 'numeric';
-  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
+  return inZone(ms, opts, 'UTC');
 }
 
 /* Dollars with thousands separators and cents: $5,541.65. The one place that

@@ -3,7 +3,10 @@ import { DATA_REPO } from '../config.js';
 import { useGlossVoice } from './glosses.js';
 import { SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, pts, ordinal, countWord } from './rules.js';
 import { fmtUsd } from './format.js';
+import { ZONE_ABBR, utcDayStartWords, spendWeekStartWords } from './zone.js';
 
+/* The footnote on UTC-counted days: when such a day starts in the display zone. */
+const dayNote = (lead) => lead + utcDayStartWords() + '. Every clock time is ' + ZONE_ABBR + '.';
 const ISSUES_URL = 'https://github.com/' + DATA_REPO + '/issues';
 const REMOVAL_RULE_URL = 'https://github.com/' + DATA_REPO + '/blob/main/docs/rules.md#removal';
 /* What one skill use is (the census's skill and skill-read rows). */
@@ -22,9 +25,9 @@ function buildStrings(you) {
   hidden: '[hidden]',
   unknown: 'unknown',
   weekOf: (start) => 'week of ' + start,
-  utcNote: 'Days and weeks on this page are counted in UTC, so a day here starts at 7 PM ET the evening before (8 PM during daylight saving time). Every clock time is US Eastern.',
-  utcNoteSpend: 'Hook and eval-run days and weeks on this page are counted in UTC, so a day there starts at 7 PM ET the evening before (8 PM during daylight saving time). Every clock time is US Eastern.',
-  spendWeeksNote: (list) => 'Spend weeks start Monday at noon ET (1 PM during daylight saving time): ' + list + '.',
+  utcNote: dayNote('Days and weeks on this page are counted in UTC, so a day here starts at '),
+  utcNoteSpend: dayNote('Hook and eval-run days and weeks on this page are counted in UTC, so a day there starts at '),
+  spendWeeksNote: (list) => 'Spend weeks start ' + spendWeekStartWords() + ': ' + list + '.',
   showAll: (n) => 'Show all ' + n,
   showFewer: (n) => 'Show first ' + n,
   /* A fold's summary while it is open (foldSummary). */
@@ -33,7 +36,6 @@ function buildStrings(you) {
   scrollHint: 'Swipe the table sideways for the other columns.',
   tableLabel: (labels) => 'Table: ' + labels,
   scheduledRun: 'Scheduled run',
-  et: 'ET',
 
   introHeading: 'What you are looking at',
   introSkills: [

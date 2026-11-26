@@ -1,5 +1,6 @@
 /* Words only the private build shows. */
 import { DATA_REPO } from '../config.js';
+import { spendWeekStartWords } from '../core/zone.js';
 export const P = {
   waitingHeading: 'Waiting on you',
   waitingNote: 'Things only you can do or decide.',
@@ -60,7 +61,7 @@ export const P = {
   colName: 'Name', colUses: 'Uses', colSessions: 'Sessions', colBlocked: 'Blocked', colRedCi: 'Red in CI', colRepos: 'Repos', colLastWeek: 'Last week seen', colRepo: 'Repo', colWeek: 'Week of', colSurface: 'Where',
   sourcesHeading: 'Where the counts come from', colFile: 'File', colScope: 'Scope', colFrom: 'From', colTo: 'To', colRead: 'Read', colMade: 'Made',
   colWhen: 'When', colRun: 'Workflow run', colEvalRun: 'Eval run',
-  costHeading: 'Cost and benefit', costNote: 'The system\'s own use. Weeks start at the Monday reset (noon ET, 1 PM in summer).',
+  costHeading: 'Cost and benefit', costNote: 'The system\'s own use. Weeks start ' + spendWeekStartWords() + '.',
   devHeading: 'Development', devNote: 'Your project threads, building and refining the system; never in the figures above.',
   colMeasure: 'Measure', colValue: 'Value', colTarget: 'Target', colAllowancePoints: 'Allowance points', perPoint: ' per point', colChanges: 'Changes', colReach: 'Real-work reach', colMessages: 'Your messages',
   colRunsWeek: 'Runs a week', colPtsRun: 'Points a run', colPtsWeek: 'Points a week',

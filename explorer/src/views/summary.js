@@ -13,11 +13,11 @@ import { trendingView } from './trending.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
 import { isTrending } from '../core/stats.js';
 
-/* A fold (shut by default) listing every dated source grouped by its Eastern
+/* A fold (shut by default) listing every dated source grouped by its display-zone
    day, newest day first. What the build itself read (removal PRs, the lesson
    funnel, fixture checks) is one more source, dated by the build time. */
 export function asOfLine(doc, refMs) {
-  // Grouped by calendar day key: an Eastern day for a timed source, the
+  // Grouped by calendar day key: a display-zone day for a timed source, the
   // source's own day for one dated by a day only (lessons). Newest day first;
   // within a day, newest time first and day-only sources last.
   const times = sourceTimes(doc, TIME_KEYS);

@@ -1,3 +1,5 @@
-/* The one place the published page names the repository it reads. An export
-   of this tree for another repository replaces this value and nothing else. */
-export const DATA_REPO = 'Adam-S-Daniel/skills-evals';
+/* The repository the published page reads: the first entry of issue_repos in
+   explorer/display.json, the one place it is set. */
+import { ISSUE_REPOS } from './core/display.js';
+
+export const DATA_REPO = ISSUE_REPOS[0];

@@ -37,7 +37,7 @@ function overrides(it) {
   return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? ' (' + pct(it.overrideRate) + ')' : '');
 }
 
-/* The next step for a check, with its date in Eastern time. */
+/* The next step for a check, with its date in the display zone. */
 export function nextStep(it, weeks, refMs) {
   const n = hookNext(it, weeks, refMs);
   return STRINGS.hookNext[n.key](n.at === null ? null : fmtDay(n.at, refMs), weeks);

@@ -92,7 +92,7 @@ export function spendWeeks(doc) {
   return weeks.slice(0, 2).map((w) => ({ week: w.week, evals: num(w.run_points), sched: num(w.scheduled_points), api: num(w.api_usd), dev: num(w.thread_spend_usd) }));
 }
 
-/* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
+/* The week's boundary in the display zone: a spend week starts Monday 17:00 UTC. */
 const WEEK_MS = 7 * 86400000;
 const weekStart = (w) => fmtDateTime(Date.parse(w + 'T17:00:00Z'));
 /* "this" for the week that contains the data's time, "last" for the one before

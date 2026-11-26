@@ -9,7 +9,7 @@ export function navLink(hash, text, attrs) {
 }
 
 /* The line under a panel heading that says where its numbers come from and
-   when they were read, in US Eastern time. */
+   when they were read, in the display zone. */
 export function srcLine(source, ms) {
   return h('p', { class: 'src' }, STRINGS.srcLine(source, isFinite(ms) ? fmtDateTime(ms) : ''));
 }

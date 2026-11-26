@@ -55,7 +55,8 @@ issues), the private one replaces it. The optional `explorer_private` dataset
 |---|---|
 | `build.py` | Builds every snapshot dataset from the results branch, `evals/budget.yml`, `evals/roster.yml`, the input dumps and the config |
 | `page/index.html` | The page, generated from `explorer/src` (see above) |
-| `page/datasets.json` | Every dataset's title, description and source. Live ones are GitHub connector queries; snapshot ones are `file` sources that point at an uploaded blob |
+| `page/datasets.json` | Every dataset's title, description and source. Live ones are GitHub connector queries; snapshot ones are `file` sources that point at an uploaded blob. The queries and sentences that name repositories are written by `explorer/build.js` from `issue_repos` in `explorer/display.json`: edit that file and run `npm run build` in `explorer/`, never the entries by hand |
+| `../explorer/display.json` | The two display settings every page reads: `time_zone` (IANA name, for example `Europe/Berlin`) and `issue_repos` (`["owner/repo", ...]`, the repositories whose issues, open pull requests and merges the dashboard lists; the first holds the data). The build fails naming the file and key when one is missing or invalid |
 | `config.example/` | The owner's own lists, in invented data. Keep the real copy outside this public repo |
 | `inputs.example/` | The read dumps a refresh collects, in invented data |
 | `smoke/` | Renders the page with a mocked runtime and fails on any page error |
@@ -214,7 +215,7 @@ Steps 0, 4 and 6 to 12 run after them in one Sonnet subagent, which reads those 
 - Other sessions do not edit `DASHBOARD_HOME`; they send changes to the session that owns the
   refresh, or open a pull request here.
 - Page wording: "git hook" or "Claude Code hook", never bare "hook"; "you", never the owner's
-  name. Times show in US Eastern.
+  name. Times show in the zone set by `time_zone` in `explorer/display.json`.
 - Config edits go in `$DASHBOARD_HOME/config/`, never in build code. `explorer_private.json`
   goes only to the private artifact, never to `ds/` or anything public.
 

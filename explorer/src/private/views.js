@@ -39,7 +39,7 @@ function pill(text, label) {
 }
 const src = (id) => P.srcSnapshot(id);
 
-/* "Monday noon ET": the weekday and clock time of a reset, in US Eastern,
+/* "Monday noon ET": the weekday and clock time of a reset, in the display zone,
    read from the reset itself rather than assumed. */
 export function resetLabel(iso) {
   return fmtResetLabel(parseTime(iso));
@@ -58,34 +58,36 @@ const WEEKDAY_WORD = /\b(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs?)?|Fri|Sat(?:ur)?|Sun)
 const MONTH_WORD = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b|\b\d{4}-\d{2}-\d{2}\b/i;
 /* "Mondays 02:00 UTC", "Nov 2 at 16:57 UTC", "at 07:00 UTC" or a bare "07:00 UTC". */
 const BARE_UTC = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+|\b(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)) (\d{1,2}) at\s+|\bat\s+)?\b(\d{1,2}):(\d{2}) UTC\b/gi;
-/* A UTC clock time that already has its Eastern time beside it: "06:53 UTC, GitHub Actions (1:53 AM ET)". */
-const UTC_WITH_ET = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+)?(\d{1,2}):(\d{2}) UTC([^()]*)\(([^()]*\bET)\)/gi;
+/* A UTC clock time that already has a local time beside it, as the data words
+   it: "06:53 UTC, GitHub Actions (1:53 AM ET)". The parenthesized time is data
+   and is read only to find it; the page shows the time computed in its zone. */
+const UTC_WITH_LOCAL = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+)?(\d{1,2}):(\d{2}) UTC([^()]*)\(([^()]*\b(?:[AP]M|noon|midnight) [A-Z]{2,5})\)/gi;
 /* The text of the clause before a match: since the last ; . or ( . */
 const clauseBefore = (whole, offset) => whole.slice(0, offset).split(/[;.(]/).pop();
 
-/* The weekday one day earlier, keeping the word's shape: Mondays to Sundays, TUESDAY to MONDAY. */
-function prevWeekday(word) {
+/* The weekday one day earlier (-1) or later (1), keeping the word's shape: Mondays to Sundays, TUESDAY to MONDAY. */
+function shiftWeekday(word, delta) {
   const m = /^(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)(days?)$/i.exec(word);
   const i = WEEKDAY_STEMS.findIndex((x) => x.toLowerCase() === m[1].toLowerCase());
-  const out = WEEKDAY_STEMS[(i + 6) % 7] + m[2].toLowerCase();
+  const out = WEEKDAY_STEMS[(i + 7 + delta) % 7] + m[2].toLowerCase();
   return word === word.toLowerCase() ? out.toLowerCase() : word === word.toUpperCase() ? out.toUpperCase() : out;
 }
 
-/* A routine's schedule or note in US Eastern only. The routine list words some
-   schedules as "Daily 06:53 UTC, GitHub Actions (1:53 AM ET)": the Eastern time
-   in the parentheses replaces the UTC one, and a "UTC hours ..." aside keeps
-   only its Eastern list. A bare UTC time is converted, and a weekday word before
-   it moves back a day when Eastern time is the evening before. A dated one
+/* A routine's schedule or note in the display zone only. The routine list words some
+   schedules as "Daily 06:53 UTC, GitHub Actions (1:53 AM ET)": the zone's time,
+   computed from the UTC one, replaces both, and a "UTC hours ..." aside keeps
+   only its own local list (data text, shown as written). A bare UTC time is converted, and a weekday word before
+   it moves a day when the zone's date differs. A dated one
    ("Oct 30 at 16:57 UTC") is converted at its own moment. Anything else that
    names a weekday or date it cannot move is left as the data wrote it. */
 export function etSchedule(text, refMs) {
   return String(text === null || text === undefined ? '' : text)
-    .replace(UTC_WITH_ET, (m, wd, hh, mm, mid, et, offset, whole) => {
-      const { shift } = utcClockToEt(hh, mm, refMs);
+    .replace(UTC_WITH_LOCAL, (m, wd, hh, mm, mid, local, offset, whole) => {
+      const { text, shift } = utcClockToEt(hh, mm, refMs);
       const before = clauseBefore(whole, offset);
       if (shift !== 0 && WEEKDAY_WORD.test(before)) return m;
       const rest = mid.trim();
-      return (wd ? (shift !== 0 ? prevWeekday(wd) : wd) + ' ' : '') + et + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
+      return (wd ? (shift !== 0 ? shiftWeekday(wd, shift) : wd) + ' ' : '') + text + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
     })
     .replace(/\(UTC hours [^:()]*: /g, '(')
     .replace(BARE_UTC, (m, wd, mon, day, hh, mm, offset, whole) => {
@@ -100,7 +102,7 @@ export function etSchedule(text, refMs) {
       const at = /^at\s/i.test(m);
       if (shift === 0) return (wd ? wd + ' ' : at ? 'at ' : '') + text;
       if (WEEKDAY_WORD.test(before) || MONTH_WORD.test(before)) return m;
-      return wd ? prevWeekday(wd) + ' ' + text : (at ? 'at ' : '') + text;
+      return wd ? shiftWeekday(wd, shift) + ' ' + text : (at ? 'at ' : '') + text;
     });
 }
 
@@ -210,7 +212,7 @@ export function staleHours(snapMs, nowMs, every) {
   return hours > (every || REFRESH_HOURS) + 1 ? Math.floor(hours) : null;
 }
 
-/* "As of <time ET>", the dataset id kept for the hover text. */
+/* "As of <time in the display zone>", the dataset id kept for the hover text. */
 function asOfLine(id, ms) {
   return isFinite(ms) ? h('p', { class: 'src', title: id }, P.asOf(fmtDateTime(ms))) : null;
 }
