@@ -1002,35 +1002,36 @@ def routine_charge(results_tree: Path, now: datetime, budget: dict) -> tuple[flo
             f"evals/budget.yml per_run_overrun, as a fallback: {why}")
 
 
+#: Improve cost records (scripts/improve_cost.py) began with the first
+#: recorded improve run, 2026-11-02 23:49 UTC (#577).
+IMPROVE_RECORDS_SINCE = datetime(2026, 11, 2, 23, 49, tzinfo=timezone.utc)
+
+
 def improve_points_per_week(results_tree: Path, limits: dict, now: datetime,
                             days: int) -> dict:
     """Improve and guidance-improve runs' meter points a week over the basis
     window: each cost record (allowance_guard.improve_records) started in the
     `days` before `now`, at what the guard charges it
     (allowance_guard.record_charge, the unit charge when it cannot be
-    measured), over the part of the window the records cover: they start
-    with the first record (cost records began 2026-11-02, #577), so a window
-    reaching further back is not diluted by weeks with none. `unpriced`
-    counts records with no charge."""
+    measured, and the unit charge too when it has no rate, as the guard
+    charges a fire it cannot match), over the part of the window since cost
+    records began (IMPROVE_RECORDS_SINCE), so a longer window is not diluted
+    by weeks with none. `unpriced` counts records charged the unit charge
+    that way. An improve fire with no record at all (a failed ingest) is not
+    seen here: the guard charges it the unit charge from the fire ledger."""
     unit = allowance_guard.improve_charge(results_tree, limits)
     since = now - timedelta(days=days)
-    starts = []
-    for record in allowance_guard.improve_records(results_tree):
-        try:
-            starts.append((datetime.strptime(record["run_id"][:16], "%Y%m%dT%H%M%SZ")
-                           .replace(tzinfo=timezone.utc), record))
-        except ValueError:
-            continue
-    covered = (now - max([since] + [min(t for t, _ in starts)] if starts else [since])) \
-        / timedelta(days=1)
+    covered = (now - max(since, IMPROVE_RECORDS_SINCE)) / timedelta(days=1)
     points, runs, unpriced = 0.0, 0, 0
-    for started, record in starts:
+    for record in allowance_guard.improve_records(results_tree):
+        started = datetime.strptime(record["run_id"][:16], "%Y%m%dT%H%M%SZ") \
+            .replace(tzinfo=timezone.utc)  # improve_records only keeps parsable ids
         if not since <= started <= now:
             continue
         charge = allowance_guard.record_charge(record, limits, unit)
         if charge is None:
             unpriced += 1
-            continue
+            charge = unit
         points += charge * 100
         runs += 1
     return {"points_per_week": points * 7 / covered if covered > 0 else 0.0, "runs": runs,

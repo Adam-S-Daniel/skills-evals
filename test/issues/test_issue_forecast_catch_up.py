@@ -594,16 +594,19 @@ class ImproveRunsShareTheCap(unittest.TestCase):
         charges = {"20261101T000000Z": 0.5, "20261120T000000Z": 0.02,
                    "20261125T000000Z": 0.013, "20261126T000000Z": None}
         got = self.measure(recs, 14, charges)
-        self.assertEqual((got["runs"], got["unpriced"]), (2, 1))
-        self.assertAlmostEqual(got["points_per_week"], 3.3 * 7 / 14)
+        # The unpriced one is charged the unit charge, as the guard does.
+        self.assertEqual((got["runs"], got["unpriced"]), (3, 1))
+        self.assertAlmostEqual(got["points_per_week"], (3.3 + 1.3) * 7 / 14)
 
     def test_a_window_older_than_the_records_is_not_diluted(self):
-        # Records start 2026-11-20: a 56-day window covers six days of them.
+        # Cost records began 2026-11-02 23:49: a 56-day window covers 23.8
+        # days of them, whenever the first run in it was.
         recs = self.records("20261120T180000Z", "20261125T000000Z")
         charges = {"20261120T180000Z": 0.03, "20261125T000000Z": 0.03}
         got = self.measure(recs, 56, charges)
-        self.assertAlmostEqual(got["days_covered"], 6.0)
-        self.assertAlmostEqual(got["points_per_week"], 6.0 * 7 / 6)
+        covered = (self.NOW - fc.IMPROVE_RECORDS_SINCE).total_seconds() / 86400
+        self.assertAlmostEqual(got["days_covered"], covered)
+        self.assertAlmostEqual(got["points_per_week"], 6.0 * 7 / covered)
         self.assertEqual(self.measure([], 28, {})["points_per_week"], 0.0)
 
     def test_the_cap_steps_take_improve_runs_off_after_the_loop_jobs(self):
