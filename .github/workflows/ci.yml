@@ -454,6 +454,10 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
 
       # With no list the scan fails in CI, except on a Dependabot pull request,
       # which gets no repository secrets: that warns and sets CI=false so only
