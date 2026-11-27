@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-26T17:37:14Z",
+  "generated_at": "2026-11-27T17:37:16Z",
   "rows": [
     {
       "blocked": null,
@@ -9806,7 +9806,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 82,
+      "sessions": 91,
       "surface": "cloud",
       "week": "2026-11-23"
     },
@@ -9819,7 +9819,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 27,
+      "sessions": 30,
       "surface": "local",
       "week": "2026-11-23"
     },
@@ -9832,7 +9832,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 196,
+      "sessions": 197,
       "surface": "cloud",
       "week": "2026-11-23"
     },
@@ -9845,7 +9845,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 250,
+      "sessions": 260,
       "surface": "cloud",
       "week": "2026-11-23"
     },
@@ -10046,7 +10046,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 39,
+      "invocations": 48,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -10098,7 +10098,7 @@
     },
     {
       "blocked": 1,
-      "invocations": 576,
+      "invocations": 580,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -10150,7 +10150,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 35,
+      "invocations": 43,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -10215,7 +10215,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 208,
+      "invocations": 217,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -10254,7 +10254,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 284,
+      "invocations": 436,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -10332,7 +10332,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 10,
       "kind": "hook",
       "name": "bump-branch-push",
       "outcome": null,
@@ -10514,7 +10514,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "bump-branch-push",
       "outcome": null,
@@ -10540,7 +10540,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 7,
       "kind": "hook",
       "name": "bump-branch-push",
       "outcome": null,
@@ -10566,7 +10566,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
       "kind": "hook",
       "name": "bump-branch-push",
       "outcome": null,
@@ -10605,7 +10605,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 417,
       "kind": "hook",
       "name": "bump-branch-push",
       "outcome": null,
@@ -10813,7 +10813,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 57,
+      "invocations": 58,
       "kind": "hook",
       "name": "dated-phrasing",
       "outcome": null,
@@ -11016,6 +11016,19 @@
       "repo": "other",
       "runner": "aef2e5bb0dec",
       "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-23"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "gha-template-injection",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "aef2e5bb0dec",
+      "sessions": null,
       "surface": "local",
       "week": "2026-11-23"
     },
@@ -11073,7 +11086,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 38,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11125,7 +11138,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 18,
+      "invocations": 20,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11359,7 +11372,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11385,7 +11398,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11424,7 +11437,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 10,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11476,7 +11489,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 274,
+      "invocations": 422,
       "kind": "hook",
       "name": "lesson-memory-485-1",
       "outcome": null,
@@ -11645,7 +11658,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 10,
       "kind": "hook",
       "name": "lint-required-javascript",
       "outcome": null,
@@ -11905,7 +11918,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -11957,7 +11970,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 12,
       "kind": "hook",
       "name": "local-identity",
       "outcome": null,
@@ -12022,7 +12035,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "other",
       "outcome": null,
@@ -12165,6 +12178,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "other",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "aef2e5bb0dec",
+      "sessions": null,
+      "surface": "cloud",
+      "week": "2026-11-23"
+    },
+    {
+      "blocked": 0,
       "invocations": 33,
       "kind": "hook",
       "name": "other",
@@ -12178,7 +12204,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 6,
       "kind": "hook",
       "name": "other",
       "outcome": null,
@@ -12230,7 +12256,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12282,7 +12308,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 10,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12529,7 +12555,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12555,7 +12581,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 7,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12607,7 +12633,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12659,7 +12685,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 417,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -12737,7 +12763,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 10,
       "kind": "hook",
       "name": "privacy",
       "outcome": null,
@@ -12867,7 +12893,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "privacy",
       "outcome": null,
@@ -12880,7 +12906,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 7,
       "kind": "hook",
       "name": "privacy",
       "outcome": null,
@@ -12906,7 +12932,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
       "kind": "hook",
       "name": "privacy",
       "outcome": null,
@@ -12932,7 +12958,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 417,
       "kind": "hook",
       "name": "privacy",
       "outcome": null,
@@ -12997,7 +13023,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13049,7 +13075,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 10,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13296,7 +13322,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13322,7 +13348,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 7,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13374,7 +13400,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13426,7 +13452,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 417,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -13478,7 +13504,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -13504,7 +13530,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "repo-local",
       "outcome": null,
@@ -13595,7 +13621,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 38,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -13647,7 +13673,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 18,
+      "invocations": 20,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -13894,7 +13920,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -13920,7 +13946,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -13972,7 +13998,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 10,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -14024,7 +14050,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 274,
+      "invocations": 422,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -14089,7 +14115,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 38,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14141,7 +14167,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 18,
+      "invocations": 20,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14388,7 +14414,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14414,7 +14440,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14440,7 +14466,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 39,
+      "invocations": 48,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14479,7 +14505,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 10,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14505,7 +14531,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 208,
+      "invocations": 217,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14544,7 +14570,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 274,
+      "invocations": 422,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -14609,7 +14635,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 34,
+      "invocations": 38,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -14661,7 +14687,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 18,
+      "invocations": 20,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -14908,7 +14934,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 8,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -14934,7 +14960,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 10,
+      "invocations": 14,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -14960,7 +14986,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 39,
+      "invocations": 48,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -14999,7 +15025,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 10,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -15025,7 +15051,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 208,
+      "invocations": 217,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -15064,7 +15090,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 274,
+      "invocations": 422,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -15129,7 +15155,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 18,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15181,7 +15207,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 9,
+      "invocations": 10,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15428,7 +15454,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 2,
+      "invocations": 4,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15454,7 +15480,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 5,
+      "invocations": 7,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15506,7 +15532,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 4,
+      "invocations": 5,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15558,7 +15584,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 272,
+      "invocations": 417,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -15591,7 +15617,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 270,
+      "sessions": 279,
       "surface": "cloud",
       "week": "2026-11-23"
     },
@@ -15604,20 +15630,20 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 27,
+      "sessions": 30,
       "surface": "local",
       "week": "2026-11-23"
     },
     {
       "blocked": null,
-      "invocations": 1,
+      "invocations": 2,
       "kind": "skill",
       "name": "other",
       "outcome": null,
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 1,
+      "sessions": 2,
       "surface": "local",
       "week": "2026-11-23"
     },
@@ -15668,7 +15694,7 @@
     {
       "from": "2026-10-05T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 3025,
+      "sessions_scanned": 3005,
       "skill_keys": [
         "add-from-address",
         "add-received-from-addresses",
@@ -15709,43 +15735,43 @@
         "writing-adrs"
       ],
       "surface": "local",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     },
     {
       "from": "2026-10-05T00:00:00Z",
-      "runs_scanned": 9593,
+      "runs_scanned": 9754,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
       "listing_recorded": true,
-      "records_scanned": 1364,
+      "records_scanned": 1374,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     },
     {
       "from": "2026-11-09T00:00:00Z",
-      "records_scanned": 2061,
+      "records_scanned": 2082,
       "scope": "hook-records",
       "surface": "cloud",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     },
     {
       "events_scanned": 4,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     },
     {
       "events_scanned": 8,
       "from": "2026-10-19T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-26T17:37:14Z"
+      "to": "2026-11-27T17:37:16Z"
     }
   ]
 }
