@@ -40,10 +40,12 @@ except (OSError,KeyError,ValueError): through='1970-01-01T00:00:00Z'
 if (ts(newest)-ts(through)).total_seconds()>24*3600:
   sys.exit(f"STOP: the owner-message ledger was read through {through}, but threads were active until {newest}. Read the project chat and every thread active since {through} (list_threads since), pass the owner's messages to dashboard/refresh/append_owner_messages.py --read-through <time you started reading>, and run again.")
 # A scheduled fire that never arrives leaves no trace of its own; say so here.
-runs=re.findall(r'^- (\d{4}-\d\d-\d\dT\d\d:\d\dZ) (?:- )?(?:\S+Z )?refresh', open(H+'/watch/log.md').read(), re.M)
+# Workers write the start time with or without seconds (2026-11-27: a seconds
+# stamp went unread, so the run after it was flagged MISSED).
+runs=re.findall(r'^- (\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z) (?:- )?(?:\S+Z )?refresh', open(H+'/watch/log.md').read(), re.M)
 # One hour past the interval build.py defines (its REFRESH_INTERVAL_HOURS line).
 every=int(re.search(r'^REFRESH_INTERVAL_HOURS = (\d+)$', open(os.environ['SE']+'/dashboard/build.py').read(), re.M).group(1))
-if runs and (nowdt-ts(runs[-1].replace('Z',':00Z'))).total_seconds()>(every+1)*3600:
+if runs and (nowdt-ts(runs[-1] if runs[-1].count(':')==2 else runs[-1].replace('Z',':00Z'))).total_seconds()>(every+1)*3600:
   print(f"MISSED: the last refresh logged was {runs[-1]}, over {every+1} hours ago; at least one scheduled run never happened. Say so in this run's log.md line.")
 cfg=json.load(open(H+'/config/routines.json'))
 site=json.load(open(H+'/config/site.json'))

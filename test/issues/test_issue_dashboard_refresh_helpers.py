@@ -81,6 +81,19 @@ class RefreshHelpers(unittest.TestCase):
         r = run_sh("refresh.sh", self.home)
         self.assertIn(f"MISSED: the last refresh logged was 2020-01-01T00:00Z, over {every + 1} hours ago", r.stdout)
 
+    def test_missed_run_reads_a_start_time_with_seconds(self):
+        """A log line whose start time carries seconds counts as a run: on 2026-11-27
+        the Nov 26 line (12:38:21Z) went unread and that day's run was flagged MISSED."""
+        (self.home / "inputs" / "threads.json").write_text(json.dumps(
+            [{"thread_id": "t1", "last_activity_at": "2020-01-01T00:00:00Z"}]))
+        (self.home / "inputs" / "owner_messages_read.json").write_text(json.dumps(
+            {"read_through": "2020-01-01T00:00:00Z"}))
+        (self.home / "watch" / "log.md").write_text(
+            "- 2020-01-01T00:00Z 2020-01-01T00:05Z refresh (example): 1 thread\n"
+            "- 2020-01-02T00:00:30Z 2020-01-02T00:05:00Z refresh (example): 1 thread\n")
+        r = run_sh("refresh.sh", self.home)
+        self.assertIn("MISSED: the last refresh logged was 2020-01-02T00:00:30Z,", r.stdout)
+
     def test_refresh_stops_before_the_build_without_the_fire_ledger_or_workflows(self):
         """Scheduled-task cost needs the fire ledger and the fleet worker's firing workflow; without
         either, every figure would read as no value, so refresh.sh stops before build.py, and passes
