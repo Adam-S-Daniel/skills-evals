@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-26T17:22:17Z",
+  "generated_at": "2026-11-27T17:01:13Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-10-05T00:00:00Z",
-      "to": "2026-11-26T17:22:17Z",
+      "to": "2026-11-27T17:01:13Z",
       "repos_scanned": 24
     }
   ],
@@ -1413,7 +1413,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 31,
+      "invocations": 22,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4369,7 +4369,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 51,
+      "invocations": 57,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4381,7 +4381,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/acsi-kit",
       "surface": "ci",
-      "invocations": 80,
+      "invocations": 91,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4405,7 +4405,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 68,
+      "invocations": 82,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4417,7 +4417,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/ai-usage-dashboard",
       "surface": "ci",
-      "invocations": 13,
+      "invocations": 17,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4441,7 +4441,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/claude-plan-usage-estimator",
       "surface": "ci",
-      "invocations": 8,
+      "invocations": 9,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4477,7 +4477,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 18,
+      "invocations": 23,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4525,7 +4525,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 72,
+      "invocations": 83,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4597,7 +4597,7 @@
       "name": "agent-checks",
       "repo": "private",
       "surface": "ci",
-      "invocations": 10,
+      "invocations": 14,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4626,8 +4626,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 25,
-        "prs_merged": 25,
+        "prs_opened": 27,
+        "prs_merged": 27,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
         "agent_prs_merged": 22,
@@ -4645,11 +4645,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 35,
-        "prs_merged": 32,
+        "prs_opened": 41,
+        "prs_merged": 37,
         "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 31,
+        "agent_prs_merged": 36,
         "ci_red_after": 0
       }
     },
@@ -4683,8 +4683,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 67,
-        "prs_merged": 56,
+        "prs_opened": 81,
+        "prs_merged": 70,
         "prs_closed_unmerged": 12,
         "prs_reverted": 0,
         "agent_prs_merged": 0,
@@ -4702,11 +4702,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 8,
-        "prs_merged": 8,
+        "prs_opened": 11,
+        "prs_merged": 11,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 7,
+        "agent_prs_merged": 10,
         "ci_red_after": 0
       }
     },
@@ -4740,8 +4740,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 5,
-        "prs_merged": 4,
+        "prs_opened": 6,
+        "prs_merged": 5,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
         "agent_prs_merged": 4,
@@ -4797,12 +4797,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 13,
-        "prs_merged": 11,
+        "prs_opened": 14,
+        "prs_merged": 14,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 3,
-        "ci_red_after": 0
+        "agent_prs_merged": 5,
+        "ci_red_after": 1
       }
     },
     {
@@ -4873,11 +4873,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 41,
-        "prs_merged": 40,
+        "prs_opened": 44,
+        "prs_merged": 43,
         "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 35,
+        "agent_prs_merged": 38,
         "ci_red_after": 4
       }
     },
@@ -4988,7 +4988,7 @@
       "overridden": null,
       "outcome": {
         "prs_opened": 10,
-        "prs_merged": 10,
+        "prs_merged": 11,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 8,
