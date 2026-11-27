@@ -83,7 +83,7 @@ jobs:
 
       - name: Mint the GitHub App token for adam-agentskills-private
         id: registry-token
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
@@ -401,7 +401,7 @@ jobs:
         id: app-token
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && steps.credential.outputs.present == 'true' }}
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
@@ -462,7 +462,7 @@ jobs:
         id: guidance-token
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && steps.credential.outputs.present == 'true' }}
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}

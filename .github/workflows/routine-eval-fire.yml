@@ -730,7 +730,7 @@ jobs:
       - name: Mint the read-only token for the private results
         id: private-token
         if: vars.REGISTRY_READ_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
@@ -893,7 +893,7 @@ jobs:
           steps.allowance.outputs.refused != 'true'
           && steps.validate.outputs.mode == 'draft'
           && startsWith(steps.validate.outputs.proposal, 'proposals/')
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}

@@ -173,7 +173,7 @@ jobs:
       - name: Mint the GitHub App token for the optional private registry
         id: registry-token
         if: github.event_name == 'schedule' && vars.REGISTRY_READ_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         continue-on-error: true
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
