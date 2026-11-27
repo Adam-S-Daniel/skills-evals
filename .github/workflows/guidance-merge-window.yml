@@ -111,7 +111,7 @@ jobs:
         id: guidance-token
         if: steps.credential.outputs.present == 'true' && (github.event_name != 'workflow_run' || steps.window.outputs.open == 'true')
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}

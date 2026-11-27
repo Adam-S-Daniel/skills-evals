@@ -301,7 +301,7 @@ jobs:
       - name: Mint the read-only token for the lessons
         id: lessons-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}

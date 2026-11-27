@@ -279,7 +279,7 @@ jobs:
 
       - name: Mint the read-only token for the private registry
         id: registry-token
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
@@ -399,7 +399,7 @@ jobs:
       # adam-agentskills alone, with contents and pull-requests write only.
       - name: Mint the GitHub App token for adam-agentskills
         id: app-token
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
@@ -647,7 +647,7 @@ jobs:
       - name: Mint the roster App token
         id: app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
           private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}

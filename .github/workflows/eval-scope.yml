@@ -217,7 +217,7 @@ jobs:
         if: steps.scope.outputs.ready == 'true'
         id: app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
           private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}

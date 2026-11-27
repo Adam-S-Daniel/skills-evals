@@ -191,7 +191,7 @@ jobs:
         id: app-token
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
@@ -216,7 +216,7 @@ jobs:
         id: guidance-token
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
@@ -275,7 +275,7 @@ jobs:
       - name: Mint the registry App token (adam-agentskills only)
         id: registry-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
@@ -286,7 +286,7 @@ jobs:
       - name: Mint the roster App token (skills-evals only)
         id: roster-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
           private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
