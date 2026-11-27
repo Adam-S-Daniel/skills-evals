@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-11-26T19:42:43Z",
-  "generated_at": "2026-11-26T19:42:55Z",
+  "as_of": "2026-11-27T19:32:00Z",
+  "generated_at": "2026-11-27T19:32:17Z",
   "items": [
     {
       "at": "2026-06-04T12:43:58Z",
@@ -731,14 +731,14 @@
   "rate_weeks": 4,
   "rates": {
     "git-hook": {
-      "added": 8,
-      "added_per_week": 2.0,
+      "added": 7,
+      "added_per_week": 1.75,
       "complete": true,
       "eligible_share": null,
-      "from": "2026-10-29T19:42:43Z",
+      "from": "2026-10-30T19:32:00Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-26T19:42:43Z",
+      "to": "2026-11-27T19:32:00Z",
       "weeks": 4.0
     },
     "guidance-section": {
@@ -746,10 +746,10 @@
       "added_per_week": 1.0,
       "complete": true,
       "eligible_share": 0.25,
-      "from": "2026-10-29T19:42:43Z",
+      "from": "2026-10-30T19:32:00Z",
       "removed": 0,
       "removed_per_week": 0.0,
-      "to": "2026-11-26T19:42:43Z",
+      "to": "2026-11-27T19:32:00Z",
       "weeks": 4.0
     },
     "skill": {
@@ -757,10 +757,10 @@
       "added_per_week": 0.75,
       "complete": true,
       "eligible_share": 0.0,
-      "from": "2026-10-29T19:42:43Z",
+      "from": "2026-10-30T19:32:00Z",
       "removed": 3,
       "removed_per_week": 0.75,
-      "to": "2026-11-26T19:42:43Z",
+      "to": "2026-11-27T19:32:00Z",
       "weeks": 4.0
     }
   },
